@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Orbit‑Runner</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <canvas id="gameCanvas"></canvas>
+
+  <!-- Load Three.js ESM directly from node_modules, then start the game -->
+  <script type="module">
+    import * as THREE from './node_modules/three/build/three.module.min.js';
+    window.THREE = THREE;
+    await import('./main.js');
+  </script>
+</body>
+</html>
