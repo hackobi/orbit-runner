@@ -1,5 +1,7 @@
 // Orbit‑Runner: Open‑World Space Flight
 // Excitement + Damage/Shield pass + Massive Asteroid Fields with Dense Patches + Green Shield Orbs
+import { FontLoader } from './node_modules/three/examples/jsm/loaders/FontLoader.js';
+import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextGeometry.js';
 (() => {
   const canvas = document.getElementById('gameCanvas');
   if (!canvas) { console.error('Canvas not found'); return; }
@@ -31,6 +33,48 @@
   const hud = document.getElementById('hud') || (() => { const d = document.createElement('div'); d.id='hud'; d.style.position='absolute'; d.style.top='10px'; d.style.left='10px'; d.style.color='#0ff'; d.style.fontSize='1.1rem'; document.body.appendChild(d); return d; })();
   const help = document.getElementById('help') || (() => { const d = document.createElement('div'); d.id='help'; d.style.position='absolute'; d.style.bottom='12px'; d.style.left='50%'; d.style.transform='translateX(-50%)'; d.style.fontSize='0.95rem'; d.style.color='#ccc'; d.style.opacity='0.85'; d.style.background='rgba(0,0,0,0.35)'; d.style.padding='6px 10px'; d.style.borderRadius='6px'; d.textContent='W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H home • R restart'; document.body.appendChild(d); return d; })();
   const gameOverEl = document.getElementById('gameover') || (()=>{ const d=document.createElement('div'); d.id='gameover'; d.style.position='absolute'; d.style.top='45%'; d.style.left='50%'; d.style.transform='translate(-50%,-50%)'; d.style.fontSize='2rem'; d.style.color='#fff'; d.style.display='none'; d.style.textAlign='center'; d.style.textShadow='0 0 8px #000'; d.innerHTML='CRASHED<br/>Press R to Restart'; document.body.appendChild(d); return d; })();
+
+  // Font for 3D labels
+  let gameFont = null;
+  const fontLoader = new FontLoader();
+  fontLoader.load('./node_modules/three/examples/fonts/helvetiker_regular.typeface.json', f => { gameFont = f; }, undefined, e => console.error('Font load error', e));
+  const shieldTextLabels = []; // { mesh, life }
+  function spawnShieldText(position){
+    if (!gameFont) return; // if not ready, skip silently
+    const geo = new TextGeometry('SHIELD', {
+      font: gameFont, size: 2.0, depth: 0.6, curveSegments: 8,
+      bevelEnabled: true, bevelThickness: 0.08, bevelSize: 0.06, bevelSegments: 2,
+    });
+    geo.computeBoundingBox();
+    geo.center();
+    const mat = new THREE.MeshBasicMaterial({ color: 0x66ff99, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending, depthWrite: false });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(position).add(new THREE.Vector3(0, 3, 0));
+    scene.add(mesh);
+    shieldTextLabels.push({ mesh, life: 3.0 });
+  }
+
+  // Duende SVG label for pink orb hits (renders as billboarded plane)
+  const duendeTextLabels = []; // { group, life }
+  function spawnDuendeText(position){
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 160" width="520" height="160" role="img" aria-labelledby="title desc">\n  <title id="title">Demos logo with wave-dual emblem</title>\n  <desc id="desc">A circular emblem split by a flowing S-like curve with asymmetric dots, followed by the word Demos.</desc>\n  <defs>\n    <clipPath id="emblem-clip">\n      <circle cx="80" cy="80" r="70"/>\n    </clipPath>\n  </defs>\n  <g transform="translate(80 80) rotate(-12) translate(-80 -80)">\n    <circle cx="80" cy="80" r="70" fill="#111111"/>\n    <g clip-path="url(#emblem-clip)">\n      <path fill="#ffffff" fill-rule="evenodd" d="\n        M -20 -20 H 180 V 180 H -20 Z\n        M -20 -20\n        L 28 -20\n        C 84 -18 120 40 133 78\n        C 146 114 94 142 12 160\n        L -20 160 Z"/>\n    </g>\n    <circle cx="108" cy="48" r="11" fill="#ffffff"/>\n    <circle cx="52"  cy="114" r="15" fill="#111111"/>\n    <circle cx="80" cy="80" r="70" fill="none" stroke="#111111" stroke-width="2"/>\n  </g>\n  <text x="170" y="86" fill="#222222" font-size="64" font-weight="700" dominant-baseline="middle">Demos</text>\n</svg>`;
+    const dataUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+    const loader = new THREE.TextureLoader();
+    loader.load(dataUrl, texture => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      const aspect = 520/160; // 3.25
+      const widthUnits = 9;   // visible but not huge
+      const heightUnits = widthUnits / aspect;
+      const mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(widthUnits, heightUnits), mat);
+      const group = new THREE.Group();
+      group.add(mesh);
+      group.position.copy(position).add(new THREE.Vector3(0, 3, 0));
+      scene.add(group);
+      duendeTextLabels.push({ group, life: 3.0 });
+    });
+  }
 
   // Ship
   const shipMaterial = new THREE.MeshStandardMaterial({ color: 0x47e6ff, emissive: 0x0a2a44, emissiveIntensity: 1.5, metalness: 0.2, roughness: 0.5 });
@@ -240,6 +284,29 @@
   }
   seedShieldOrbsFromAsteroidCount();
 
+  // New: Neon Pink Orbs (fun easter egg orbs)
+  const pinkOrbs = []; // { mesh, radius, bob, bobSpeed, baseScale, pulseSpeed }
+  const pinkOrbGeometry = shieldOrbGeometry; // same base shape
+  function spawnPinkOrbAround(center, minR=800, maxR=9000){
+    const r = minR + Math.random()*(maxR-minR);
+    const theta = Math.random()*Math.PI*2;
+    const phi = Math.acos(2*Math.random()-1);
+    const pos = new THREE.Vector3(
+      r * Math.sin(phi)*Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi)*Math.sin(theta)
+    ).add(center);
+    const m = new THREE.Mesh(pinkOrbGeometry, makeAdditiveMaterial(0xff33cc, 0.95));
+    m.position.copy(pos);
+    const baseScale = 1.25;
+    m.scale.setScalar(baseScale);
+    scene.add(m);
+    pinkOrbs.push({ mesh:m, radius: 1.2, bob: Math.random()*Math.PI*2, bobSpeed: 1.2 + Math.random()*1.8, baseScale, pulseSpeed: 3.5 + Math.random()*3.5 });
+  }
+  function seedPinkOrbsFromAsteroidCount(){
+    const desired = Math.max(6, Math.floor(asteroids.length * 0.01)); // 1%
+    while (pinkOrbs.length < desired) spawnPinkOrbAround(shipPosition);
+  }
+  seedPinkOrbsFromAsteroidCount();
+
   // Particles
   const bullets = []; // { mesh, velocity, life, radius }
   const bulletGeometry = new THREE.SphereGeometry(0.25, 8, 8);
@@ -416,6 +483,14 @@
     }
     while (shieldOrbs.length < desiredOrbs) spawnShieldOrbAround(shipPosition);
 
+    // Pink orb ratio: ~1% of asteroids
+    const desiredPink = Math.max(6, Math.floor(asteroids.length * 0.01));
+    for (let i = pinkOrbs.length - 1; i >= 0; i--){
+      const o = pinkOrbs[i];
+      if (o.mesh.position.distanceTo(shipPosition) > maxDist){ scene.remove(o.mesh); pinkOrbs.splice(i,1); }
+    }
+    while (pinkOrbs.length < desiredPink) spawnPinkOrbAround(shipPosition);
+
     // Ensure enough dense patches exist
     ensurePatches();
   }
@@ -442,6 +517,7 @@
     for (const p of exhaustParticles) scene.remove(p.mesh); exhaustParticles.length = 0;
     for (const p of impactParticles) scene.remove(p.mesh); impactParticles.length = 0;
     for (const o of shieldOrbs) scene.remove(o.mesh); shieldOrbs.length = 0;
+    for (const o of pinkOrbs) scene.remove(o.mesh); pinkOrbs.length = 0;
     patches.length = 0;
 
     health = 100; shield = 0; score = 0; gameOver = false; hideGameOver();
@@ -451,6 +527,7 @@
     seedAsteroids(7000, 1400, shipPosition);
     createRings(targetPlanet, 3600, 5200, 6500);
     seedShieldOrbsFromAsteroidCount();
+    seedPinkOrbsFromAsteroidCount();
   }
 
   // Loop
@@ -562,10 +639,37 @@
         for (let j = bullets.length-1; j>=0; j--){
           const b = bullets[j];
           if (o.mesh.position.distanceTo(b.mesh.position) < (o.radius + b.radius)){
+            spawnShieldText(o.mesh.position);
             spawnShieldExplosion(o.mesh.position, 'shot');
             scene.remove(o.mesh); shieldOrbs.splice(i,1);
             scene.remove(b.mesh); bullets.splice(j,1);
             break;
+          }
+        }
+      }
+    }
+
+    // Pink orbs update (pulse, pickup/shot trigger duende text)
+    for (let i = pinkOrbs.length-1; i>=0; i--){
+      const o = pinkOrbs[i];
+      o.bob += o.bobSpeed * dt;
+      o.mesh.position.y += Math.sin(o.bob) * 0.02;
+      const pulse = 1 + 0.22 * Math.sin(o.bob * o.pulseSpeed);
+      o.mesh.scale.setScalar(o.baseScale * pulse);
+      o.mesh.material.opacity = 0.75 + 0.25 * (0.5 + 0.5*Math.sin(o.bob * o.pulseSpeed + Math.PI*0.5));
+      o.mesh.rotation.y += 0.9*dt;
+
+      if (!gameOver){
+        const trigger = () => { spawnDuendeText(o.mesh.position); spawnImpactBurst(o.mesh.position, 0xff33cc, 20); spawnShieldRing(o.mesh.position, 0xff33cc); };
+        // Pickup
+        if (o.mesh.position.distanceTo(shipPosition) < (o.radius + pickupHitRadius)){
+          trigger(); scene.remove(o.mesh); pinkOrbs.splice(i,1); continue;
+        }
+        // Shot by bullet
+        for (let j = bullets.length-1; j>=0; j--){
+          const b = bullets[j];
+          if (o.mesh.position.distanceTo(b.mesh.position) < (o.radius + b.radius)){
+            trigger(); scene.remove(o.mesh); pinkOrbs.splice(i,1); scene.remove(b.mesh); bullets.splice(j,1); break;
           }
         }
       }
@@ -587,6 +691,25 @@
       r.mesh.material.opacity = Math.max(0, r.mesh.material.opacity - r.fade * dt);
       // billboard-ish
       r.mesh.lookAt(camera.position);
+    }
+
+    // 3D text labels update (face camera, fade, remove)
+    for (let i = shieldTextLabels.length-1; i>=0; i--){
+      const lbl = shieldTextLabels[i];
+      lbl.life -= dt; if (lbl.life <= 0){ scene.remove(lbl.mesh); shieldTextLabels.splice(i,1); continue; }
+      lbl.mesh.lookAt(camera.position);
+      if (lbl.life < 0.8){
+        const mat = lbl.mesh.material; mat.opacity = Math.max(0, lbl.life / 0.8);
+      }
+    }
+    for (let i = duendeTextLabels.length-1; i>=0; i--){
+      const lbl = duendeTextLabels[i];
+      lbl.life -= dt; if (lbl.life <= 0){ scene.remove(lbl.group); duendeTextLabels.splice(i,1); continue; }
+      lbl.group.lookAt(camera.position);
+      // Fade last 0.8s
+      if (lbl.life < 0.8){
+        lbl.group.traverse(obj => { if (obj.material && obj.material.opacity !== undefined){ obj.material.opacity = Math.max(0, lbl.life / 0.8); } });
+      }
     }
 
     // Particles update

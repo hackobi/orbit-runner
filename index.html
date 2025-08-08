@@ -8,6 +8,14 @@
 <body>
   <canvas id="gameCanvas"></canvas>
 
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./node_modules/three/build/three.module.min.js"
+    }
+  }
+  </script>
+
   <!-- Load Three.js ESM directly from node_modules, then start the game -->
   <script type="module">
     import * as THREE from './node_modules/three/build/three.module.min.js';
