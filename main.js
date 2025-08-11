@@ -76,11 +76,33 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     });
   }
 
-  // Ship
-  const shipMaterial = new THREE.MeshStandardMaterial({ color: 0x47e6ff, emissive: 0x0a2a44, emissiveIntensity: 1.5, metalness: 0.2, roughness: 0.5 });
-  const shipGeo = new THREE.ConeGeometry(1.0, 3.2, 14);
-  shipGeo.rotateX(Math.PI / 2); // nose +Z
-  const ship = new THREE.Mesh(shipGeo, shipMaterial);
+  // Fenix SVG label (renders as billboard plane)
+  function spawnFenixLabel(position){
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 480" width="600" height="480" role="img" aria-labelledby="title desc">\n  <title id="title">Fenix emblem with centered wordmark</title>\n  <desc id="desc">A stylized phoenix with outstretched wings, central flame-tail, and the word Fenix centered below.</desc>\n  <defs>\n    <style>\n      :root { --ink: #FFFFFF; }\n      .ink { fill: var(--ink); }\n      text { fill: var(--ink); font-family: ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Ubuntu, Cantarell, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif; font-weight: 700; letter-spacing: 0.5px; }\n    </style>\n  </defs>\n  <g aria-label="Fenix emblem">\n    <path class="ink" d=" M 300 186 C 258 145, 214 112, 165 116 C 128 118, 120 149, 152 168 C 114 170, 104 198, 138 210 C 118 228, 158 238, 204 227 C 236 219, 270 201, 300 192 Z"/>\n    <g transform="translate(600,0) scale(-1,1)">\n      <path class="ink" d=" M 300 186 C 258 145, 214 112, 165 116 C 128 118, 120 149, 152 168 C 114 170, 104 198, 138 210 C 118 228, 158 238, 204 227 C 236 219, 270 201, 300 192 Z"/>\n    </g>\n    <path class="ink" d=" M 300 188 C 330 198, 352 222, 352 252 C 352 286, 327 311, 306 331 C 296 341, 293 356, 300 378 C 282 362, 276 346, 279 331 C 254 321, 246 297, 257 277 C 236 262, 241 234, 267 218 C 281 208, 290 196, 300 188 Z"/>\n    <path class="ink" d=" M 300 186 C 305 164, 318 147, 340 139 C 355 134, 371 141, 380 153 C 366 149, 352 151, 340 160 C 348 168, 360 175, 374 177 C 356 182, 340 181, 328 173 C 324 184, 314 191, 300 194 Z"/>\n    <path class="ink" d=" M 300 332 C 270 342, 248 364, 244 388 C 249 383, 262 374, 283 368 C 280 385, 287 401, 300 410 Z"/>\n    <g transform="translate(600,0) scale(-1,1)">\n      <path class="ink" d=" M 300 332 C 270 342, 248 364, 244 388 C 249 383, 262 374, 283 368 C 280 385, 287 401, 300 410 Z"/>\n    </g>\n    <path class="ink" d=" M 300 330 C 314 358, 312 386, 300 410 C 314 394, 326 371, 334 344 C 322 356, 312 348, 300 330 Z"/>\n  </g>\n  <text x="300" y="452" font-size="56" text-anchor="middle">Fenix</text>\n</svg>`;
+    const dataUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+    const loader = new THREE.TextureLoader();
+    loader.load(dataUrl, texture => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      const aspect = 600/480;
+      const widthUnits = 10; const heightUnits = widthUnits / aspect;
+      const mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(widthUnits, heightUnits), mat);
+      const group = new THREE.Group(); group.add(mesh);
+      group.position.copy(position).add(new THREE.Vector3(0, 4, 0));
+      scene.add(group);
+      duendeTextLabels.push({ group, life: 3.0 });
+    });
+  }
+
+  // Ship (factory functions)
+  function buildDefaultShip(){
+    const mat = new THREE.MeshStandardMaterial({ color: 0x47e6ff, emissive: 0x0a2a44, emissiveIntensity: 1.5, metalness: 0.2, roughness: 0.5 });
+    const geo = new THREE.ConeGeometry(1.0, 3.2, 14);
+    geo.rotateX(Math.PI / 2); // nose +Z
+    return new THREE.Mesh(geo, mat);
+  }
+  let ship = buildDefaultShip();
   scene.add(ship);
 
   // Stats
@@ -88,12 +110,13 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   let shield = 0;      // %
   let gameOver = false;
   let damageCooldown = 0; // sec i‑frames after a hit
+  let fenixActive = false;
 
   // Movement state
   let speedUnitsPerSec = 20;
   let targetSpeedUnitsPerSec = 20;
   const minSpeed = 5;
-  const maxSpeed = 60;
+  const baseMaxSpeed = 60;
   const yawRate = 2.0;     // rad/sec
   const pitchRate = 1.35;  // rad/sec
   let yaw = 0, pitch = 0, roll = 0;
@@ -307,9 +330,55 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   }
   seedPinkOrbsFromAsteroidCount();
 
+  // New: Fenix Orbs (pulsating orange, 10x frequency of pink)
+  const fenixOrbs = []; // { mesh, radius, bob, bobSpeed, baseScale, pulseSpeed }
+  const fenixOrbGeometry = shieldOrbGeometry;
+  function spawnFenixOrbAround(center, minR=800, maxR=9000){
+    const r = minR + Math.random()*(maxR-minR);
+    const theta = Math.random()*Math.PI*2;
+    const phi = Math.acos(2*Math.random()-1);
+    const pos = new THREE.Vector3(
+      r * Math.sin(phi)*Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi)*Math.sin(theta)
+    ).add(center);
+    const m = new THREE.Mesh(fenixOrbGeometry, makeAdditiveMaterial(0xff8800, 0.95));
+    m.position.copy(pos);
+    const baseScale = 1.3;
+    m.scale.setScalar(baseScale);
+    scene.add(m);
+    fenixOrbs.push({ mesh:m, radius: 1.25, bob: Math.random()*Math.PI*2, bobSpeed: 1.0 + Math.random()*1.6, baseScale, pulseSpeed: 2.8 + Math.random()*3.0 });
+  }
+  function seedFenixOrbsFromAsteroidCount(){
+    const desired = Math.max(20, Math.floor(asteroids.length * 0.10)); // 10%
+    while (fenixOrbs.length < desired) spawnFenixOrbAround(shipPosition);
+  }
+  seedFenixOrbsFromAsteroidCount();
+
+  // New: Zaphire Orbs (pulsating red, 2x Fenix abundance)
+  const zaphireOrbs = []; // { mesh, radius, bob, bobSpeed, baseScale, pulseSpeed }
+  const zaphireOrbGeometry = shieldOrbGeometry;
+  function spawnZaphireOrbAround(center, minR=800, maxR=9000){
+    const r = minR + Math.random()*(maxR-minR);
+    const theta = Math.random()*Math.PI*2;
+    const phi = Math.acos(2*Math.random()-1);
+    const pos = new THREE.Vector3(
+      r * Math.sin(phi)*Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi)*Math.sin(theta)
+    ).add(center);
+    const m = new THREE.Mesh(zaphireOrbGeometry, makeAdditiveMaterial(0xff3333, 0.95));
+    m.position.copy(pos);
+    const baseScale = 1.25; m.scale.setScalar(baseScale);
+    scene.add(m);
+    zaphireOrbs.push({ mesh:m, radius:1.2, bob: Math.random()*Math.PI*2, bobSpeed: 1.1 + Math.random()*1.7, baseScale, pulseSpeed: 3.0 + Math.random()*3.0 });
+  }
+  function seedZaphireOrbsFromAsteroidCount(){
+    const desired = Math.max(40, Math.floor(asteroids.length * 0.20)); // 20% (twice Fenix 10%)
+    while (zaphireOrbs.length < desired) spawnZaphireOrbAround(shipPosition);
+  }
+  seedZaphireOrbsFromAsteroidCount();
+
   // Particles
   const bullets = []; // { mesh, velocity, life, radius }
   const bulletGeometry = new THREE.SphereGeometry(0.25, 8, 8);
+  const beamGeometry = new THREE.CylinderGeometry(0.08, 0.08, 12, 8, 1, true); // for Fenix beams (length 12)
 
   const exhaustParticles = []; // { mesh, vel, life }
   const impactParticles = [];  // { mesh, vel, life }
@@ -373,15 +442,32 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   }
 
   function shoot() {
-    const mat = new THREE.MeshStandardMaterial({ color: 0x66ffff, emissive: 0x66ffff, emissiveIntensity: 3 });
-    const bullet = new THREE.Mesh(bulletGeometry, mat);
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, roll, 'YXZ'));
     const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(q).normalize();
     const tipWorld = new THREE.Vector3().copy(shipPosition).add(dir.clone().multiplyScalar(1.8));
-    bullet.position.copy(tipWorld);
-    scene.add(bullet);
-    const speed = 230;
-    bullets.push({ mesh: bullet, velocity: dir.multiplyScalar(speed), life: 3.0, radius: 0.25 });
+
+    if (fenixActive) {
+      // Red beam
+      const mat = new THREE.MeshBasicMaterial({ color: 0xff2222, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+      const beam = new THREE.Mesh(beamGeometry, mat);
+      // Cylinder is along +Y by default; rotate to face forward
+      const alignQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
+      beam.quaternion.copy(alignQuat);
+      // Center the beam a bit ahead of the tip
+      const halfLen = 6; // half of 12
+      beam.position.copy(tipWorld).add(dir.clone().multiplyScalar(halfLen));
+      scene.add(beam);
+      const speed = 300;
+      bullets.push({ mesh: beam, velocity: dir.multiplyScalar(speed), life: 0.25, radius: 0.6 });
+    } else {
+      // Default blue bolt
+      const mat = new THREE.MeshStandardMaterial({ color: 0x66ffff, emissive: 0x66ffff, emissiveIntensity: 3 });
+      const bullet = new THREE.Mesh(bulletGeometry, mat);
+      bullet.position.copy(tipWorld);
+      scene.add(bullet);
+      const speed = 230;
+      bullets.push({ mesh: bullet, velocity: dir.multiplyScalar(speed), life: 3.0, radius: 0.25 });
+    }
     cameraShake += 0.05;
   }
 
@@ -421,7 +507,8 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   document.addEventListener('keyup', onKeyUp, { capture:true });
   window.addEventListener('keydown', onKeyDown, { capture:true });
   window.addEventListener('keyup', onKeyUp, { capture:true });
-  window.addEventListener('pointerdown', () => { canvas.focus(); mouseDown = true; }, { capture:true });
+  // Update pointer handlers so overlay buttons remain clickable
+  window.addEventListener('pointerdown', e => { if (e.target === canvas) { canvas.focus(); mouseDown = true; } }, { capture:true });
   window.addEventListener('pointerup', () => { mouseDown = false; });
   window.addEventListener('pointermove', e => {
     mouseX = (e.clientX / window.innerWidth) * 2 - 1;
@@ -439,8 +526,115 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     hud.textContent = `Speed ${speedTxt} | HP ${hp}% | Shield ${sh}% | Points ${score} | Dist ${distFromOrigin} | Target ${distToTarget}`;
   }
 
+  // Simple helper to spawn centered 3D text with color
+  function spawnCenteredTextLabel(text, position, color=0xffffff, size=2.0, life=2.5){
+    if (!gameFont) return;
+    const geo = new TextGeometry(text, { font: gameFont, size, depth: 0.5, curveSegments: 8 });
+    geo.computeBoundingBox(); geo.center();
+    const mat = new THREE.MeshBasicMaterial({ color, transparent:true, opacity:1, blending:THREE.AdditiveBlending, depthWrite:false });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(position).add(new THREE.Vector3(0, 3, 0));
+    scene.add(mesh);
+    duendeTextLabels.push({ group: mesh, life }); // reuse label updater; treat as group
+  }
+
+  // Store Overlay UI
+  let storeOverlay = null;
+  function ensureStoreOverlay(){
+    if (storeOverlay) return storeOverlay;
+    const overlay = document.createElement('div');
+    overlay.id = 'storeOverlay';
+    Object.assign(overlay.style, {
+      position:'fixed', inset:'0', background:'rgba(0,0,0,0.35)', display:'none', zIndex:'9999',
+      color:'#fff', fontFamily:'system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Helvetica Neue, Arial, Noto Sans, sans-serif'
+    });
+
+    const panel = document.createElement('div');
+    Object.assign(panel.style, {
+      position:'absolute', left:'50%', top:'50%', transform:'translate(-50%,-50%)',
+      width:'min(520px, 90vw)', background:'rgba(20,20,26,0.85)', border:'1px solid rgba(255,255,255,0.2)', borderRadius:'10px',
+      boxShadow:'0 12px 30px rgba(0,0,0,0.45)', padding:'16px 16px 60px 16px'
+    });
+
+    const header = document.createElement('div');
+    header.textContent = 'Store';
+    Object.assign(header.style, { fontSize:'22px', fontWeight:'700', marginBottom:'10px' });
+
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '×';
+    Object.assign(closeBtn.style, {
+      position:'absolute', right:'10px', top:'10px', width:'32px', height:'32px', border:'none', borderRadius:'6px',
+      color:'#fff', background:'rgba(255,255,255,0.15)', cursor:'pointer'
+    });
+    closeBtn.onclick = () => hideStoreOverlay();
+
+    const list = document.createElement('ul');
+    Object.assign(list.style, { listStyle:'none', padding:'0', margin:'6px 0 0 0', lineHeight:'1.8' });
+    ;['Lorem','Ipsum','Banana','Peel'].forEach(item => { const li=document.createElement('li'); li.textContent=item; list.appendChild(li); });
+
+    const actions = document.createElement('div');
+    Object.assign(actions.style, {
+      position:'absolute', left:'0', right:'0', bottom:'10px', display:'flex', gap:'10px', justifyContent:'center'
+    });
+    const accept = document.createElement('button'); accept.textContent = 'Accept';
+    const cancel = document.createElement('button'); cancel.textContent = 'Cancel';
+    [accept,cancel].forEach(btn => Object.assign(btn.style, { padding:'8px 18px', border:'none', borderRadius:'8px', cursor:'pointer',
+      background:'rgba(255,255,255,0.2)', color:'#fff' }));
+    accept.onclick = () => hideStoreOverlay();
+    cancel.onclick = () => hideStoreOverlay();
+    actions.append(accept, cancel);
+
+    panel.append(header, closeBtn, list, actions);
+    overlay.append(panel);
+    document.body.appendChild(overlay);
+    storeOverlay = overlay; return overlay;
+  }
+  function showStoreOverlay(){ ensureStoreOverlay(); storeOverlay.style.display = 'block'; }
+  function hideStoreOverlay(){ if (storeOverlay) storeOverlay.style.display = 'none'; }
+
   function showGameOver(){ gameOverEl.style.display = 'block'; }
   function hideGameOver(){ gameOverEl.style.display = 'none'; }
+
+  // Replace ship with a Fenix model
+  function buildFenixShip(){
+    const group = new THREE.Group();
+    // Core black material; rely on edge lines for visibility
+    const blackMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0x000000, metalness: 0.2, roughness: 0.6 });
+    const edgeMat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 1 });
+
+    const bodyGeo = new THREE.ConeGeometry(1.2, 4.0, 24); bodyGeo.rotateX(Math.PI/2);
+    const bodyMesh = new THREE.Mesh(bodyGeo, blackMat);
+    const bodyEdges = new THREE.LineSegments(new THREE.EdgesGeometry(bodyGeo, 10), edgeMat);
+    group.add(bodyMesh, bodyEdges);
+
+    const wingGeo = new THREE.BoxGeometry(0.2, 0.05, 3.2);
+    const leftWing = new THREE.Mesh(wingGeo, blackMat);
+    const rightWing = new THREE.Mesh(wingGeo, blackMat);
+    const leftEdges = new THREE.LineSegments(new THREE.EdgesGeometry(wingGeo), edgeMat);
+    const rightEdges = new THREE.LineSegments(new THREE.EdgesGeometry(wingGeo), edgeMat);
+    leftWing.position.set(-1.3, -0.2, -0.2); leftWing.rotation.y = Math.PI/10; leftEdges.position.copy(leftWing.position); leftEdges.rotation.copy(leftWing.rotation);
+    rightWing.position.set(1.3, -0.2, -0.2); rightWing.rotation.y = -Math.PI/10; rightEdges.position.copy(rightWing.position); rightEdges.rotation.copy(rightWing.rotation);
+    group.add(leftWing, rightWing, leftEdges, rightEdges);
+
+    const tailGeo = new THREE.CylinderGeometry(0.15, 0.35, 0.8, 12);
+    const tail = new THREE.Mesh(tailGeo, blackMat); tail.position.set(0, -0.4, -1.6); tail.rotation.x = Math.PI/2;
+    const tailEdges = new THREE.LineSegments(new THREE.EdgesGeometry(tailGeo), edgeMat); tailEdges.position.copy(tail.position); tailEdges.rotation.copy(tail.rotation);
+    group.add(tail, tailEdges);
+
+    return group;
+  }
+  function transformToFenixShip(){
+    if (fenixActive) return;
+    const newShip = buildFenixShip();
+    newShip.position.copy(ship.position);
+    newShip.quaternion.copy(ship.quaternion);
+    scene.add(newShip);
+    scene.remove(ship);
+    ship = newShip;
+    fenixActive = true;
+    health = 100; // restore to full when transforming
+    cameraShake += 0.5;
+  }
 
   // Population/field maintenance
   function keepFieldPopulated() {
@@ -491,15 +685,32 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     }
     while (pinkOrbs.length < desiredPink) spawnPinkOrbAround(shipPosition);
 
+    // Fenix orb ratio: ~10% of asteroids (10x pink)
+    const desiredFenix = Math.max(20, Math.floor(asteroids.length * 0.10));
+    for (let i = fenixOrbs.length - 1; i >= 0; i--){
+      const o = fenixOrbs[i];
+      if (o.mesh.position.distanceTo(shipPosition) > maxDist){ scene.remove(o.mesh); fenixOrbs.splice(i,1); }
+    }
+    while (fenixOrbs.length < desiredFenix) spawnFenixOrbAround(shipPosition);
+
+    // Zaphire orb ratio: ~20% of asteroids
+    const desiredZaphire = Math.max(40, Math.floor(asteroids.length * 0.20));
+    for (let i = zaphireOrbs.length - 1; i >= 0; i--){
+      const o = zaphireOrbs[i];
+      if (o.mesh.position.distanceTo(shipPosition) > maxDist){ scene.remove(o.mesh); zaphireOrbs.splice(i,1); }
+    }
+    while (zaphireOrbs.length < desiredZaphire) spawnZaphireOrbAround(shipPosition);
+
     // Ensure enough dense patches exist
     ensurePatches();
   }
 
   function applyCrashDamage(type, hitPosition){
     if (damageCooldown > 0 || gameOver) return;
+    const dmgFactor = (type === 'asteroid' && fenixActive) ? 0.5 : 1.0; // Fenix halves asteroid damage to health and shields
     if (type === 'asteroid'){
-      const healthDamage = 45 + Math.random()*30;   // ~avg 60%
-      const shieldDamage = 22 + Math.random()*22;   // ~avg 33%
+      const healthDamage = (45 + Math.random()*30) * dmgFactor;   // ~avg 60% * factor
+      const shieldDamage = (22 + Math.random()*22) * dmgFactor;   // ~avg 33% * factor
       if (shield > 0){ shield = Math.max(0, shield - shieldDamage); }
       health = Math.max(0, health - healthDamage);
       spawnImpactBurst(hitPosition || shipPosition);
@@ -518,9 +729,17 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     for (const p of impactParticles) scene.remove(p.mesh); impactParticles.length = 0;
     for (const o of shieldOrbs) scene.remove(o.mesh); shieldOrbs.length = 0;
     for (const o of pinkOrbs) scene.remove(o.mesh); pinkOrbs.length = 0;
+    for (const o of fenixOrbs) scene.remove(o.mesh); fenixOrbs.length = 0;
+    for (const o of zaphireOrbs) scene.remove(o.mesh); zaphireOrbs.length = 0;
     patches.length = 0;
 
+    // Replace ship with default model on respawn
+    scene.remove(ship);
+    ship = buildDefaultShip();
+    scene.add(ship);
+
     health = 100; shield = 0; score = 0; gameOver = false; hideGameOver();
+    fenixActive = false;
     yaw = 0; pitch = 0; roll = 0; speedUnitsPerSec = 20; targetSpeedUnitsPerSec = 20;
     shipPosition.set(0,0,0); velocity.set(0,0,0);
 
@@ -528,6 +747,8 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     createRings(targetPlanet, 3600, 5200, 6500);
     seedShieldOrbsFromAsteroidCount();
     seedPinkOrbsFromAsteroidCount();
+    seedFenixOrbsFromAsteroidCount();
+    seedZaphireOrbsFromAsteroidCount();
   }
 
   // Loop
@@ -539,7 +760,8 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
 
     if (!gameOver){
       if (damageCooldown > 0) damageCooldown -= dt;
-      if (input.speedUp) targetSpeedUnitsPerSec = Math.min(maxSpeed, targetSpeedUnitsPerSec + 22*dt);
+      const effectiveMaxSpeed = fenixActive ? 80 : baseMaxSpeed;
+      if (input.speedUp) targetSpeedUnitsPerSec = Math.min(effectiveMaxSpeed, targetSpeedUnitsPerSec + 22*dt);
       if (input.speedDown) targetSpeedUnitsPerSec = Math.max(minSpeed, targetSpeedUnitsPerSec - 22*dt);
       speedUnitsPerSec += (targetSpeedUnitsPerSec - speedUnitsPerSec) * Math.min(1, 6*dt);
       const fovTarget = baseFov + THREE.MathUtils.clamp((speedUnitsPerSec-14)*0.7, 0, 18);
@@ -554,7 +776,8 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       roll += (targetRoll - roll) * Math.min(1, 8*dt);
 
       const forward = new THREE.Vector3(0,0,1).applyEuler(new THREE.Euler(pitch, yaw, roll, 'YXZ')).normalize();
-      velocity.copy(forward).multiplyScalar(speedUnitsPerSec);
+      const speedMultiplier = fenixActive ? 1.05 : 1.0; // Fenix is 5% faster
+      velocity.copy(forward).multiplyScalar(speedUnitsPerSec * speedMultiplier);
       shipPosition.addScaledVector(velocity, dt);
 
       ship.position.copy(shipPosition);
@@ -588,7 +811,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
         const x = targetPlanet.position.x + Math.cos(a.orbitAngle) * a.orbitRadius;
         const z = targetPlanet.position.z + Math.sin(a.orbitAngle) * a.orbitRadius;
         a.mesh.position.set(x, a.mesh.position.y, z);
-      } else {
+        } else {
         a.mesh.position.addScaledVector(a.vel, dt);
       }
       if (a.rotAxis && a.rotSpeed) a.mesh.rotateOnAxis(a.rotAxis, a.rotSpeed*dt);
@@ -639,6 +862,8 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
         for (let j = bullets.length-1; j>=0; j--){
           const b = bullets[j];
           if (o.mesh.position.distanceTo(b.mesh.position) < (o.radius + b.radius)){
+            // Grant shield on shot as well
+            shield = Math.min(100, shield + 25);
             spawnShieldText(o.mesh.position);
             spawnShieldExplosion(o.mesh.position, 'shot');
             scene.remove(o.mesh); shieldOrbs.splice(i,1);
@@ -675,6 +900,58 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       }
     }
 
+    // Fenix orbs update (pulse; transform on bullet hit)
+    for (let i = fenixOrbs.length-1; i>=0; i--){
+      const o = fenixOrbs[i];
+      o.bob += o.bobSpeed * dt;
+      o.mesh.position.y += Math.sin(o.bob) * 0.02;
+      const pulse = 1 + 0.22 * Math.sin(o.bob * o.pulseSpeed);
+      o.mesh.scale.setScalar(o.baseScale * pulse);
+      o.mesh.material.opacity = 0.8 + 0.2 * (0.5 + 0.5*Math.sin(o.bob * o.pulseSpeed + Math.PI*0.5));
+      o.mesh.rotation.y += 0.7*dt;
+
+      if (!gameOver){
+        for (let j = bullets.length-1; j>=0; j--){
+          const b = bullets[j];
+          if (o.mesh.position.distanceTo(b.mesh.position) < (o.radius + b.radius)){
+            spawnFenixLabel(o.mesh.position);
+            spawnImpactBurst(o.mesh.position, 0xffaa55, 24);
+            spawnShieldRing(o.mesh.position, 0xffaa55);
+            transformToFenixShip();
+            scene.remove(o.mesh); fenixOrbs.splice(i,1);
+            scene.remove(b.mesh); bullets.splice(j,1);
+            break;
+          }
+        }
+      }
+    }
+
+    // Zaphire orbs update (pulse; open Store on shot)
+    for (let i = zaphireOrbs.length-1; i>=0; i--){
+      const o = zaphireOrbs[i];
+      o.bob += o.bobSpeed * dt;
+      o.mesh.position.y += Math.sin(o.bob) * 0.02;
+      const pulse = 1 + 0.22 * Math.sin(o.bob * o.pulseSpeed);
+      o.mesh.scale.setScalar(o.baseScale * pulse);
+      o.mesh.material.opacity = 0.8 + 0.2 * (0.5 + 0.5*Math.sin(o.bob * o.pulseSpeed + Math.PI*0.5));
+      o.mesh.rotation.y += 0.8*dt;
+
+      if (!gameOver){
+        for (let j = bullets.length-1; j>=0; j--){
+          const b = bullets[j];
+          if (o.mesh.position.distanceTo(b.mesh.position) < (o.radius + b.radius)){
+            spawnCenteredTextLabel('STORE', o.mesh.position, 0xffeeee, 2.2, 2.0);
+            spawnImpactBurst(o.mesh.position, 0xff5555, 22);
+            spawnShieldRing(o.mesh.position, 0xff5555);
+            showStoreOverlay();
+            scene.remove(o.mesh); zaphireOrbs.splice(i,1);
+            scene.remove(b.mesh); bullets.splice(j,1);
+            break;
+          }
+        }
+      }
+    }
+
     // Planet crash check
     if (!gameOver){
       for (const p of planets){
@@ -704,11 +981,14 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     }
     for (let i = duendeTextLabels.length-1; i>=0; i--){
       const lbl = duendeTextLabels[i];
-      lbl.life -= dt; if (lbl.life <= 0){ scene.remove(lbl.group); duendeTextLabels.splice(i,1); continue; }
+      lbl.life -= dt; if (lbl.life <= 0){
+        if (lbl.group.dispose) { /* mesh */ } else { /* group */ }
+        scene.remove(lbl.group); duendeTextLabels.splice(i,1); continue; }
       lbl.group.lookAt(camera.position);
       // Fade last 0.8s
       if (lbl.life < 0.8){
-        lbl.group.traverse(obj => { if (obj.material && obj.material.opacity !== undefined){ obj.material.opacity = Math.max(0, lbl.life / 0.8); } });
+        if (lbl.group.traverse){ lbl.group.traverse(obj => { if (obj.material && obj.material.opacity !== undefined){ obj.material.opacity = Math.max(0, lbl.life / 0.8); } }); }
+        else { const mat = lbl.group.material; if (mat && mat.opacity!==undefined) mat.opacity = Math.max(0, lbl.life / 0.8); }
       }
     }
 
