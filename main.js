@@ -29,71 +29,35 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   sun.position.set(1, 1.5, 0.8).multiplyScalar(1000);
   scene.add(sun);
 
+  // Projectile tuning (used for reach calculations)
+  const DEFAULT_BULLET_SPEED = 230;
+  const DEFAULT_BULLET_LIFE = 3.0; // seconds
+  const FENIX_BEAM_SPEED = 300;
+  const FENIX_BEAM_LIFE = (DEFAULT_BULLET_SPEED * DEFAULT_BULLET_LIFE * 1.12) / FENIX_BEAM_SPEED; // 12% longer reach vs default
+  const MIN_WORMHOLE_TELEPORT_DIST = 12000; // meters (12 km)
+
+  // Global caps to prevent overload
+  const CAPS = {
+    shield: 120,
+    pink: 60,
+    fenix: 40,
+    zaphire: 60,
+    wormhole: 60,
+    boost: 60,
+  };
+
+  // Early declaration so ring seeding can reference it
+  const boostOrbs = [];
+
   // HUD and overlays
   const hud = document.getElementById('hud') || (() => { const d = document.createElement('div'); d.id='hud'; d.style.position='absolute'; d.style.top='10px'; d.style.left='10px'; d.style.color='#0ff'; d.style.fontSize='1.1rem'; document.body.appendChild(d); return d; })();
   const help = document.getElementById('help') || (() => { const d = document.createElement('div'); d.id='help'; d.style.position='absolute'; d.style.bottom='12px'; d.style.left='50%'; d.style.transform='translateX(-50%)'; d.style.fontSize='0.95rem'; d.style.color='#ccc'; d.style.opacity='0.85'; d.style.background='rgba(0,0,0,0.35)'; d.style.padding='6px 10px'; d.style.borderRadius='6px'; d.textContent='W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H home • R restart'; document.body.appendChild(d); return d; })();
   const gameOverEl = document.getElementById('gameover') || (()=>{ const d=document.createElement('div'); d.id='gameover'; d.style.position='absolute'; d.style.top='45%'; d.style.left='50%'; d.style.transform='translate(-50%,-50%)'; d.style.fontSize='2rem'; d.style.color='#fff'; d.style.display='none'; d.style.textAlign='center'; d.style.textShadow='0 0 8px #000'; d.innerHTML='CRASHED<br/>Press R to Restart'; document.body.appendChild(d); return d; })();
 
-  // Font for 3D labels
-  let gameFont = null;
-  const fontLoader = new FontLoader();
-  fontLoader.load('./node_modules/three/examples/fonts/helvetiker_regular.typeface.json', f => { gameFont = f; }, undefined, e => console.error('Font load error', e));
-  const shieldTextLabels = []; // { mesh, life }
-  function spawnShieldText(position){
-    if (!gameFont) return; // if not ready, skip silently
-    const geo = new TextGeometry('SHIELD', {
-      font: gameFont, size: 2.0, depth: 0.6, curveSegments: 8,
-      bevelEnabled: true, bevelThickness: 0.08, bevelSize: 0.06, bevelSegments: 2,
-    });
-    geo.computeBoundingBox();
-    geo.center();
-    const mat = new THREE.MeshBasicMaterial({ color: 0x66ff99, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending, depthWrite: false });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.copy(position).add(new THREE.Vector3(0, 3, 0));
-    scene.add(mesh);
-    shieldTextLabels.push({ mesh, life: 3.0 });
-  }
-
-  // Duende SVG label for pink orb hits (renders as billboarded plane)
-  const duendeTextLabels = []; // { group, life }
-  function spawnDuendeText(position){
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 160" width="520" height="160" role="img" aria-labelledby="title desc">\n  <title id="title">Demos logo with wave-dual emblem</title>\n  <desc id="desc">A circular emblem split by a flowing S-like curve with asymmetric dots, followed by the word Demos.</desc>\n  <defs>\n    <clipPath id="emblem-clip">\n      <circle cx="80" cy="80" r="70"/>\n    </clipPath>\n  </defs>\n  <g transform="translate(80 80) rotate(-12) translate(-80 -80)">\n    <circle cx="80" cy="80" r="70" fill="#111111"/>\n    <g clip-path="url(#emblem-clip)">\n      <path fill="#ffffff" fill-rule="evenodd" d="\n        M -20 -20 H 180 V 180 H -20 Z\n        M -20 -20\n        L 28 -20\n        C 84 -18 120 40 133 78\n        C 146 114 94 142 12 160\n        L -20 160 Z"/>\n    </g>\n    <circle cx="108" cy="48" r="11" fill="#ffffff"/>\n    <circle cx="52"  cy="114" r="15" fill="#111111"/>\n    <circle cx="80" cy="80" r="70" fill="none" stroke="#111111" stroke-width="2"/>\n  </g>\n  <text x="170" y="86" fill="#222222" font-size="64" font-weight="700" dominant-baseline="middle">Demos</text>\n</svg>`;
-    const dataUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
-    const loader = new THREE.TextureLoader();
-    loader.load(dataUrl, texture => {
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-      const aspect = 520/160; // 3.25
-      const widthUnits = 9;   // visible but not huge
-      const heightUnits = widthUnits / aspect;
-      const mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false });
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(widthUnits, heightUnits), mat);
-      const group = new THREE.Group();
-      group.add(mesh);
-      group.position.copy(position).add(new THREE.Vector3(0, 3, 0));
-      scene.add(group);
-      duendeTextLabels.push({ group, life: 3.0 });
-    });
-  }
-
-  // Fenix SVG label (renders as billboard plane)
-  function spawnFenixLabel(position){
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 480" width="600" height="480" role="img" aria-labelledby="title desc">\n  <title id="title">Fenix emblem with centered wordmark</title>\n  <desc id="desc">A stylized phoenix with outstretched wings, central flame-tail, and the word Fenix centered below.</desc>\n  <defs>\n    <style>\n      :root { --ink: #FFFFFF; }\n      .ink { fill: var(--ink); }\n      text { fill: var(--ink); font-family: ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Ubuntu, Cantarell, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif; font-weight: 700; letter-spacing: 0.5px; }\n    </style>\n  </defs>\n  <g aria-label="Fenix emblem">\n    <path class="ink" d=" M 300 186 C 258 145, 214 112, 165 116 C 128 118, 120 149, 152 168 C 114 170, 104 198, 138 210 C 118 228, 158 238, 204 227 C 236 219, 270 201, 300 192 Z"/>\n    <g transform="translate(600,0) scale(-1,1)">\n      <path class="ink" d=" M 300 186 C 258 145, 214 112, 165 116 C 128 118, 120 149, 152 168 C 114 170, 104 198, 138 210 C 118 228, 158 238, 204 227 C 236 219, 270 201, 300 192 Z"/>\n    </g>\n    <path class="ink" d=" M 300 188 C 330 198, 352 222, 352 252 C 352 286, 327 311, 306 331 C 296 341, 293 356, 300 378 C 282 362, 276 346, 279 331 C 254 321, 246 297, 257 277 C 236 262, 241 234, 267 218 C 281 208, 290 196, 300 188 Z"/>\n    <path class="ink" d=" M 300 186 C 305 164, 318 147, 340 139 C 355 134, 371 141, 380 153 C 366 149, 352 151, 340 160 C 348 168, 360 175, 374 177 C 356 182, 340 181, 328 173 C 324 184, 314 191, 300 194 Z"/>\n    <path class="ink" d=" M 300 332 C 270 342, 248 364, 244 388 C 249 383, 262 374, 283 368 C 280 385, 287 401, 300 410 Z"/>\n    <g transform="translate(600,0) scale(-1,1)">\n      <path class="ink" d=" M 300 332 C 270 342, 248 364, 244 388 C 249 383, 262 374, 283 368 C 280 385, 287 401, 300 410 Z"/>\n    </g>\n    <path class="ink" d=" M 300 330 C 314 358, 312 386, 300 410 C 314 394, 326 371, 334 344 C 322 356, 312 348, 300 330 Z"/>\n  </g>\n  <text x="300" y="452" font-size="56" text-anchor="middle">Fenix</text>\n</svg>`;
-    const dataUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
-    const loader = new THREE.TextureLoader();
-    loader.load(dataUrl, texture => {
-      texture.colorSpace = THREE.SRGBColorSpace;
-      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-      const aspect = 600/480;
-      const widthUnits = 10; const heightUnits = widthUnits / aspect;
-      const mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false });
-      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(widthUnits, heightUnits), mat);
-      const group = new THREE.Group(); group.add(mesh);
-      group.position.copy(position).add(new THREE.Vector3(0, 4, 0));
-      scene.add(group);
-      duendeTextLabels.push({ group, life: 3.0 });
-    });
-  }
+  // Placeholder patch system to avoid reference errors
+  const patches = [];
+  function ensurePatches(){ /* no-op for now */ }
+  function maintainPatches(){ /* no-op for now */ }
 
   // Ship (factory functions)
   function buildDefaultShip(){
@@ -130,6 +94,10 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   // Camera follow
   const cameraOffsetLocal = new THREE.Vector3(0, 3.7, -10.8);
   let cameraShake = 0; // meters
+
+  // Boost state
+  let boostActive = false;
+  let boostTimer = 0; // seconds remaining
 
   // Planets
   const planets = [];
@@ -175,13 +143,31 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     scene.add(new THREE.Points(geo, mat));
   })();
 
-  // Asteroids and rings
-  const asteroids = []; // { mesh, radius, inRing?, inPatch?, vel?, rotAxis?, rotSpeed?, orbitRadius?, orbitAngle?, orbitSpeed?, nearMissCooldown? }
+  // Utility: glow sprite texture for wormholes
+  let glowTexture = null;
+  function getGlowTexture(){
+    if (glowTexture) return glowTexture;
+    const size = 128;
+    const cvs = document.createElement('canvas'); cvs.width = cvs.height = size;
+    const ctx = cvs.getContext('2d');
+    const g = ctx.createRadialGradient(size/2, size/2, 10, size/2, size/2, size/2);
+    g.addColorStop(0, 'rgba(255,255,255,1)');
+    g.addColorStop(0.5, 'rgba(255,255,255,0.35)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(0,0,size,size);
+    glowTexture = new THREE.CanvasTexture(cvs);
+    glowTexture.colorSpace = THREE.SRGBColorSpace;
+    glowTexture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return glowTexture;
+  }
+
+  // Asteroids
+  const asteroids = [];      // { mesh, radius, inRing?, inPatch?, vel?, rotAxis?, rotSpeed?, orbitRadius?, orbitAngle?, orbitSpeed?, nearMissCooldown? }
   const asteroidGeometry = new THREE.DodecahedronGeometry(1, 0);
   function randomAxis() { const v = new THREE.Vector3(Math.random()*2-1,Math.random()*2-1,Math.random()*2-1); v.normalize(); return v; }
   function randomVel(scale){ return new THREE.Vector3(Math.random()*2-1,Math.random()*2-1,Math.random()*2-1).multiplyScalar(scale); }
 
-  function spawnAsteroidAround(center, minR, maxR, tag) {
+  function spawnAsteroidAround(center, minR, maxR) {
     const r = minR + Math.random()*(maxR-minR);
     const theta = Math.random()*Math.PI*2;
     const phi = Math.acos(2*Math.random()-1);
@@ -196,9 +182,9 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     m.scale.setScalar(scale);
     m.position.copy(pos);
     scene.add(m);
-    asteroids.push({ mesh: m, radius: scale*0.95, vel: randomVel(1.5), rotAxis: randomAxis(), rotSpeed: (Math.random()*2-1)*0.8, nearMissCooldown: 0, inPatch: !!tag });
+    asteroids.push({ mesh: m, radius: scale*0.95, vel: randomVel(1.5), rotAxis: randomAxis(), rotSpeed: (Math.random()*2-1)*0.8, nearMissCooldown: 0 });
   }
-  function spawnAsteroidClose(center, minR, maxR, tag) {
+  function spawnAsteroidClose(center, minR, maxR) {
     const r = minR + Math.random()*(maxR-minR);
     const theta = Math.random()*Math.PI*2;
     const phi = Math.acos(2*Math.random()-1);
@@ -213,13 +199,12 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     m.scale.setScalar(scale);
     m.position.copy(pos);
     scene.add(m);
-    asteroids.push({ mesh: m, radius: scale*0.95, vel: randomVel(2.2), rotAxis: randomAxis(), rotSpeed: (Math.random()*2-1)*1.0, nearMissCooldown: 0, inPatch: !!tag });
+    asteroids.push({ mesh: m, radius: scale*0.95, vel: randomVel(2.2), rotAxis: randomAxis(), rotSpeed: (Math.random()*2-1)*1.0, nearMissCooldown: 0 });
   }
   function seedAsteroids(countFar, countNear, around) {
     for (let i=0;i<countFar;i++) spawnAsteroidAround(around, 1500, 9000);
     for (let i=0;i<countNear;i++) spawnAsteroidClose(around, 300, 1200);
   }
-  // Busy from frame one (heavier)
   seedAsteroids(7000, 1400, shipPosition);
 
   function createRings(planet, innerR, outerR, count){
@@ -239,45 +224,107 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       asteroids.push({ mesh:m, radius: scale*0.95, inRing:true, orbitRadius:r, orbitAngle:a, orbitSpeed:(Math.random()*0.5+0.2)*0.06, rotAxis: randomAxis(), rotSpeed: (Math.random()*2-1)*0.8, nearMissCooldown: 0 });
     }
   }
-  createRings(targetPlanet, 3600, 5200, 6500);
+  // Double the number of ring asteroids for richer belts
+  createRings(targetPlanet, 3600, 5200, 13000);
 
-  // Dense patches (oversaturated areas)
-  const patches = []; // { center, radius, spawnBudget }
-  function addPatch(center){
-    const radius = 500 + Math.random()*900; // 0.5–1.4 km
-    const spawnBudget = 400 + Math.floor(Math.random()*800); // how many extras to inject over time
-    patches.push({ center: center.clone(), radius, spawnBudget });
+  // Font for 3D labels
+  let gameFont = null;
+  const fontLoader = new FontLoader();
+  fontLoader.load('./node_modules/three/examples/fonts/helvetiker_regular.typeface.json', f => { gameFont = f; }, undefined, e => console.error('Font load error', e));
+  const shieldTextLabels = []; // { mesh, life }
+  function spawnShieldText(position){
+    if (!gameFont) return;
+    const geo = new TextGeometry('SHIELD', {
+      font: gameFont, size: 2.0, depth: 0.6, curveSegments: 8,
+      bevelEnabled: true, bevelThickness: 0.08, bevelSize: 0.06, bevelSegments: 2,
+    });
+    geo.computeBoundingBox(); geo.center();
+    const mat = new THREE.MeshBasicMaterial({ color: 0x66ff99, transparent: true, opacity: 1.0, blending: THREE.AdditiveBlending, depthWrite: false });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(position).add(new THREE.Vector3(0, 3, 0));
+    scene.add(mesh);
+    shieldTextLabels.push({ mesh, life: 3.0 });
   }
-  function ensurePatches(){
-    const distToPlanet = shipPosition.distanceTo(targetPlanet.position);
-    const t = THREE.MathUtils.clamp(1 - (distToPlanet / 22000), 0, 1);
-    const desired = Math.floor(8 + t*12); // more near planet
-    while (patches.length < desired){
-      const nearPlanet = Math.random() < (0.5 + 0.4*t);
-      const base = nearPlanet ? targetPlanet.position : shipPosition;
-      const offsetR = 2000 + Math.random()*8000;
-      const ang1 = Math.random()*Math.PI*2; const ang2 = Math.acos(2*Math.random()-1);
-      const center = new THREE.Vector3(
-        base.x + offsetR*Math.sin(ang2)*Math.cos(ang1),
-        base.y + offsetR*Math.cos(ang2),
-        base.z + offsetR*Math.sin(ang2)*Math.sin(ang1)
-      );
-      addPatch(center);
-    }
+
+  // Duende SVG label for pink orb hits (renders as billboarded plane)
+  const duendeTextLabels = []; // { group, life }
+  function spawnDuendeText(position){
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 160" width="520" height="160" role="img" aria-labelledby="title desc">\n  <title id="title">Demos logo with wave-dual emblem</title>\n  <desc id="desc">A circular emblem split by a flowing S-like curve with asymmetric dots, followed by the word Demos.</desc>\n  <defs>\n    <clipPath id="emblem-clip">\n      <circle cx="80" cy="80" r="70"/>\n    </clipPath>\n  </defs>\n  <g transform="translate(80 80) rotate(-12) translate(-80 -80)">\n    <circle cx="80" cy="80" r="70" fill="#111111"/>\n    <g clip-path="url(#emblem-clip)">\n      <path fill="#ffffff" fill-rule="evenodd" d="\n        M -20 -20 H 180 V 180 H -20 Z\n        M -20 -20\n        L 28 -20\n        C 84 -18 120 40 133 78\n        C 146 114 94 142 12 160\n        L -20 160 Z\"/>\n    </g>\n    <circle cx="108" cy="48" r="11" fill="#ffffff"/>\n    <circle cx="52"  cy="114" r="15" fill="#111111"/>\n    <circle cx="80" cy="80" r="70" fill="none" stroke="#111111" stroke-width="2"/>\n  </g>\n  <text x="170" y="86" fill="#222222" font-size="64" font-weight="700" dominant-baseline="middle">Demos</text>\n</svg>`;
+    const dataUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+    const loader = new THREE.TextureLoader();
+    loader.load(dataUrl, texture => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      const aspect = 520/160; // 3.25
+      const widthUnits = 9;   // visible but not huge
+      const heightUnits = widthUnits / aspect;
+      const mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(widthUnits, heightUnits), mat);
+      const group = new THREE.Group();
+      group.add(mesh);
+      group.position.copy(position).add(new THREE.Vector3(0, 3, 0));
+      scene.add(group);
+      duendeTextLabels.push({ group, life: 3.0 });
+    });
   }
-  function maintainPatches(dt){
-    // Spawn gradually to avoid spikes
-    for (let i=patches.length-1; i>=0; i--){
-      const p = patches[i];
-      const perSec = 120; // spawn rate per patch
-      const quota = Math.min(p.spawnBudget, Math.ceil(perSec * dt));
-      for (let k=0;k<quota;k++){
-        if (Math.random() < 0.5) spawnAsteroidClose(p.center, 50, p.radius, true); else spawnAsteroidAround(p.center, 50, p.radius, true);
-      }
-      p.spawnBudget -= quota;
-      // Retire distant, exhausted patches
-      if (p.spawnBudget <= 0 && p.center.distanceTo(shipPosition) > 25000){ patches.splice(i,1); }
-    }
+
+  // Fenix SVG label (renders as billboard plane)
+  function spawnFenixLabel(position){
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 480" width="600" height="480" role="img" aria-labelledby="title desc">\n  <title id="title">Fenix emblem with centered wordmark</title>\n  <desc id="desc">A stylized phoenix with outstretched wings, central flame-tail, and the word Fenix centered below.</desc>\n  <defs>\n    <style>\n      :root { --ink: #FFFFFF; }\n      .ink { fill: var(--ink); }\n      text { fill: var(--ink); font-family: ui-sans-serif, -apple-system, 'Segoe UI', Roboto, Ubuntu, Cantarell, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif; font-weight: 700; letter-spacing: 0.5px; }\n    </style>\n  </defs>\n  <g aria-label="Fenix emblem">\n    <path class="ink" d=" M 300 186 C 258 145, 214 112, 165 116 C 128 118, 120 149, 152 168 C 114 170, 104 198, 138 210 C 118 228, 158 238, 204 227 C 236 219, 270 201, 300 192 Z\"/>\n    <g transform="translate(600,0) scale(-1,1)">\n      <path class="ink" d=" M 300 186 C 258 145, 214 112, 165 116 C 128 118, 120 149, 152 168 C 114 170, 104 198, 138 210 C 118 228, 158 238, 204 227 C 236 219, 270 201, 300 192 Z\"/>\n    </g>\n    <path class="ink" d=" M 300 188 C 330 198, 352 222, 352 252 C 352 286, 327 311, 306 331 C 296 341, 293 356, 300 378 C 282 362, 276 346, 279 331 C 254 321, 246 297, 257 277 C 236 262, 241 234, 267 218 C 281 208, 290 196, 300 188 Z\"/>\n    <path class="ink" d=" M 300 186 C 305 164, 318 147, 340 139 C 355 134, 371 141, 380 153 C 366 149, 352 151, 340 160 C 348 168, 360 175, 374 177 C 356 182, 340 181, 328 173 C 324 184, 314 191, 300 194 Z\"/>\n    <path class="ink" d=" M 300 332 C 270 342, 248 364, 244 388 C 249 383, 262 374, 283 368 C 280 385, 287 401, 300 410 Z\"/>\n    <g transform="translate(600,0) scale(-1,1)">\n      <path class="ink" d=" M 300 332 C 270 342, 248 364, 244 388 C 249 383, 262 374, 283 368 C 280 385, 287 401, 300 410 Z\"/>\n    </g>\n    <path class="ink" d=" M 300 330 C 314 358, 312 386, 300 410 C 314 394, 326 371, 334 344 C 322 356, 312 348, 300 330 Z\"/>\n  </g>\n  <text x="300" y="452" font-size="56" text-anchor="middle">Fenix</text>\n</svg>`;
+    const dataUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+    const loader = new THREE.TextureLoader();
+    loader.load(dataUrl, texture => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      const aspect = 600/480;
+      const widthUnits = 10; const heightUnits = widthUnits / aspect;
+      const mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(widthUnits, heightUnits), mat);
+      const group = new THREE.Group(); group.add(mesh);
+      group.position.copy(position).add(new THREE.Vector3(0, 4, 0));
+      scene.add(group);
+      duendeTextLabels.push({ group, life: 3.0 });
+    });
+  }
+
+  // Replace ship with a Fenix model
+  function buildFenixShip(){
+    const group = new THREE.Group();
+    const blackMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0x000000, metalness: 0.2, roughness: 0.6 });
+    const edgeMat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 1 });
+
+    const bodyGeo = new THREE.ConeGeometry(1.2, 4.0, 24); bodyGeo.rotateX(Math.PI/2);
+    const bodyMesh = new THREE.Mesh(bodyGeo, blackMat);
+    const bodyEdges = new THREE.LineSegments(new THREE.EdgesGeometry(bodyGeo, 10), edgeMat);
+    group.add(bodyMesh, bodyEdges);
+
+    const wingGeo = new THREE.BoxGeometry(0.2, 0.05, 3.2);
+    const leftWing = new THREE.Mesh(wingGeo, blackMat);
+    const rightWing = new THREE.Mesh(wingGeo, blackMat);
+    const leftEdges = new THREE.LineSegments(new THREE.EdgesGeometry(wingGeo), edgeMat);
+    const rightEdges = new THREE.LineSegments(new THREE.EdgesGeometry(wingGeo), edgeMat);
+    leftWing.position.set(-1.3, -0.2, -0.2); leftWing.rotation.y = Math.PI/10; leftEdges.position.copy(leftWing.position); leftEdges.rotation.copy(leftWing.rotation);
+    rightWing.position.set(1.3, -0.2, -0.2); rightWing.rotation.y = -Math.PI/10; rightEdges.position.copy(rightWing.position); rightEdges.rotation.copy(rightWing.rotation);
+    group.add(leftWing, rightWing, leftEdges, rightEdges);
+
+    const tailGeo = new THREE.CylinderGeometry(0.15, 0.35, 0.8, 12);
+    const tail = new THREE.Mesh(tailGeo, blackMat); tail.position.set(0, -0.4, -1.6); tail.rotation.x = Math.PI/2;
+    const tailEdges = new THREE.LineSegments(new THREE.EdgesGeometry(tailGeo), edgeMat); tailEdges.position.copy(tail.position); tailEdges.rotation.copy(tail.rotation);
+    group.add(tail, tailEdges);
+
+    return group;
+  }
+  function transformToFenixShip(){
+    if (fenixActive) return;
+    const newShip = buildFenixShip();
+    newShip.position.copy(ship.position);
+    newShip.quaternion.copy(ship.quaternion);
+    scene.add(newShip);
+    scene.remove(ship);
+    ship = newShip;
+    fenixActive = true;
+    health = 100; // restore to full when transforming
+    cameraShake += 0.5;
   }
 
   // Shield Orbs (now 5% of asteroids; pulsating green; unique explosions)
@@ -302,12 +349,12 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     shieldOrbs.push({ mesh:m, radius: 1.2, bob: Math.random()*Math.PI*2, bobSpeed: 1 + Math.random()*1.5, baseScale, pulseSpeed: 3 + Math.random()*3 });
   }
   function seedShieldOrbsFromAsteroidCount(){
-    const desired = Math.max(12, Math.floor(asteroids.length * 0.05)); // 5%
+    const desired = Math.min(CAPS.shield, Math.max(12, Math.floor(asteroids.length * 0.05)));
     while (shieldOrbs.length < desired) spawnShieldOrbAround(shipPosition);
   }
   seedShieldOrbsFromAsteroidCount();
 
-  // New: Neon Pink Orbs (fun easter egg orbs)
+  // New: Neon Pink Orbs
   const pinkOrbs = []; // { mesh, radius, bob, bobSpeed, baseScale, pulseSpeed }
   const pinkOrbGeometry = shieldOrbGeometry; // same base shape
   function spawnPinkOrbAround(center, minR=800, maxR=9000){
@@ -325,13 +372,13 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     pinkOrbs.push({ mesh:m, radius: 1.2, bob: Math.random()*Math.PI*2, bobSpeed: 1.2 + Math.random()*1.8, baseScale, pulseSpeed: 3.5 + Math.random()*3.5 });
   }
   function seedPinkOrbsFromAsteroidCount(){
-    const desired = Math.max(6, Math.floor(asteroids.length * 0.01)); // 1%
+    const desired = Math.min(CAPS.pink, Math.max(6, Math.floor(asteroids.length * 0.01)));
     while (pinkOrbs.length < desired) spawnPinkOrbAround(shipPosition);
   }
   seedPinkOrbsFromAsteroidCount();
 
-  // New: Fenix Orbs (pulsating orange, 10x frequency of pink)
-  const fenixOrbs = []; // { mesh, radius, bob, bobSpeed, baseScale, pulseSpeed }
+  // New: Fenix Orbs
+  const fenixOrbs = [];
   const fenixOrbGeometry = shieldOrbGeometry;
   function spawnFenixOrbAround(center, minR=800, maxR=9000){
     const r = minR + Math.random()*(maxR-minR);
@@ -342,19 +389,18 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     ).add(center);
     const m = new THREE.Mesh(fenixOrbGeometry, makeAdditiveMaterial(0xff8800, 0.95));
     m.position.copy(pos);
-    const baseScale = 1.3;
-    m.scale.setScalar(baseScale);
+    const baseScale = 1.3; m.scale.setScalar(baseScale);
     scene.add(m);
     fenixOrbs.push({ mesh:m, radius: 1.25, bob: Math.random()*Math.PI*2, bobSpeed: 1.0 + Math.random()*1.6, baseScale, pulseSpeed: 2.8 + Math.random()*3.0 });
   }
   function seedFenixOrbsFromAsteroidCount(){
-    const desired = Math.max(20, Math.floor(asteroids.length * 0.10)); // 10%
+    const desired = Math.min(CAPS.fenix, Math.max(20, Math.floor(asteroids.length * 0.10)));
     while (fenixOrbs.length < desired) spawnFenixOrbAround(shipPosition);
   }
   seedFenixOrbsFromAsteroidCount();
 
-  // New: Zaphire Orbs (pulsating red, 2x Fenix abundance)
-  const zaphireOrbs = []; // { mesh, radius, bob, bobSpeed, baseScale, pulseSpeed }
+  // New: Zaphire Orbs
+  const zaphireOrbs = [];
   const zaphireOrbGeometry = shieldOrbGeometry;
   function spawnZaphireOrbAround(center, minR=800, maxR=9000){
     const r = minR + Math.random()*(maxR-minR);
@@ -363,29 +409,122 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     const pos = new THREE.Vector3(
       r * Math.sin(phi)*Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi)*Math.sin(theta)
     ).add(center);
-    const m = new THREE.Mesh(zaphireOrbGeometry, makeAdditiveMaterial(0xff3333, 0.95));
+    const m = new THREE.Mesh(zaphireOrbGeometry, makeAdditiveMaterial(0xff3333, 1.0));
     m.position.copy(pos);
-    const baseScale = 1.25; m.scale.setScalar(baseScale);
-    scene.add(m);
-    zaphireOrbs.push({ mesh:m, radius:1.2, bob: Math.random()*Math.PI*2, bobSpeed: 1.1 + Math.random()*1.7, baseScale, pulseSpeed: 3.0 + Math.random()*3.0 });
+    const baseScale = 2.5; // doubled size
+    m.scale.setScalar(baseScale);
+    // Add bright red glow sprite for extra visibility/brightness
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0xff4444, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }));
+    glow.position.copy(pos); glow.scale.set(14,14,1);
+    scene.add(m, glow);
+    zaphireOrbs.push({ mesh:m, glow, radius:2.4, bob: Math.random()*Math.PI*2, bobSpeed: 1.1 + Math.random()*1.7, baseScale, pulseSpeed: 3.0 + Math.random()*3.0 });
   }
   function seedZaphireOrbsFromAsteroidCount(){
-    const desired = Math.max(40, Math.floor(asteroids.length * 0.20)); // 20% (twice Fenix 10%)
+    const desired = Math.min(CAPS.zaphire, Math.max(40, Math.floor(asteroids.length * 0.20)));
     while (zaphireOrbs.length < desired) spawnZaphireOrbAround(shipPosition);
   }
   seedZaphireOrbsFromAsteroidCount();
 
+  // New: Wormhole Orbs (visible bright glow)
+  const wormholeOrbs = []; // { mesh, halo, glow, cubeCam, coreMat, radius, bob, bobSpeed, pulseSpeed, lastCubeUpdate }
+  function createWormholeAtPosition(pos){
+    const rt = new THREE.WebGLCubeRenderTarget(256);
+    const cubeCam = new THREE.CubeCamera(0.1, 1000, rt);
+    cubeCam.position.copy(pos);
+    scene.add(cubeCam);
+    const coreMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 1.0, roughness: 0.02, envMap: rt.texture, envMapIntensity: 0.0 });
+    const core = new THREE.Mesh(new THREE.SphereGeometry(1.6, 24, 24), coreMat);
+    core.position.copy(pos);
+    const halo = new THREE.Mesh(new THREE.RingGeometry(2.2, 4.0, 64), new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.5, blending:THREE.AdditiveBlending, side:THREE.DoubleSide, depthWrite:false }));
+    halo.position.copy(pos); halo.lookAt(camera.position);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0xffffff, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false }));
+    glow.position.copy(pos); glow.scale.set(12,12,1);
+    scene.add(core, halo, glow);
+    wormholeOrbs.push({ mesh:core, halo, glow, cubeCam, coreMat, radius: 1.8, bob: Math.random()*Math.PI*2, bobSpeed: 1.2 + Math.random()*1.8, pulseSpeed: 3.0 + Math.random()*3.0, lastCubeUpdate: 0 });
+  }
+  function spawnWormholeOrbAround(center, minR=1200, maxR=12000){
+    const r = minR + Math.random()*(maxR-minR);
+    const theta = Math.random()*Math.PI*2;
+    const phi = Math.acos(2*Math.random()-1);
+    const pos = new THREE.Vector3(
+      r * Math.sin(phi)*Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi)*Math.sin(theta)
+    ).add(center);
+    createWormholeAtPosition(pos);
+  }
+  function seedWormholesFromAsteroidCount(){
+    const desired = Math.min(CAPS.wormhole, Math.max(40, Math.floor(asteroids.length * 0.20)));
+    while (wormholeOrbs.length < desired) spawnWormholeOrbAround(shipPosition);
+  }
+  seedWormholesFromAsteroidCount();
+
+  // Heavily bias wormholes/boost into planet rings on init
+  function seedWormholesOnRings(planet, innerR, outerR, count){
+    for (let i=0;i<count;i++){
+      const a = Math.random()*Math.PI*2;
+      const r = innerR + Math.random()*(outerR-innerR);
+      const yJitter = (Math.random()-0.5)*40; // tighter vertical spread
+      const x = planet.position.x + Math.cos(a)*r;
+      const z = planet.position.z + Math.sin(a)*r;
+      createWormholeAtPosition(new THREE.Vector3(x, planet.position.y + yJitter, z));
+    }
+  }
+  function seedBoostOnRings(planet, innerR, outerR, count){
+    for (let i=0;i<count;i++){
+      const a = Math.random()*Math.PI*2;
+      const r = innerR + Math.random()*(outerR-innerR);
+      const yJitter = (Math.random()-0.5)*40;
+      const x = planet.position.x + Math.cos(a)*r;
+      const z = planet.position.z + Math.sin(a)*r;
+      // use existing boost orb creation but at fixed position
+      const pos = new THREE.Vector3(x, planet.position.y + yJitter, z);
+      const core = new THREE.Mesh(new THREE.SphereGeometry(1.1, 18, 18), makeAdditiveMaterial(0x33ff77, 0.95)); core.position.copy(pos);
+      const ringG = new THREE.Mesh(new THREE.RingGeometry(1.6, 2.6, 48), new THREE.MeshBasicMaterial({ color:0x33ff77, transparent:true, opacity:0.6, blending:THREE.AdditiveBlending, side:THREE.DoubleSide, depthWrite:false })); ringG.position.copy(pos); ringG.lookAt(camera.position);
+      const ringP = new THREE.Mesh(new THREE.RingGeometry(2.8, 3.8, 64), new THREE.MeshBasicMaterial({ color:0xaa55ff, transparent:true, opacity:0.45, blending:THREE.AdditiveBlending, side:THREE.DoubleSide, depthWrite:false })); ringP.position.copy(pos); ringP.lookAt(camera.position);
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0x88ccff, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false })); glow.position.copy(pos); glow.scale.set(10,10,1);
+      scene.add(core, ringG, ringP, glow);
+      boostOrbs.push({ core, ringG, ringP, glow, radius:1.2, bob: Math.random()*Math.PI*2, bobSpeed: 1.1 + Math.random()*1.7, pulseSpeed: 3.0 + Math.random()*3.0 });
+    }
+  }
+  // Initial ring saturation
+  seedWormholesOnRings(targetPlanet, 3600, 5200, 100);
+  seedBoostOnRings(targetPlanet, 3600, 5200, 140);
+
+  // New: Boost Orbs (green + purple)
+  function spawnBoostOrbAround(center, minR=800, maxR=9000){
+    const r = minR + Math.random()*(maxR-minR);
+    const theta = Math.random()*Math.PI*2;
+    const phi = Math.acos(2*Math.random()-1);
+    const pos = new THREE.Vector3(
+      r * Math.sin(phi)*Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi)*Math.sin(theta)
+    ).add(center);
+    const core = new THREE.Mesh(new THREE.SphereGeometry(1.1, 18, 18), makeAdditiveMaterial(0x33ff77, 0.95));
+    core.position.copy(pos);
+    const ringG = new THREE.Mesh(new THREE.RingGeometry(1.6, 2.6, 48), new THREE.MeshBasicMaterial({ color:0x33ff77, transparent:true, opacity:0.6, blending:THREE.AdditiveBlending, side:THREE.DoubleSide, depthWrite:false }));
+    ringG.position.copy(pos); ringG.lookAt(camera.position);
+    const ringP = new THREE.Mesh(new THREE.RingGeometry(2.8, 3.8, 64), new THREE.MeshBasicMaterial({ color:0xaa55ff, transparent:true, opacity:0.45, blending:THREE.AdditiveBlending, side:THREE.DoubleSide, depthWrite:false }));
+    ringP.position.copy(pos); ringP.lookAt(camera.position);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0x88ccff, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false }));
+    glow.position.copy(pos); glow.scale.set(10,10,1);
+    scene.add(core, ringG, ringP, glow);
+    boostOrbs.push({ core, ringG, ringP, glow, radius:1.2, bob: Math.random()*Math.PI*2, bobSpeed: 1.1 + Math.random()*1.7, pulseSpeed: 3.0 + Math.random()*3.0 });
+  }
+  function seedBoostOrbsFromAsteroidCount(){
+    const desired = Math.min(CAPS.boost, Math.max(30, Math.floor(asteroids.length * 0.15))); // ~15%
+    while (boostOrbs.length < desired) spawnBoostOrbAround(shipPosition);
+  }
+  seedBoostOrbsFromAsteroidCount();
+
   // Particles
   const bullets = []; // { mesh, velocity, life, radius }
   const bulletGeometry = new THREE.SphereGeometry(0.25, 8, 8);
-  const beamGeometry = new THREE.CylinderGeometry(0.08, 0.08, 12, 8, 1, true); // for Fenix beams (length 12)
+  const beamGeometry = new THREE.CylinderGeometry(0.06, 0.06, 12, 8, 1, true); // thinner Fenix beam
 
   const exhaustParticles = []; // { mesh, vel, life }
   const impactParticles = [];  // { mesh, vel, life }
   const exhaustGeometry = new THREE.SphereGeometry(0.18, 6, 6);
   const impactGeometry = new THREE.SphereGeometry(0.22, 6, 6);
 
-  // Special ring bursts for shield explosions
+  // Ring burst effect (used by several orbs/events)
   const ringBursts = []; // { mesh, life, growth, fade }
   const ringGeo = new THREE.RingGeometry(0.6, 0.9, 48);
   function spawnShieldRing(position, color=0x66ff99){
@@ -401,13 +540,20 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     if (count === 0) return;
     const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, roll, 'YXZ'));
     const back = new THREE.Vector3(0,0,1).applyQuaternion(q).normalize().multiplyScalar(-1);
-    const origin = new THREE.Vector3().copy(shipPosition).addScaledVector(back, 1.4).add(new THREE.Vector3(0,0.25,0).applyQuaternion(q));
+    // Move the exhaust origin further back as speed rises to avoid a visible gap
+    const backOffset = 1.6 + Math.min(8, speedUnitsPerSec * 0.04);
+    const origin = new THREE.Vector3().copy(shipPosition)
+      .addScaledVector(back, backOffset)
+      .add(new THREE.Vector3(0,0.25,0).applyQuaternion(q));
     for (let i=0;i<count;i++){
       const p = new THREE.Mesh(exhaustGeometry, makeAdditiveMaterial(0x66ccff, 0.7));
       p.position.copy(origin).add(randomVel(0.4));
       p.scale.setScalar(0.6 + Math.random()*0.5);
       scene.add(p);
-      const vel = back.clone().multiplyScalar(6 + speedUnitsPerSec*0.35).add(randomVel(0.8));
+      // Give particles some ship velocity so the trail stays connected and smooth at high speeds
+      const vel = new THREE.Vector3().copy(velocity)
+        .add(back.clone().multiplyScalar(14 + speedUnitsPerSec*0.55))
+        .add(randomVel(0.8));
       exhaustParticles.push({ mesh:p, vel, life: 0.5 + Math.random()*0.25 });
     }
   }
@@ -424,18 +570,17 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     cameraShake += 0.6;
   }
 
-  // Distinct explosion for shield orbs
-  function spawnShieldExplosion(position, variant){
-    // variant: 'pickup' | 'shot'
+  // Shield-specific explosion (green variants for pickup/shot)
+  function spawnShieldExplosion(position, variant='pickup'){
     const mainColor = variant === 'shot' ? 0x99ffcc : 0x66ff99;
-    const count = variant === 'shot' ? 16 : 32;
+    const count = variant === 'shot' ? 16 : 28;
     for (let i=0;i<count;i++){
-      const p = new THREE.Mesh(impactGeometry, makeAdditiveMaterial(mainColor, 1.0));
+      const p = new THREE.Mesh(impactGeometry, makeAdditiveMaterial(mainColor, 0.95));
       p.position.copy(position);
-      p.scale.setScalar(variant === 'shot' ? (0.5 + Math.random()*0.5) : (0.8 + Math.random()*1.0));
+      p.scale.setScalar(0.6 + Math.random()*1.0);
       scene.add(p);
       const vel = randomVel(variant === 'shot' ? 16 : 12);
-      impactParticles.push({ mesh:p, vel, life: variant === 'shot' ? (0.45 + Math.random()*0.15) : (0.7 + Math.random()*0.2) });
+      impactParticles.push({ mesh:p, vel, life: variant === 'shot' ? (0.45 + Math.random()*0.2) : (0.7 + Math.random()*0.25) });
     }
     spawnShieldRing(position, mainColor);
     cameraShake += (variant === 'shot' ? 0.25 : 0.15);
@@ -447,26 +592,20 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     const tipWorld = new THREE.Vector3().copy(shipPosition).add(dir.clone().multiplyScalar(1.8));
 
     if (fenixActive) {
-      // Red beam
       const mat = new THREE.MeshBasicMaterial({ color: 0xff2222, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
       const beam = new THREE.Mesh(beamGeometry, mat);
-      // Cylinder is along +Y by default; rotate to face forward
       const alignQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
       beam.quaternion.copy(alignQuat);
-      // Center the beam a bit ahead of the tip
-      const halfLen = 6; // half of 12
+      const halfLen = 6; // visual length only; reach is controlled by life * speed
       beam.position.copy(tipWorld).add(dir.clone().multiplyScalar(halfLen));
       scene.add(beam);
-      const speed = 300;
-      bullets.push({ mesh: beam, velocity: dir.multiplyScalar(speed), life: 0.25, radius: 0.6 });
+      bullets.push({ mesh: beam, velocity: dir.multiplyScalar(FENIX_BEAM_SPEED), life: FENIX_BEAM_LIFE, radius: 0.45 });
     } else {
-      // Default blue bolt
       const mat = new THREE.MeshStandardMaterial({ color: 0x66ffff, emissive: 0x66ffff, emissiveIntensity: 3 });
       const bullet = new THREE.Mesh(bulletGeometry, mat);
       bullet.position.copy(tipWorld);
       scene.add(bullet);
-      const speed = 230;
-      bullets.push({ mesh: bullet, velocity: dir.multiplyScalar(speed), life: 3.0, radius: 0.25 });
+      bullets.push({ mesh: bullet, velocity: dir.multiplyScalar(DEFAULT_BULLET_SPEED), life: DEFAULT_BULLET_LIFE, radius: 0.25 });
     }
     cameraShake += 0.05;
   }
@@ -507,7 +646,6 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   document.addEventListener('keyup', onKeyUp, { capture:true });
   window.addEventListener('keydown', onKeyDown, { capture:true });
   window.addEventListener('keyup', onKeyUp, { capture:true });
-  // Update pointer handlers so overlay buttons remain clickable
   window.addEventListener('pointerdown', e => { if (e.target === canvas) { canvas.focus(); mouseDown = true; } }, { capture:true });
   window.addEventListener('pointerup', () => { mouseDown = false; });
   window.addEventListener('pointermove', e => {
@@ -525,6 +663,9 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     const sh = Math.max(0, Math.round(shield));
     hud.textContent = `Speed ${speedTxt} | HP ${hp}% | Shield ${sh}% | Points ${score} | Dist ${distFromOrigin} | Target ${distToTarget}`;
   }
+
+  function showGameOver(){ gameOverEl.style.display = 'block'; }
+  function hideGameOver(){ gameOverEl.style.display = 'none'; }
 
   // Simple helper to spawn centered 3D text with color
   function spawnCenteredTextLabel(text, position, color=0xffffff, size=2.0, life=2.5){
@@ -592,54 +733,9 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   function showStoreOverlay(){ ensureStoreOverlay(); storeOverlay.style.display = 'block'; }
   function hideStoreOverlay(){ if (storeOverlay) storeOverlay.style.display = 'none'; }
 
-  function showGameOver(){ gameOverEl.style.display = 'block'; }
-  function hideGameOver(){ gameOverEl.style.display = 'none'; }
-
-  // Replace ship with a Fenix model
-  function buildFenixShip(){
-    const group = new THREE.Group();
-    // Core black material; rely on edge lines for visibility
-    const blackMat = new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0x000000, metalness: 0.2, roughness: 0.6 });
-    const edgeMat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 1 });
-
-    const bodyGeo = new THREE.ConeGeometry(1.2, 4.0, 24); bodyGeo.rotateX(Math.PI/2);
-    const bodyMesh = new THREE.Mesh(bodyGeo, blackMat);
-    const bodyEdges = new THREE.LineSegments(new THREE.EdgesGeometry(bodyGeo, 10), edgeMat);
-    group.add(bodyMesh, bodyEdges);
-
-    const wingGeo = new THREE.BoxGeometry(0.2, 0.05, 3.2);
-    const leftWing = new THREE.Mesh(wingGeo, blackMat);
-    const rightWing = new THREE.Mesh(wingGeo, blackMat);
-    const leftEdges = new THREE.LineSegments(new THREE.EdgesGeometry(wingGeo), edgeMat);
-    const rightEdges = new THREE.LineSegments(new THREE.EdgesGeometry(wingGeo), edgeMat);
-    leftWing.position.set(-1.3, -0.2, -0.2); leftWing.rotation.y = Math.PI/10; leftEdges.position.copy(leftWing.position); leftEdges.rotation.copy(leftWing.rotation);
-    rightWing.position.set(1.3, -0.2, -0.2); rightWing.rotation.y = -Math.PI/10; rightEdges.position.copy(rightWing.position); rightEdges.rotation.copy(rightWing.rotation);
-    group.add(leftWing, rightWing, leftEdges, rightEdges);
-
-    const tailGeo = new THREE.CylinderGeometry(0.15, 0.35, 0.8, 12);
-    const tail = new THREE.Mesh(tailGeo, blackMat); tail.position.set(0, -0.4, -1.6); tail.rotation.x = Math.PI/2;
-    const tailEdges = new THREE.LineSegments(new THREE.EdgesGeometry(tailGeo), edgeMat); tailEdges.position.copy(tail.position); tailEdges.rotation.copy(tail.rotation);
-    group.add(tail, tailEdges);
-
-    return group;
-  }
-  function transformToFenixShip(){
-    if (fenixActive) return;
-    const newShip = buildFenixShip();
-    newShip.position.copy(ship.position);
-    newShip.quaternion.copy(ship.quaternion);
-    scene.add(newShip);
-    scene.remove(ship);
-    ship = newShip;
-    fenixActive = true;
-    health = 100; // restore to full when transforming
-    cameraShake += 0.5;
-  }
-
   // Population/field maintenance
   function keepFieldPopulated() {
     const maxDist = 16000;
-    // Cull far non-ring asteroids
     for (let i = asteroids.length - 1; i >= 0; i--) {
       const a = asteroids[i];
       if (!a.inRing && a.mesh.position.distanceTo(shipPosition) > maxDist) {
@@ -648,14 +744,12 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       }
     }
 
-    // Ambient density scales with planet proximity (much higher)
     const distToPlanet = shipPosition.distanceTo(targetPlanet.position);
     const t = THREE.MathUtils.clamp(1 - (distToPlanet / 22000), 0, 1);
-    const desiredAmbient = Math.floor(7000 + t * 7000); // 7k far → 14k near (ambient, not counting rings)
+    const desiredAmbient = Math.floor(7000 + t * 7000);
     let ambientCount = 0; for (const a of asteroids) if (!a.inRing) ambientCount++;
     while (ambientCount < desiredAmbient) { spawnAsteroidAround(shipPosition, 800, 11000); ambientCount++; }
 
-    // If too many, prune some far ones gradually
     let excess = ambientCount - Math.floor(desiredAmbient * 1.2);
     if (excess > 0){
       for (let i = asteroids.length - 1; i >= 0 && excess > 0; i--){
@@ -669,48 +763,57 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       }
     }
 
-    // Shield orb ratio: 5% of total asteroids (reduced by 50%)
-    const desiredOrbs = Math.max(12, Math.floor(asteroids.length * 0.05));
+    const desiredOrbs = Math.min(CAPS.shield, Math.max(12, Math.floor(asteroids.length * 0.05)));
     for (let i = shieldOrbs.length - 1; i >= 0; i--){
       const o = shieldOrbs[i];
       if (o.mesh.position.distanceTo(shipPosition) > maxDist){ scene.remove(o.mesh); shieldOrbs.splice(i,1); }
     }
     while (shieldOrbs.length < desiredOrbs) spawnShieldOrbAround(shipPosition);
 
-    // Pink orb ratio: ~1% of asteroids
-    const desiredPink = Math.max(6, Math.floor(asteroids.length * 0.01));
+    const desiredPink = Math.min(CAPS.pink, Math.max(6, Math.floor(asteroids.length * 0.01)));
     for (let i = pinkOrbs.length - 1; i >= 0; i--){
       const o = pinkOrbs[i];
       if (o.mesh.position.distanceTo(shipPosition) > maxDist){ scene.remove(o.mesh); pinkOrbs.splice(i,1); }
     }
     while (pinkOrbs.length < desiredPink) spawnPinkOrbAround(shipPosition);
 
-    // Fenix orb ratio: ~10% of asteroids (10x pink)
-    const desiredFenix = Math.max(20, Math.floor(asteroids.length * 0.10));
+    const desiredFenix = Math.min(CAPS.fenix, Math.max(20, Math.floor(asteroids.length * 0.10)));
     for (let i = fenixOrbs.length - 1; i >= 0; i--){
       const o = fenixOrbs[i];
       if (o.mesh.position.distanceTo(shipPosition) > maxDist){ scene.remove(o.mesh); fenixOrbs.splice(i,1); }
     }
     while (fenixOrbs.length < desiredFenix) spawnFenixOrbAround(shipPosition);
 
-    // Zaphire orb ratio: ~20% of asteroids
-    const desiredZaphire = Math.max(40, Math.floor(asteroids.length * 0.20));
+    const desiredZaphire = Math.min(CAPS.zaphire, Math.max(40, Math.floor(asteroids.length * 0.20)));
     for (let i = zaphireOrbs.length - 1; i >= 0; i--){
       const o = zaphireOrbs[i];
       if (o.mesh.position.distanceTo(shipPosition) > maxDist){ scene.remove(o.mesh); zaphireOrbs.splice(i,1); }
     }
     while (zaphireOrbs.length < desiredZaphire) spawnZaphireOrbAround(shipPosition);
 
-    // Ensure enough dense patches exist
+    const desiredWormholes = Math.min(CAPS.wormhole, Math.max(40, Math.floor(asteroids.length * 0.20)));
+    for (let i = wormholeOrbs.length - 1; i >= 0; i--){
+      const w = wormholeOrbs[i];
+      if (w.mesh.position.distanceTo(shipPosition) > maxDist){ scene.remove(w.mesh); scene.remove(w.halo); if (w.glow) scene.remove(w.glow); if (w.cubeCam) scene.remove(w.cubeCam); wormholeOrbs.splice(i,1); }
+    }
+    while (wormholeOrbs.length < desiredWormholes) spawnWormholeOrbAround(shipPosition);
+
+    const desiredBoost = Math.min(CAPS.boost, Math.max(30, Math.floor(asteroids.length * 0.15)));
+    for (let i = boostOrbs.length - 1; i >= 0; i--){
+      const o = boostOrbs[i];
+      if (o.core.position.distanceTo(shipPosition) > maxDist){ scene.remove(o.core); scene.remove(o.ringG); scene.remove(o.ringP); if (o.glow) scene.remove(o.glow); boostOrbs.splice(i,1); }
+    }
+    while (boostOrbs.length < desiredBoost) spawnBoostOrbAround(shipPosition);
+
     ensurePatches();
   }
 
   function applyCrashDamage(type, hitPosition){
     if (damageCooldown > 0 || gameOver) return;
-    const dmgFactor = (type === 'asteroid' && fenixActive) ? 0.5 : 1.0; // Fenix halves asteroid damage to health and shields
+    const dmgFactor = (type === 'asteroid' && fenixActive) ? 0.5 : 1.0;
     if (type === 'asteroid'){
-      const healthDamage = (45 + Math.random()*30) * dmgFactor;   // ~avg 60% * factor
-      const shieldDamage = (22 + Math.random()*22) * dmgFactor;   // ~avg 33% * factor
+      const healthDamage = (45 + Math.random()*30) * dmgFactor;
+      const shieldDamage = (22 + Math.random()*22) * dmgFactor;
       if (shield > 0){ shield = Math.max(0, shield - shieldDamage); }
       health = Math.max(0, health - healthDamage);
       spawnImpactBurst(hitPosition || shipPosition);
@@ -731,27 +834,29 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     for (const o of pinkOrbs) scene.remove(o.mesh); pinkOrbs.length = 0;
     for (const o of fenixOrbs) scene.remove(o.mesh); fenixOrbs.length = 0;
     for (const o of zaphireOrbs) scene.remove(o.mesh); zaphireOrbs.length = 0;
+    for (const w of wormholeOrbs) { scene.remove(w.mesh); scene.remove(w.halo); if (w.glow) scene.remove(w.glow); if (w.cubeCam) scene.remove(w.cubeCam); } wormholeOrbs.length = 0;
+    for (const o of boostOrbs) { scene.remove(o.core); scene.remove(o.ringG); scene.remove(o.ringP); if (o.glow) scene.remove(o.glow); } boostOrbs.length = 0;
     patches.length = 0;
 
-    // Replace ship with default model on respawn
-    scene.remove(ship);
-    ship = buildDefaultShip();
-    scene.add(ship);
+    scene.remove(ship); ship = buildDefaultShip(); scene.add(ship);
 
     health = 100; shield = 0; score = 0; gameOver = false; hideGameOver();
-    fenixActive = false;
+    fenixActive = false; boostActive = false; boostTimer = 0;
     yaw = 0; pitch = 0; roll = 0; speedUnitsPerSec = 20; targetSpeedUnitsPerSec = 20;
     shipPosition.set(0,0,0); velocity.set(0,0,0);
 
     seedAsteroids(7000, 1400, shipPosition);
-    createRings(targetPlanet, 3600, 5200, 6500);
+    createRings(targetPlanet, 3600, 5200, 13000);
     seedShieldOrbsFromAsteroidCount();
     seedPinkOrbsFromAsteroidCount();
     seedFenixOrbsFromAsteroidCount();
     seedZaphireOrbsFromAsteroidCount();
+    seedWormholesFromAsteroidCount();
+    seedWormholesOnRings(targetPlanet, 3600, 5200, 100);
+    seedBoostOrbsFromAsteroidCount();
+    seedBoostOnRings(targetPlanet, 3600, 5200, 140);
   }
 
-  // Loop
   let fireCooldown = 0;
   const clock = new THREE.Clock();
 
@@ -760,11 +865,23 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
 
     if (!gameOver){
       if (damageCooldown > 0) damageCooldown -= dt;
-      const effectiveMaxSpeed = fenixActive ? 80 : baseMaxSpeed;
+      if (boostActive){
+        boostTimer -= dt;
+        if (boostTimer <= 0){ boostActive = false; }
+      }
+
+      let effectiveMaxSpeed = fenixActive ? 80 : baseMaxSpeed;
+      if (boostActive) effectiveMaxSpeed *= 3.08; // boost speed reduced by ~30%
+      // If boost just ended, ensure our target is clamped to non-boost top speed
+      if (!boostActive) targetSpeedUnitsPerSec = Math.min(targetSpeedUnitsPerSec, effectiveMaxSpeed);
+
       if (input.speedUp) targetSpeedUnitsPerSec = Math.min(effectiveMaxSpeed, targetSpeedUnitsPerSec + 22*dt);
       if (input.speedDown) targetSpeedUnitsPerSec = Math.max(minSpeed, targetSpeedUnitsPerSec - 22*dt);
-      speedUnitsPerSec += (targetSpeedUnitsPerSec - speedUnitsPerSec) * Math.min(1, 6*dt);
-      const fovTarget = baseFov + THREE.MathUtils.clamp((speedUnitsPerSec-14)*0.7, 0, 18);
+      if (boostActive) targetSpeedUnitsPerSec = effectiveMaxSpeed;
+
+      speedUnitsPerSec += (targetSpeedUnitsPerSec - speedUnitsPerSec) * Math.min(1, boostActive ? 10*dt : 6*dt);
+      const fovKick = boostActive ? 10 : 0;
+      const fovTarget = baseFov + THREE.MathUtils.clamp((speedUnitsPerSec-14)*0.7 + fovKick, 0, 28);
       camera.fov += (fovTarget - camera.fov) * Math.min(1, 6*dt);
       camera.updateProjectionMatrix();
 
@@ -803,7 +920,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       b.mesh.position.addScaledVector(b.velocity, dt);
     }
 
-    // Update asteroids (drift/orbit, rotation, near‑miss, ship+bullet collisions)
+    // Update asteroids
     outer: for (let i = asteroids.length-1; i>=0; i--){
       const a = asteroids[i];
       if (a.inRing){
@@ -838,43 +955,36 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       }
     }
 
-    // Shield orbs update (pulse, pickup, bullet pop)
+    // Shield orbs
     for (let i = shieldOrbs.length-1; i>=0; i--){
       const o = shieldOrbs[i];
       o.bob += o.bobSpeed * dt;
-      // Vertical bob
       o.mesh.position.y += Math.sin(o.bob) * 0.02;
-      // Pulsating scale and opacity
       const pulse = 1 + 0.2 * Math.sin(o.bob * o.pulseSpeed);
       o.mesh.scale.setScalar(o.baseScale * pulse);
       o.mesh.material.opacity = 0.7 + 0.3 * (0.5 + 0.5*Math.sin(o.bob * o.pulseSpeed + Math.PI*0.5));
       o.mesh.rotation.y += 0.8*dt;
 
       if (!gameOver){
-        // Pickup
         if (o.mesh.position.distanceTo(shipPosition) < (o.radius + pickupHitRadius)){
           shield = Math.min(100, shield + 25);
           spawnShieldExplosion(o.mesh.position, 'pickup');
-          scene.remove(o.mesh); shieldOrbs.splice(i,1);
-          continue;
+          scene.remove(o.mesh); shieldOrbs.splice(i,1); continue;
         }
-        // Shot by bullet
         for (let j = bullets.length-1; j>=0; j--){
           const b = bullets[j];
           if (o.mesh.position.distanceTo(b.mesh.position) < (o.radius + b.radius)){
-            // Grant shield on shot as well
             shield = Math.min(100, shield + 25);
             spawnShieldText(o.mesh.position);
             spawnShieldExplosion(o.mesh.position, 'shot');
             scene.remove(o.mesh); shieldOrbs.splice(i,1);
-            scene.remove(b.mesh); bullets.splice(j,1);
-            break;
+            scene.remove(b.mesh); bullets.splice(j,1); break;
           }
         }
       }
     }
 
-    // Pink orbs update (pulse, pickup/shot trigger duende text)
+    // Pink orbs
     for (let i = pinkOrbs.length-1; i>=0; i--){
       const o = pinkOrbs[i];
       o.bob += o.bobSpeed * dt;
@@ -886,11 +996,9 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
 
       if (!gameOver){
         const trigger = () => { spawnDuendeText(o.mesh.position); spawnImpactBurst(o.mesh.position, 0xff33cc, 20); spawnShieldRing(o.mesh.position, 0xff33cc); };
-        // Pickup
         if (o.mesh.position.distanceTo(shipPosition) < (o.radius + pickupHitRadius)){
           trigger(); scene.remove(o.mesh); pinkOrbs.splice(i,1); continue;
         }
-        // Shot by bullet
         for (let j = bullets.length-1; j>=0; j--){
           const b = bullets[j];
           if (o.mesh.position.distanceTo(b.mesh.position) < (o.radius + b.radius)){
@@ -900,7 +1008,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       }
     }
 
-    // Fenix orbs update (pulse; transform on bullet hit)
+    // Fenix orbs
     for (let i = fenixOrbs.length-1; i>=0; i--){
       const o = fenixOrbs[i];
       o.bob += o.bobSpeed * dt;
@@ -919,36 +1027,145 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
             spawnShieldRing(o.mesh.position, 0xffaa55);
             transformToFenixShip();
             scene.remove(o.mesh); fenixOrbs.splice(i,1);
-            scene.remove(b.mesh); bullets.splice(j,1);
-            break;
+            scene.remove(b.mesh); bullets.splice(j,1); break;
           }
         }
       }
     }
 
-    // Zaphire orbs update (pulse; open Store on shot)
+    // Zaphire orbs (Store)
     for (let i = zaphireOrbs.length-1; i>=0; i--){
       const o = zaphireOrbs[i];
       o.bob += o.bobSpeed * dt;
-      o.mesh.position.y += Math.sin(o.bob) * 0.02;
-      const pulse = 1 + 0.22 * Math.sin(o.bob * o.pulseSpeed);
+      o.mesh.position.y += Math.sin(o.bob) * 0.03;
+      const pulse = 1 + 0.28 * Math.sin(o.bob * o.pulseSpeed);
       o.mesh.scale.setScalar(o.baseScale * pulse);
-      o.mesh.material.opacity = 0.8 + 0.2 * (0.5 + 0.5*Math.sin(o.bob * o.pulseSpeed + Math.PI*0.5));
+      if (o.glow){
+        o.glow.scale.setScalar(14 + 6*(0.5 + 0.5*Math.sin(o.bob * o.pulseSpeed)));
+        o.glow.material.opacity = 0.85 + 0.1*(0.5 + 0.5*Math.sin(o.bob * o.pulseSpeed + Math.PI/6));
+      }
+      o.mesh.material.opacity = 0.9 + 0.1 * (0.5 + 0.5*Math.sin(o.bob * o.pulseSpeed + Math.PI*0.5));
       o.mesh.rotation.y += 0.8*dt;
 
       if (!gameOver){
         for (let j = bullets.length-1; j>=0; j--){
           const b = bullets[j];
           if (o.mesh.position.distanceTo(b.mesh.position) < (o.radius + b.radius)){
-            spawnCenteredTextLabel('STORE', o.mesh.position, 0xffeeee, 2.2, 2.0);
-            spawnImpactBurst(o.mesh.position, 0xff5555, 22);
-            spawnShieldRing(o.mesh.position, 0xff5555);
+            spawnCenteredTextLabel('STORE', o.mesh.position, 0xffeeee, 2.8, 2.2);
+            spawnImpactBurst(o.mesh.position, 0xff6666, 26);
+            spawnShieldRing(o.mesh.position, 0xff6666);
             showStoreOverlay();
+            if (o.glow) scene.remove(o.glow);
             scene.remove(o.mesh); zaphireOrbs.splice(i,1);
-            scene.remove(b.mesh); bullets.splice(j,1);
-            break;
+            scene.remove(b.mesh); bullets.splice(j,1); break;
           }
         }
+      }
+    }
+
+    // Boost orbs (grant super speed 3–6s)
+    for (let i = boostOrbs.length-1; i>=0; i--){
+      const o = boostOrbs[i];
+      o.bob += o.bobSpeed * dt;
+      const puls = 1 + 0.22 * Math.sin(o.bob * o.pulseSpeed);
+      o.core.scale.setScalar(puls);
+      o.ringG.lookAt(camera.position);
+      o.ringP.lookAt(camera.position);
+      o.ringG.material.opacity = 0.55 + 0.35 * (0.5 + 0.5*Math.sin(o.bob * o.pulseSpeed));
+      o.ringP.material.opacity = 0.4 + 0.3 * (0.5 + 0.5*Math.sin(o.bob * o.pulseSpeed + Math.PI/3));
+      if (o.glow){ o.glow.scale.setScalar(9 + 3*(0.5 + 0.5*Math.sin(o.bob*o.pulseSpeed))); o.glow.material.color.setHex(0x66ddff); o.glow.material.opacity = 0.6 + 0.25*(0.5 + 0.5*Math.sin(o.bob*o.pulseSpeed + Math.PI/5)); }
+
+      if (!gameOver){
+        const effR = o.radius * o.core.scale.x + 5.0; // extra generous radius for reliable activation
+        const triggerBoost = () => {
+          boostActive = true; boostTimer = 3 + Math.random()*3;
+          spawnCenteredTextLabel('Boost', o.core.position, 0x99ff66, 2.2, 3.0);
+          spawnShieldRing(o.core.position, 0x99ff66);
+          spawnImpactBurst(o.core.position, 0xaa55ff, 18);
+          cameraShake += 0.3;
+          scene.remove(o.core); scene.remove(o.ringG); scene.remove(o.ringP); if (o.glow) scene.remove(o.glow); boostOrbs.splice(i,1);
+        };
+        // Pickup
+        if (o.core.position.distanceTo(shipPosition) < (effR + pickupHitRadius)){
+          triggerBoost(); continue;
+        }
+        // Shot
+        for (let j = bullets.length-1; j>=0; j--){
+          const b = bullets[j];
+          if (o.core.position.distanceTo(b.mesh.position) < (effR + b.radius)){
+            triggerBoost(); scene.remove(b.mesh); bullets.splice(j,1); break;
+          }
+        }
+      }
+    }
+
+    // Wormhole orbs (teleport)
+    for (let i = wormholeOrbs.length-1; i>=0; i--){
+      const w = wormholeOrbs[i];
+      w.bob += w.bobSpeed * dt;
+      const s = 1 + 0.25 * Math.sin(w.bob * w.pulseSpeed);
+      w.mesh.scale.setScalar(s);
+      w.halo.lookAt(camera.position);
+      w.halo.material.opacity = 0.45 + 0.35 * (0.5 + 0.5*Math.sin(w.bob * w.pulseSpeed));
+      if (w.glow){ w.glow.scale.setScalar(10 + 4 * (0.5 + 0.5*Math.sin(w.bob * w.pulseSpeed))); w.glow.material.opacity = 0.65 + 0.25 * (0.5 + 0.5*Math.sin(w.bob * w.pulseSpeed + Math.PI/4)); }
+      // Mirror reflection only when close
+      const dist = w.mesh.position.distanceTo(shipPosition);
+      const intensity = THREE.MathUtils.clamp(1 - (dist-60)/180, 0, 1); // ramps within ~60..240m
+      w.coreMat.envMapIntensity = intensity;
+      if (intensity > 0.02){
+        const now = performance.now() * 0.001;
+        if (now - w.lastCubeUpdate > 0.25){
+          const prevVis = w.mesh.visible; w.mesh.visible = false; // avoid self-capture
+          w.cubeCam.position.copy(w.mesh.position);
+          w.cubeCam.update(renderer, scene);
+          w.mesh.visible = prevVis;
+          w.lastCubeUpdate = now;
+        }
+      }
+
+      if (!gameOver){
+        for (let j = bullets.length-1; j>=0; j--){
+          const b = bullets[j];
+          if (w.mesh.position.distanceTo(b.mesh.position) < (w.radius + b.radius)){
+            // Choose a destination at least 12 km away from the source
+            const srcPos = w.mesh.position;
+            const farCandidates = wormholeOrbs.filter(o => o !== w && o.mesh.position.distanceTo(srcPos) >= MIN_WORMHOLE_TELEPORT_DIST);
+            let destPos;
+            if (farCandidates.length > 0){
+              const picked = farCandidates[Math.floor(Math.random()*farCandidates.length)];
+              destPos = picked.mesh.position.clone();
+            } else {
+              // Fallback: random point at least MIN distance away from the shot orb
+              const rnd = new THREE.Vector3(Math.random()*2-1, Math.random()*2-1, Math.random()*2-1).normalize();
+              const dist = MIN_WORMHOLE_TELEPORT_DIST + Math.random()*8000; // 12–20 km
+              destPos = srcPos.clone().add(rnd.multiplyScalar(dist));
+            }
+            // Small local offset around destination to avoid landing exactly on it
+            const local = new THREE.Vector3(Math.random()*2-1, Math.random()*2-1, Math.random()*2-1).normalize().multiplyScalar(150 + Math.random()*250);
+            shipPosition.copy(destPos).add(local);
+            ship.position.copy(shipPosition);
+            cameraShake += 1.0; spawnShieldRing(destPos, 0xffffff);
+            scene.remove(w.mesh); scene.remove(w.halo); if (w.glow) scene.remove(w.glow); if (w.cubeCam) scene.remove(w.cubeCam); wormholeOrbs.splice(i,1);
+            scene.remove(b.mesh); bullets.splice(j,1); break;
+          }
+        }
+      }
+    }
+
+    // 3D text labels update
+    for (let i = shieldTextLabels.length-1; i>=0; i--){
+      const lbl = shieldTextLabels[i];
+      lbl.life -= dt; if (lbl.life <= 0){ scene.remove(lbl.mesh); shieldTextLabels.splice(i,1); continue; }
+      lbl.mesh.lookAt(camera.position);
+      if (lbl.life < 0.8){ const mat = lbl.mesh.material; mat.opacity = Math.max(0, lbl.life / 0.8); }
+    }
+    for (let i = duendeTextLabels.length-1; i>=0; i--){
+      const lbl = duendeTextLabels[i];
+      lbl.life -= dt; if (lbl.life <= 0){ scene.remove(lbl.group); duendeTextLabels.splice(i,1); continue; }
+      if (lbl.group.lookAt) lbl.group.lookAt(camera.position);
+      if (lbl.life < 0.8){
+        if (lbl.group.traverse){ lbl.group.traverse(obj => { if (obj.material && obj.material.opacity !== undefined){ obj.material.opacity = Math.max(0, lbl.life / 0.8); } }); }
+        else { const mat = lbl.group.material; if (mat && mat.opacity!==undefined) mat.opacity = Math.max(0, lbl.life / 0.8); }
       }
     }
 
@@ -960,45 +1177,13 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       }
     }
 
-    // Update ring bursts
-    for (let i = ringBursts.length-1; i>=0; i--){
-      const r = ringBursts[i];
-      r.life -= dt; if (r.life <= 0){ scene.remove(r.mesh); ringBursts.splice(i,1); continue; }
-      r.mesh.scale.x += r.growth * dt; r.mesh.scale.y += r.growth * dt;
-      r.mesh.material.opacity = Math.max(0, r.mesh.material.opacity - r.fade * dt);
-      // billboard-ish
-      r.mesh.lookAt(camera.position);
-    }
-
-    // 3D text labels update (face camera, fade, remove)
-    for (let i = shieldTextLabels.length-1; i>=0; i--){
-      const lbl = shieldTextLabels[i];
-      lbl.life -= dt; if (lbl.life <= 0){ scene.remove(lbl.mesh); shieldTextLabels.splice(i,1); continue; }
-      lbl.mesh.lookAt(camera.position);
-      if (lbl.life < 0.8){
-        const mat = lbl.mesh.material; mat.opacity = Math.max(0, lbl.life / 0.8);
-      }
-    }
-    for (let i = duendeTextLabels.length-1; i>=0; i--){
-      const lbl = duendeTextLabels[i];
-      lbl.life -= dt; if (lbl.life <= 0){
-        if (lbl.group.dispose) { /* mesh */ } else { /* group */ }
-        scene.remove(lbl.group); duendeTextLabels.splice(i,1); continue; }
-      lbl.group.lookAt(camera.position);
-      // Fade last 0.8s
-      if (lbl.life < 0.8){
-        if (lbl.group.traverse){ lbl.group.traverse(obj => { if (obj.material && obj.material.opacity !== undefined){ obj.material.opacity = Math.max(0, lbl.life / 0.8); } }); }
-        else { const mat = lbl.group.material; if (mat && mat.opacity!==undefined) mat.opacity = Math.max(0, lbl.life / 0.8); }
-      }
-    }
-
     // Particles update
     for (let i = exhaustParticles.length-1; i>=0; i--){
       const p = exhaustParticles[i];
       p.life -= dt; if (p.life <= 0){ scene.remove(p.mesh); exhaustParticles.splice(i,1); continue; }
       p.mesh.position.addScaledVector(p.vel, dt);
-      const s = Math.max(0.1, p.mesh.scale.x * (1 - 2.2*dt));
-      p.mesh.scale.setScalar(s);
+      const s2 = Math.max(0.1, p.mesh.scale.x * (1 - 2.2*dt));
+      p.mesh.scale.setScalar(s2);
       const mat = p.mesh.material; mat.opacity = Math.max(0, mat.opacity - 1.6*dt);
     }
     for (let i = impactParticles.length-1; i>=0; i--){
@@ -1006,16 +1191,24 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       p.life -= dt; if (p.life <= 0){ scene.remove(p.mesh); impactParticles.splice(i,1); continue; }
       p.mesh.position.addScaledVector(p.vel, dt);
       p.vel.multiplyScalar(1 - 2.0*dt);
-      const s = Math.max(0.05, p.mesh.scale.x * (1 - 1.8*dt));
-      p.mesh.scale.setScalar(s);
-      const mat = p.mesh.material; mat.opacity = Math.max(0, mat.opacity - 2.8*dt);
+      const s3 = Math.max(0.05, p.mesh.scale.x * (1 - 1.8*dt));
+      p.mesh.scale.setScalar(s3);
+      const mat2 = p.mesh.material; mat2.opacity = Math.max(0, mat2.opacity - 2.8*dt);
+    }
+
+    // Animate ring bursts
+    for (let i = ringBursts.length-1; i>=0; i--){
+      const r = ringBursts[i];
+      r.life -= dt; if (r.life <= 0){ scene.remove(r.mesh); ringBursts.splice(i,1); continue; }
+      r.mesh.scale.x += r.growth * dt; r.mesh.scale.y += r.growth * dt;
+      r.mesh.material.opacity = Math.max(0, r.mesh.material.opacity - r.fade * dt);
+      r.mesh.lookAt(camera.position);
     }
 
     // Exhaust
     if (!gameOver) spawnExhaust(50 + speedUnitsPerSec*4, dt);
 
-    // World maintenance
-    maintainPatches(dt);
+    maintainPatches();
     keepFieldPopulated();
     updateHud();
 
