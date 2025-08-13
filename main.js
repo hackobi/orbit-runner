@@ -40,15 +40,19 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   const CAPS = {
     shield: 160,
     pink: 120,
-    fenix: 80,
-    zaphire: 80,
-    wormhole: 80,
-    boost: 80,
+    fenix: 120,
+    zaphire: 120,
+    wormhole: 120,
+    boost: 120,
+    miner: 300,   // green: x2 asteroid points
+    hunter: 300,  // blue: x2 kill points
   };
   const ONLY_RING_ORBS = true; // place all orbs in the belt only
 
   // Early declaration so ring seeding can reference it
   const boostOrbs = [];
+  const minerOrbs = [];   // green multiplier (asteroid x2)
+  const hunterOrbs = [];  // blue multiplier (kill x2)
   // Early declaration so animate() can reference bots safely
   const bots = [];
 
@@ -147,6 +151,28 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     const mat = new THREE.PointsMaterial({ color: 0x99ccff, size: 1.1, sizeAttenuation: true, transparent: true, opacity: 0.9 });
     scene.add(new THREE.Points(geo, mat));
   })();
+
+  // Belt helpers and scoring
+  const RING_INNER = 3600;
+  const RING_OUTER = 5200;
+  function isWithinBeltXZ(pos){
+    const dx = pos.x - targetPlanet.position.x;
+    const dz = pos.z - targetPlanet.position.z;
+    const r2 = dx*dx + dz*dz;
+    return (r2 >= RING_INNER*RING_INNER) && (r2 <= RING_OUTER*RING_OUTER);
+  }
+  function getAsteroidScore(base, pos){
+    let mult = 1;
+    if (asteroidMultTimer > 0) mult *= 2;
+    if (isWithinBeltXZ(pos)) mult *= 2;
+    return Math.round(base * mult);
+  }
+  function getKillScore(base, pos){
+    let mult = 1;
+    if (killMultTimer > 0) mult *= 2;
+    if (isWithinBeltXZ(pos)) mult *= 2;
+    return Math.round(base * mult);
+  }
 
   // Math utility: squared-distance radius check to avoid sqrt per frame
   function isWithinRadiusSquared(posA, posB, combinedRadius){
@@ -531,6 +557,11 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     for (let i=0;i<desiredZaph;i++)   spawnZaphireOrbOnRing(planet, innerR, outerR);
     seedWormholesOnRings(planet, innerR, outerR, Math.max(desiredWorm, Math.floor(ring*0.05)));
     seedBoostOnRings(planet, innerR, outerR, Math.max(desiredBoost, Math.floor(ring*0.06)));
+    // Add multiplier orbs in the belt
+    const desiredMiner  = Math.min(CAPS.miner,  Math.max(50, Math.floor(ring * 0.15)));   // 5x
+    const desiredHunter = Math.min(CAPS.hunter, Math.max(50, Math.floor(ring * 0.15)));   // 5x
+    for (let i=0;i<desiredMiner;i++) spawnMinerOrbOnRing(planet, innerR, outerR);
+    for (let i=0;i<desiredHunter;i++) spawnHunterOrbOnRing(planet, innerR, outerR);
   }
   function seedZaphireOrbsFromAsteroidCount(){
     const desired = Math.min(CAPS.zaphire, Math.max(40, Math.floor(asteroids.length * 0.20)));
@@ -601,6 +632,9 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   // Initial ring saturation
   seedWormholesOnRings(targetPlanet, 3600, 5200, 100);
   seedBoostOnRings(targetPlanet, 3600, 5200, 140);
+  // Seed extra multiplier orbs immediately for visibility
+  for (let i=0;i<80;i++) spawnMinerOrbOnRing(targetPlanet, 3600, 5200);
+  for (let i=0;i<80;i++) spawnHunterOrbOnRing(targetPlanet, 3600, 5200);
 
   // New: Boost Orbs (green + purple)
   function spawnBoostOrbAround(center, minR=800, maxR=9000){
@@ -620,6 +654,26 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     glow.position.copy(pos); glow.scale.set(10,10,1);
     scene.add(core, ringG, ringP, glow);
     boostOrbs.push({ core, ringG, ringP, glow, radius:1.2, bob: Math.random()*Math.PI*2, bobSpeed: 1.1 + Math.random()*1.7, pulseSpeed: 3.0 + Math.random()*3.0 });
+  }
+
+  // New: Miner (green) and Hunter (blue) multiplier orbs
+  function spawnMinerOrbOnRing(planet, innerR=3600, outerR=5200){
+    const a = Math.random()*Math.PI*2; const r = innerR + Math.random()*(outerR-innerR); const yJ=(Math.random()-0.5)*40;
+    const pos = new THREE.Vector3(planet.position.x+Math.cos(a)*r, planet.position.y+yJ, planet.position.z+Math.sin(a)*r);
+    const core = new THREE.Mesh(new THREE.SphereGeometry(1.2, 18, 18), makeAdditiveMaterial(0x33ff66, 0.98)); core.position.copy(pos);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.8, 2.8, 48), new THREE.MeshBasicMaterial({ color:0x66ff99, transparent:true, opacity:0.6, blending:THREE.AdditiveBlending, side:THREE.DoubleSide, depthWrite:false })); ring.position.copy(pos);
+    ring.lookAt(camera.position);
+    scene.add(core, ring);
+    minerOrbs.push({ core, ring, radius:1.3, bob: Math.random()*Math.PI*2, bobSpeed: 1.1 + Math.random()*1.7, pulseSpeed: 3 + Math.random()*3 });
+  }
+  function spawnHunterOrbOnRing(planet, innerR=3600, outerR=5200){
+    const a = Math.random()*Math.PI*2; const r = innerR + Math.random()*(outerR-innerR); const yJ=(Math.random()-0.5)*40;
+    const pos = new THREE.Vector3(planet.position.x+Math.cos(a)*r, planet.position.y+yJ, planet.position.z+Math.sin(a)*r);
+    const core = new THREE.Mesh(new THREE.SphereGeometry(1.2, 18, 18), makeAdditiveMaterial(0x3399ff, 0.98)); core.position.copy(pos);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(1.8, 2.8, 48), new THREE.MeshBasicMaterial({ color:0x66aaff, transparent:true, opacity:0.6, blending:THREE.AdditiveBlending, side:THREE.DoubleSide, depthWrite:false })); ring.position.copy(pos);
+    ring.lookAt(camera.position);
+    scene.add(core, ring);
+    hunterOrbs.push({ core, ring, radius:1.3, bob: Math.random()*Math.PI*2, bobSpeed: 1.1 + Math.random()*1.7, pulseSpeed: 3 + Math.random()*3 });
   }
   function seedBoostOrbsFromAsteroidCount(){
     const desired = Math.min(CAPS.boost, Math.max(30, Math.floor(asteroids.length * 0.15))); // ~15%
@@ -724,10 +778,10 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   }
 
   // Inputs
-  const input = { yawLeft:false, yawRight:false, pitchUp:false, pitchDown:false, speedUp:false, speedDown:false, fire:false };
+  const input = { yawLeft:false, yawRight:false, pitchUp:false, pitchDown:false, speedUp:false, speedDown:false, fire:false, toggleLb:false };
   function onKeyDown(e){
     const c = e.code;
-    const handled = ['ArrowLeft','ArrowRight','KeyA','KeyD','ArrowUp','ArrowDown','KeyW','KeyS','Space','KeyI','KeyK','KeyH','KeyR','KeyT'].includes(c);
+    const handled = ['ArrowLeft','ArrowRight','KeyA','KeyD','ArrowUp','ArrowDown','KeyW','KeyS','Space','KeyI','KeyK','KeyH','KeyR','KeyT','KeyL'].includes(c);
     if (handled) { e.preventDefault(); e.stopImmediatePropagation(); }
     // Standard yaw: Left/A => yaw left, Right/D => yaw right
     if (c==='ArrowLeft'||c==='KeyA') input.yawLeft = true;
@@ -755,11 +809,12 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
         spawnCenteredTextLabel('DEV OFF', shipPosition, 0xff8888, 2.0, 1.2);
       }
     }
+    if (c==='KeyL') { input.toggleLb = true; renderLb(); ensureLbOverlay().style.display = (ensureLbOverlay().style.display==='none'?'block':'none'); }
     if (c==='KeyR' && gameOver) resetGame();
   }
   function onKeyUp(e){
     const c = e.code;
-    const handled = ['ArrowLeft','ArrowRight','KeyA','KeyD','ArrowUp','ArrowDown','KeyW','KeyS','Space','KeyI','KeyK','KeyH','KeyR','KeyT'].includes(c);
+    const handled = ['ArrowLeft','ArrowRight','KeyA','KeyD','ArrowUp','ArrowDown','KeyW','KeyS','Space','KeyI','KeyK','KeyH','KeyR','KeyT','KeyL'].includes(c);
     if (handled) { e.preventDefault(); e.stopImmediatePropagation(); }
     if (c==='ArrowLeft'||c==='KeyA') input.yawLeft = false;
     if (c==='ArrowRight'||c==='KeyD') input.yawRight = false;
@@ -768,6 +823,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     if (c==='ArrowUp'||c==='KeyI') input.pitchUp = false;
     if (c==='ArrowDown'||c==='KeyK') input.pitchDown = false;
     if (c==='Space') input.fire = false;
+    if (c==='KeyL') input.toggleLb = false;
   }
   document.addEventListener('keydown', onKeyDown, { capture:true });
   document.addEventListener('keyup', onKeyUp, { capture:true });
@@ -782,17 +838,163 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
 
   // HUD
   let score = 0;
+  let killsCount = 0;
+  let asteroidsDestroyed = 0;
+  let beltTimeSec = 0;
+  // Multipliers and belt scoring
+  let asteroidMultTimer = 0; // seconds for x2 asteroid points
+  let killMultTimer = 0;     // seconds for x2 kill points
+  let lastFireTimer = 0;     // seconds since last shot
+  let beltPassiveAccu = 0;   // fractional accumulator for passive belt points
   function updateHud() {
     const speedTxt = speedUnitsPerSec.toFixed(1);
     const distFromOrigin = shipPosition.length().toFixed(0);
     const distToTarget = shipPosition.distanceTo(targetPlanet.position).toFixed(0);
     const hp = Math.max(0, Math.round(health));
     const sh = Math.max(0, Math.round(shield));
-    hud.textContent = `Speed ${speedTxt} | HP ${hp}% | Shield ${sh}% | Points ${score} | Dist ${distFromOrigin} | Target ${distToTarget}`;
+    const ax2 = asteroidMultTimer>0 ? ` | Ax2 ${Math.ceil(asteroidMultTimer)}s` : '';
+    const kx2 = killMultTimer>0 ? ` | Kx2 ${Math.ceil(killMultTimer)}s` : '';
+    hud.textContent = `Speed ${speedTxt} | HP ${hp}% | Shield ${sh}% | Points ${score} | Kills ${killsCount} | Ast ${asteroidsDestroyed}${ax2}${kx2} | Dist ${distFromOrigin} | Target ${distToTarget}`;
   }
 
   function showGameOver(){ gameOverEl.style.display = 'block'; }
   function hideGameOver(){ gameOverEl.style.display = 'none'; }
+
+  // Leaderboards (local with optional server sync)
+  let survivalStartMs = performance.now();
+  let statsSaved = false;
+  let serverAvailable = false;
+  async function detectServer(){
+    const url = window.ORBIT_RUNNER_API || 'http://localhost:8787';
+    try{ const r = await fetch(url + '/health', { method:'GET', mode:'cors' }); if (r.ok){ window.ORBIT_RUNNER_API = url; serverAvailable = true; } }
+    catch(_){ serverAvailable = false; }
+  }
+  detectServer();
+
+  // Identity (local only; for display on leaderboards)
+  function getOrMakeUid(){
+    let id = localStorage.getItem('or_uid');
+    if (!id){ id = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('or_uid', id); }
+    return id;
+  }
+  function getPlayerName(){ return localStorage.getItem('or_name') || ''; }
+  function ensurePlayerName(){
+    let name = getPlayerName();
+    if (!name){
+      name = (window.prompt('Enter a display name for leaderboards:', '') || '').trim().slice(0,24);
+      if (name) localStorage.setItem('or_name', name);
+    }
+    return name;
+  }
+
+  // Live server leaderboards via WebSocket
+  let lbWs = null;
+  let latestServerLB = null;
+  function connectLbWS(){
+    if (!serverAvailable || lbWs) return;
+    try {
+      const wsUrl = (window.ORBIT_RUNNER_API || '').replace(/^http/, 'ws');
+      lbWs = new WebSocket(wsUrl);
+      lbWs.onmessage = (ev)=>{
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg && msg.type === 'leaderboards'){ latestServerLB = msg.payload; if (lbOverlay && lbOverlay.style.display !== 'none') renderLb(); }
+        } catch(_){}
+      };
+      lbWs.onclose = ()=>{ lbWs = null; setTimeout(connectLbWS, 2000); };
+      lbWs.onerror = ()=>{ try{ lbWs.close(); }catch(_){} };
+    } catch(_){}
+  }
+  // try to connect shortly after detection
+  setTimeout(connectLbWS, 500);
+  function getSessionStats(){
+    const now = performance.now();
+    const survivalSec = Math.max(0, Math.round((now - survivalStartMs)/1000));
+    return {
+      ts: Date.now(),
+      uid: getOrMakeUid(),
+      name: getPlayerName(),
+      points: score,
+      kills: killsCount,
+      asteroids: asteroidsDestroyed,
+      beltTimeSec: Math.round(beltTimeSec),
+      survivalSec,
+    };
+  }
+  function pushTop(list, rec, key, maxLen=10){
+    list.push(rec); list.sort((a,b)=> (b[key]||0)-(a[key]||0)); if (list.length>maxLen) list.length=maxLen; return list;
+  }
+  function saveLeaderboards(){
+    const s = getSessionStats();
+    try{
+      const parse = k => { const v = localStorage.getItem(k); return v? JSON.parse(v): []; };
+      const save  = (k,arr)=> localStorage.setItem(k, JSON.stringify(arr));
+      save('or_sessions', pushTop(parse('or_sessions'), s, 'ts', 50));
+      save('or_lb_points', pushTop(parse('or_lb_points'), s, 'points'));
+      save('or_lb_kills', pushTop(parse('or_lb_kills'), s, 'kills'));
+      save('or_lb_asteroids', pushTop(parse('or_lb_asteroids'), s, 'asteroids'));
+      save('or_lb_belt', pushTop(parse('or_lb_belt'), s, 'beltTimeSec'));
+      save('or_lb_survival', pushTop(parse('or_lb_survival'), s, 'survivalSec'));
+      // fire-and-forget sync endpoint if configured
+      if (window.ORBIT_RUNNER_API){
+        fetch(`${window.ORBIT_RUNNER_API}/submit`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(s) }).catch(()=>{});
+      }
+    }catch(e){ console.warn('Leaderboard save failed', e); }
+  }
+
+  // Simple overlay to view top 5 leaderboards
+  let lbOverlay = null;
+  function ensureLbOverlay(){
+    if (lbOverlay) return lbOverlay;
+    const d = document.createElement('div');
+    d.id = 'leaderboards';
+    Object.assign(d.style, { position:'absolute', right:'10px', top:'10px', padding:'10px', background:'rgba(0,0,0,0.6)', color:'#fff', fontSize:'12px', border:'1px solid rgba(255,255,255,0.2)', borderRadius:'8px', maxWidth:'360px', display:'none', zIndex:'9998' });
+    document.body.appendChild(d); lbOverlay = d; return d;
+  }
+  async function renderLb(){
+    ensureLbOverlay();
+    const get = k => { const v = localStorage.getItem(k); return v? JSON.parse(v): []; };
+    const fmt = (s)=> new Date(s.ts).toLocaleTimeString();
+    const rows = (arr,key,unit='')=> arr.slice(0,5).map(r=>`<div>${r[key]}${unit} • Pts ${r.points} • ${(r.name||'Anon')} • ${fmt(r)}</div>`).join('') || '<div>—</div>';
+    let html = `
+      <div style="font-weight:700;margin-bottom:6px">Leaderboards (Top 5)</div>
+      <div><b>Survival</b>${rows(get('or_lb_survival'),'survivalSec','s')}</div>
+      <div><b>Kills</b>${rows(get('or_lb_kills'),'kills')}</div>
+      <div><b>Asteroids</b>${rows(get('or_lb_asteroids'),'asteroids')}</div>
+      <div><b>Belt Time</b>${rows(get('or_lb_belt'),'beltTimeSec','s')}</div>
+      <div><b>Points</b>${rows(get('or_lb_points'),'points')}</div>
+    `;
+    if (serverAvailable){
+      if (latestServerLB){
+        const rrows = (arr,key,unit='')=> (arr||[]).slice(0,5).map(r=>`<div>${r[key]}${unit} • Pts ${r.points} • ${(r.name||'Anon')}</div>`).join('') || '<div>—</div>';
+        html += `
+          <div style=\"margin-top:8px;font-weight:700\">Server (live)</div>
+          <div><b>Survival</b>${rrows(latestServerLB.survival,'survivalSec','s')}</div>
+          <div><b>Kills</b>${rrows(latestServerLB.kills,'kills')}</div>
+          <div><b>Asteroids</b>${rrows(latestServerLB.asteroids,'asteroids')}</div>
+          <div><b>Belt Time</b>${rrows(latestServerLB.belt,'beltTimeSec','s')}</div>
+          <div><b>Points</b>${rrows(latestServerLB.points,'points')}</div>
+        `;
+      } else {
+      try{
+        const r = await fetch(window.ORBIT_RUNNER_API + '/leaderboards', { mode:'cors' });
+        if (r.ok){
+          const data = await r.json();
+          const rrows = (arr,key,unit='')=> (arr||[]).slice(0,5).map(r=>`<div>${r[key]}${unit} • Pts ${r.points} • ${(r.name||'Anon')}</div>`).join('') || '<div>—</div>';
+          html += `
+            <div style=\"margin-top:8px;font-weight:700\">Server</div>
+            <div><b>Survival</b>${rrows(data.survival,'survivalSec','s')}</div>
+            <div><b>Kills</b>${rrows(data.kills,'kills')}</div>
+            <div><b>Asteroids</b>${rrows(data.asteroids,'asteroids')}</div>
+            <div><b>Belt Time</b>${rrows(data.belt,'beltTimeSec','s')}</div>
+            <div><b>Points</b>${rrows(data.points,'points')}</div>
+          `;
+        }
+      }catch(_){ /* ignore */ }
+      }
+    }
+    lbOverlay.innerHTML = html;
+  }
 
   // Simple helper to spawn centered 3D text with color
   function spawnCenteredTextLabel(text, position, color=0xffffff, size=2.0, life=2.5){
@@ -920,43 +1122,47 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     const desiredOrbs = Math.min(CAPS.shield, Math.max(12, Math.floor(asteroids.length * 0.05)));
     for (let i = shieldOrbs.length - 1; i >= 0; i--){
       const o = shieldOrbs[i];
-      if (o.mesh.position.distanceTo(shipPosition) > maxDist){ scene.remove(o.mesh); shieldOrbs.splice(i,1); }
+      if (!o.mesh.parent || o.mesh.position.distanceTo(shipPosition) > maxDist){ scene.remove(o.mesh); shieldOrbs.splice(i,1); }
     }
     while (shieldOrbs.length < desiredOrbs) spawnShieldOrbAround(shipPosition);
 
     const desiredPink = Math.min(CAPS.pink, Math.max(6, Math.floor(asteroids.length * 0.01)));
     for (let i = pinkOrbs.length - 1; i >= 0; i--){
       const o = pinkOrbs[i];
-      if (o.mesh.position.distanceTo(shipPosition) > maxDist){ scene.remove(o.mesh); pinkOrbs.splice(i,1); }
+      if (!o.mesh.parent || o.mesh.position.distanceTo(shipPosition) > maxDist){ scene.remove(o.mesh); pinkOrbs.splice(i,1); }
     }
     while (pinkOrbs.length < desiredPink) spawnPinkOrbAround(shipPosition);
 
     const desiredFenix = Math.min(CAPS.fenix, Math.max(20, Math.floor(asteroids.length * 0.10)));
     for (let i = fenixOrbs.length - 1; i >= 0; i--){
       const o = fenixOrbs[i];
-      if (o.mesh.position.distanceTo(shipPosition) > maxDist){ scene.remove(o.mesh); fenixOrbs.splice(i,1); }
+      if (!o.mesh.parent || o.mesh.position.distanceTo(shipPosition) > maxDist){ if (o.glow) scene.remove(o.glow); scene.remove(o.mesh); fenixOrbs.splice(i,1); }
     }
     while (fenixOrbs.length < desiredFenix) spawnFenixOrbAround(shipPosition);
 
     const desiredZaphire = Math.min(CAPS.zaphire, Math.max(40, Math.floor(asteroids.length * 0.20)));
     for (let i = zaphireOrbs.length - 1; i >= 0; i--){
       const o = zaphireOrbs[i];
-      if (o.mesh.position.distanceTo(shipPosition) > maxDist){ if (o.glow) scene.remove(o.glow); scene.remove(o.mesh); zaphireOrbs.splice(i,1); }
+      if (!o.mesh.parent || o.mesh.position.distanceTo(shipPosition) > maxDist){ if (o.glow) scene.remove(o.glow); scene.remove(o.mesh); zaphireOrbs.splice(i,1); }
     }
     while (zaphireOrbs.length < desiredZaphire) spawnZaphireOrbAround(shipPosition);
 
     const desiredWormholes = Math.min(CAPS.wormhole, Math.max(40, Math.floor(asteroids.length * 0.20)));
     for (let i = wormholeOrbs.length - 1; i >= 0; i--){
       const w = wormholeOrbs[i];
-      if (w.mesh.position.distanceTo(shipPosition) > maxDist){ scene.remove(w.mesh); scene.remove(w.halo); if (w.glow) scene.remove(w.glow); if (w.cubeCam) scene.remove(w.cubeCam); wormholeOrbs.splice(i,1); }
+      if (!w.mesh.parent || w.mesh.position.distanceTo(shipPosition) > maxDist){ scene.remove(w.mesh); scene.remove(w.halo); if (w.glow) scene.remove(w.glow); if (w.cubeCam) scene.remove(w.cubeCam); wormholeOrbs.splice(i,1); }
     }
     while (wormholeOrbs.length < desiredWormholes) spawnWormholeOrbAround(shipPosition);
 
     const desiredBoost = Math.min(CAPS.boost, Math.max(30, Math.floor(asteroids.length * 0.15)));
     for (let i = boostOrbs.length - 1; i >= 0; i--){
       const o = boostOrbs[i];
-      if (o.core.position.distanceTo(shipPosition) > maxDist){ scene.remove(o.core); scene.remove(o.ringG); scene.remove(o.ringP); if (o.glow) scene.remove(o.glow); boostOrbs.splice(i,1); }
+      if (!o.core.parent || o.core.position.distanceTo(shipPosition) > maxDist){ scene.remove(o.core); scene.remove(o.ringG); scene.remove(o.ringP); if (o.glow) scene.remove(o.glow); boostOrbs.splice(i,1); }
     }
+
+    // clean multiplier orbs
+    for (let i = minerOrbs.length - 1; i >= 0; i--){ const o = minerOrbs[i]; if (!o.core.parent) { minerOrbs.splice(i,1); continue; } if (o.core.position.distanceTo(shipPosition) > maxDist){ scene.remove(o.core); scene.remove(o.ring); minerOrbs.splice(i,1);} }
+    for (let i = hunterOrbs.length - 1; i >= 0; i--){ const o = hunterOrbs[i]; if (!o.core.parent) { hunterOrbs.splice(i,1); continue; } if (o.core.position.distanceTo(shipPosition) > maxDist){ scene.remove(o.core); scene.remove(o.ring); hunterOrbs.splice(i,1);} }
     while (boostOrbs.length < desiredBoost) spawnBoostOrbAround(shipPosition);
 
     ensurePatches();
@@ -976,7 +1182,11 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       health = 0; spawnImpactBurst(hitPosition || shipPosition, 0xff7766, 40); cameraShake += 1.2;
     }
     damageCooldown = 0.6;
-    if (health <= 0){ gameOver = true; showGameOver(); }
+    if (health <= 0){
+      gameOver = true;
+      try { if (!statsSaved){ saveLeaderboards(); statsSaved = true; } } catch(_){}
+      showGameOver();
+    }
   }
 
   function resetGame(){
@@ -1056,7 +1266,23 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       ship.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, roll, 'YXZ'));
 
       fireCooldown -= dt;
-      if (input.fire && fireCooldown <= 0){ shoot(); fireCooldown = 0.11; }
+      if (input.fire && fireCooldown <= 0){ shoot(); fireCooldown = 0.11; lastFireTimer = 0; }
+    }
+
+    // decrement timers
+    if (asteroidMultTimer > 0) asteroidMultTimer = Math.max(0, asteroidMultTimer - dt);
+    if (killMultTimer > 0) killMultTimer = Math.max(0, killMultTimer - dt);
+    lastFireTimer += dt;
+
+    // passive belt points
+    if (!gameOver && isWithinBeltXZ(shipPosition)){
+      const rate = lastFireTimer < 10 ? 2 : 1; // 2/sec during recent combat, else 1/sec
+      beltPassiveAccu += rate * dt;
+      if (beltPassiveAccu >= 1){
+        const add = Math.floor(beltPassiveAccu);
+        score += add;
+        beltPassiveAccu -= add;
+      }
     }
 
     // Camera follow + shake
@@ -1084,7 +1310,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
         const x = targetPlanet.position.x + Math.cos(a.orbitAngle) * a.orbitRadius;
         const z = targetPlanet.position.z + Math.sin(a.orbitAngle) * a.orbitRadius;
         a.mesh.position.set(x, a.mesh.position.y, z);
-      } else {
+        } else {
         a.mesh.position.addScaledVector(a.vel, dt);
       }
       if (a.rotAxis && a.rotSpeed) a.mesh.rotateOnAxis(a.rotAxis, a.rotSpeed*dt);
@@ -1107,7 +1333,9 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
           spawnImpactBurst(a.mesh.position);
           scene.remove(a.mesh); asteroids.splice(i,1);
           scene.remove(b.mesh); bullets.splice(j,1);
-          score += a.inRing ? 160 : 110; break outer;
+          score += getAsteroidScore(a.inRing ? 160 : 110, a.mesh.position);
+          asteroidsDestroyed++;
+          break outer;
         }
       }
     }
@@ -1269,6 +1497,48 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       }
     }
 
+    // Miner orbs (x2 asteroid points)
+    for (let i = minerOrbs.length-1; i>=0; i--){
+      const o = minerOrbs[i];
+      o.bob += o.bobSpeed * dt;
+      const s = 1 + 0.22 * Math.sin(o.bob * o.pulseSpeed);
+      o.core.scale.setScalar(s);
+      o.ring.lookAt(camera.position);
+      o.ring.material.opacity = 0.55 + 0.35 * (0.5 + 0.5*Math.sin(o.bob * o.pulseSpeed));
+      if (!gameOver){
+        const effR = o.radius * o.core.scale.x + 3.0;
+        const trigger = () => {
+          asteroidMultTimer = Math.min(60, Math.max(asteroidMultTimer, 30));
+          spawnShieldRing(o.core.position, 0x66ff99);
+          spawnImpactBurst(o.core.position, 0x66ff99, 16);
+          scene.remove(o.core); scene.remove(o.ring); minerOrbs.splice(i,1);
+        };
+        if (isWithinRadiusSquared(o.core.position, shipPosition, effR + pickupHitRadius)){ trigger(); continue; }
+        for (let j = bullets.length-1; j>=0; j--){ const b = bullets[j]; if (isWithinRadiusSquared(o.core.position, b.mesh.position, effR + b.radius)){ trigger(); scene.remove(b.mesh); bullets.splice(j,1); break; } }
+      }
+    }
+
+    // Hunter orbs (x2 kill points)
+    for (let i = hunterOrbs.length-1; i>=0; i--){
+      const o = hunterOrbs[i];
+      o.bob += o.bobSpeed * dt;
+      const s = 1 + 0.22 * Math.sin(o.bob * o.pulseSpeed);
+      o.core.scale.setScalar(s);
+      o.ring.lookAt(camera.position);
+      o.ring.material.opacity = 0.55 + 0.35 * (0.5 + 0.5*Math.sin(o.bob * o.pulseSpeed));
+      if (!gameOver){
+        const effR = o.radius * o.core.scale.x + 3.0;
+        const trigger = () => {
+          killMultTimer = Math.min(60, Math.max(killMultTimer, 30));
+          spawnShieldRing(o.core.position, 0x66aaff);
+          spawnImpactBurst(o.core.position, 0x66aaff, 16);
+          scene.remove(o.core); scene.remove(o.ring); hunterOrbs.splice(i,1);
+        };
+        if (isWithinRadiusSquared(o.core.position, shipPosition, effR + pickupHitRadius)){ trigger(); continue; }
+        for (let j = bullets.length-1; j>=0; j--){ const b = bullets[j]; if (isWithinRadiusSquared(o.core.position, b.mesh.position, effR + b.radius)){ trigger(); scene.remove(b.mesh); bullets.splice(j,1); break; } }
+      }
+    }
+
     // Wormhole orbs (teleport)
     for (let i = wormholeOrbs.length-1; i>=0; i--){
       const w = wormholeOrbs[i];
@@ -1339,12 +1609,13 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       }
     }
 
-    // Planet crash check
+    // Planet crash check + belt time accumulation
     if (!gameOver){
       for (const p of planets){
         const d = shipPosition.distanceTo(p.position);
         if (d < (p.userData.radius + 20)) { applyCrashDamage('planet', shipPosition); break; }
       }
+      if (isWithinBeltXZ(shipPosition)) beltTimeSec += dt;
     }
 
     // Particles update
@@ -1409,6 +1680,8 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
             spawnImpactBurst(bot.pos);
             scene.remove(bot.mesh); bots.splice(bi, 1);
             scene.remove(b.mesh); bullets.splice(i, 1);
+            score += getKillScore(300, bot.pos); // base 300; belt & multipliers apply
+            killsCount++;
             break;
           }
         }
