@@ -860,14 +860,60 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   function showGameOver(){ gameOverEl.style.display = 'block'; }
   function hideGameOver(){ gameOverEl.style.display = 'none'; }
 
-  // Leaderboards (local-only scaffold)
+  // Leaderboards (local with optional server sync)
   let survivalStartMs = performance.now();
   let statsSaved = false;
+  let serverAvailable = false;
+  async function detectServer(){
+    const url = window.ORBIT_RUNNER_API || 'http://localhost:8787';
+    try{ const r = await fetch(url + '/health', { method:'GET', mode:'cors' }); if (r.ok){ window.ORBIT_RUNNER_API = url; serverAvailable = true; } }
+    catch(_){ serverAvailable = false; }
+  }
+  detectServer();
+
+  // Identity (local only; for display on leaderboards)
+  function getOrMakeUid(){
+    let id = localStorage.getItem('or_uid');
+    if (!id){ id = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('or_uid', id); }
+    return id;
+  }
+  function getPlayerName(){ return localStorage.getItem('or_name') || ''; }
+  function ensurePlayerName(){
+    let name = getPlayerName();
+    if (!name){
+      name = (window.prompt('Enter a display name for leaderboards:', '') || '').trim().slice(0,24);
+      if (name) localStorage.setItem('or_name', name);
+    }
+    return name;
+  }
+
+  // Live server leaderboards via WebSocket
+  let lbWs = null;
+  let latestServerLB = null;
+  function connectLbWS(){
+    if (!serverAvailable || lbWs) return;
+    try {
+      const wsUrl = (window.ORBIT_RUNNER_API || '').replace(/^http/, 'ws');
+      lbWs = new WebSocket(wsUrl);
+      lbWs.onmessage = (ev)=>{
+        try {
+          const msg = JSON.parse(ev.data);
+          if (msg && msg.type === 'leaderboards'){ latestServerLB = msg.payload; if (lbOverlay && lbOverlay.style.display !== 'none') renderLb(); }
+        } catch(_){}
+      };
+      lbWs.onclose = ()=>{ lbWs = null; setTimeout(connectLbWS, 2000); };
+      lbWs.onerror = ()=>{ try{ lbWs.close(); }catch(_){} };
+    } catch(_){}
+  }
+  // try to connect shortly after detection
+  setTimeout(connectLbWS, 500);
   function getSessionStats(){
     const now = performance.now();
     const survivalSec = Math.max(0, Math.round((now - survivalStartMs)/1000));
     return {
       ts: Date.now(),
+      uid: getOrMakeUid(),
+      name: getPlayerName(),
       points: score,
       kills: killsCount,
       asteroids: asteroidsDestroyed,
@@ -905,12 +951,12 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     Object.assign(d.style, { position:'absolute', right:'10px', top:'10px', padding:'10px', background:'rgba(0,0,0,0.6)', color:'#fff', fontSize:'12px', border:'1px solid rgba(255,255,255,0.2)', borderRadius:'8px', maxWidth:'360px', display:'none', zIndex:'9998' });
     document.body.appendChild(d); lbOverlay = d; return d;
   }
-  function renderLb(){
+  async function renderLb(){
     ensureLbOverlay();
     const get = k => { const v = localStorage.getItem(k); return v? JSON.parse(v): []; };
     const fmt = (s)=> new Date(s.ts).toLocaleTimeString();
-    const rows = (arr,key,unit='')=> arr.slice(0,5).map(r=>`<div>${r[key]}${unit} • Pts ${r.points} • ${fmt(r)}</div>`).join('') || '<div>—</div>';
-    const html = `
+    const rows = (arr,key,unit='')=> arr.slice(0,5).map(r=>`<div>${r[key]}${unit} • Pts ${r.points} • ${(r.name||'Anon')} • ${fmt(r)}</div>`).join('') || '<div>—</div>';
+    let html = `
       <div style="font-weight:700;margin-bottom:6px">Leaderboards (Top 5)</div>
       <div><b>Survival</b>${rows(get('or_lb_survival'),'survivalSec','s')}</div>
       <div><b>Kills</b>${rows(get('or_lb_kills'),'kills')}</div>
@@ -918,6 +964,35 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       <div><b>Belt Time</b>${rows(get('or_lb_belt'),'beltTimeSec','s')}</div>
       <div><b>Points</b>${rows(get('or_lb_points'),'points')}</div>
     `;
+    if (serverAvailable){
+      if (latestServerLB){
+        const rrows = (arr,key,unit='')=> (arr||[]).slice(0,5).map(r=>`<div>${r[key]}${unit} • Pts ${r.points} • ${(r.name||'Anon')}</div>`).join('') || '<div>—</div>';
+        html += `
+          <div style=\"margin-top:8px;font-weight:700\">Server (live)</div>
+          <div><b>Survival</b>${rrows(latestServerLB.survival,'survivalSec','s')}</div>
+          <div><b>Kills</b>${rrows(latestServerLB.kills,'kills')}</div>
+          <div><b>Asteroids</b>${rrows(latestServerLB.asteroids,'asteroids')}</div>
+          <div><b>Belt Time</b>${rrows(latestServerLB.belt,'beltTimeSec','s')}</div>
+          <div><b>Points</b>${rrows(latestServerLB.points,'points')}</div>
+        `;
+      } else {
+      try{
+        const r = await fetch(window.ORBIT_RUNNER_API + '/leaderboards', { mode:'cors' });
+        if (r.ok){
+          const data = await r.json();
+          const rrows = (arr,key,unit='')=> (arr||[]).slice(0,5).map(r=>`<div>${r[key]}${unit} • Pts ${r.points} • ${(r.name||'Anon')}</div>`).join('') || '<div>—</div>';
+          html += `
+            <div style=\"margin-top:8px;font-weight:700\">Server</div>
+            <div><b>Survival</b>${rrows(data.survival,'survivalSec','s')}</div>
+            <div><b>Kills</b>${rrows(data.kills,'kills')}</div>
+            <div><b>Asteroids</b>${rrows(data.asteroids,'asteroids')}</div>
+            <div><b>Belt Time</b>${rrows(data.belt,'beltTimeSec','s')}</div>
+            <div><b>Points</b>${rrows(data.points,'points')}</div>
+          `;
+        }
+      }catch(_){ /* ignore */ }
+      }
+    }
     lbOverlay.innerHTML = html;
   }
 
