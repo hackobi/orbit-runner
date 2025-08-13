@@ -38,20 +38,23 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
 
   // Global caps to prevent overload
   const CAPS = {
-    shield: 120,
-    pink: 60,
-    fenix: 40,
-    zaphire: 60,
-    wormhole: 60,
-    boost: 60,
+    shield: 160,
+    pink: 120,
+    fenix: 80,
+    zaphire: 80,
+    wormhole: 80,
+    boost: 80,
   };
+  const ONLY_RING_ORBS = true; // place all orbs in the belt only
 
   // Early declaration so ring seeding can reference it
   const boostOrbs = [];
+  // Early declaration so animate() can reference bots safely
+  const bots = [];
 
   // HUD and overlays
   const hud = document.getElementById('hud') || (() => { const d = document.createElement('div'); d.id='hud'; d.style.position='absolute'; d.style.top='10px'; d.style.left='10px'; d.style.color='#0ff'; d.style.fontSize='1.1rem'; document.body.appendChild(d); return d; })();
-  const help = document.getElementById('help') || (() => { const d = document.createElement('div'); d.id='help'; d.style.position='absolute'; d.style.bottom='12px'; d.style.left='50%'; d.style.transform='translateX(-50%)'; d.style.fontSize='0.95rem'; d.style.color='#ccc'; d.style.opacity='0.85'; d.style.background='rgba(0,0,0,0.35)'; d.style.padding='6px 10px'; d.style.borderRadius='6px'; d.textContent='W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H home • R restart'; document.body.appendChild(d); return d; })();
+  const help = document.getElementById('help') || (() => { const d = document.createElement('div'); d.id='help'; d.style.position='absolute'; d.style.bottom='12px'; d.style.left='50%'; d.style.transform='translateX(-50%)'; d.style.fontSize='0.95rem'; d.style.color='#ccc'; d.style.opacity='0.85'; d.style.background='rgba(0,0,0,0.35)'; d.style.padding='6px 10px'; d.style.borderRadius='6px'; d.textContent='W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H home • T dev 500 • R restart'; document.body.appendChild(d); return d; })();
   const gameOverEl = document.getElementById('gameover') || (()=>{ const d=document.createElement('div'); d.id='gameover'; d.style.position='absolute'; d.style.top='45%'; d.style.left='50%'; d.style.transform='translate(-50%,-50%)'; d.style.fontSize='2rem'; d.style.color='#fff'; d.style.display='none'; d.style.textAlign='center'; d.style.textShadow='0 0 8px #000'; d.innerHTML='CRASHED<br/>Press R to Restart'; document.body.appendChild(d); return d; })();
 
   // Placeholder patch system to avoid reference errors
@@ -81,10 +84,12 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   let targetSpeedUnitsPerSec = 20;
   const minSpeed = 5;
   const baseMaxSpeed = 60;
+  const DEV_TURBO_SPEED = 500;
   const yawRate = 2.0;     // rad/sec
   const pitchRate = 1.35;  // rad/sec
   let yaw = 0, pitch = 0, roll = 0;
   let mouseX = 0, mouseY = 0, mouseDown = false;
+  let devTurboActive = false;
 
   const shipPosition = new THREE.Vector3();
   const velocity = new THREE.Vector3();
@@ -142,6 +147,14 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     const mat = new THREE.PointsMaterial({ color: 0x99ccff, size: 1.1, sizeAttenuation: true, transparent: true, opacity: 0.9 });
     scene.add(new THREE.Points(geo, mat));
   })();
+
+  // Math utility: squared-distance radius check to avoid sqrt per frame
+  function isWithinRadiusSquared(posA, posB, combinedRadius){
+    const dx = posA.x - posB.x;
+    const dy = posA.y - posB.y;
+    const dz = posA.z - posB.z;
+    return (dx*dx + dy*dy + dz*dz) < (combinedRadius * combinedRadius);
+  }
 
   // Utility: glow sprite texture for wormholes
   let glowTexture = null;
@@ -348,6 +361,22 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     scene.add(m);
     shieldOrbs.push({ mesh:m, radius: 1.2, bob: Math.random()*Math.PI*2, bobSpeed: 1 + Math.random()*1.5, baseScale, pulseSpeed: 3 + Math.random()*3 });
   }
+  function spawnShieldOrbOnRing(planet, innerR=3600, outerR=5200){
+    const a = Math.random()*Math.PI*2;
+    const r = innerR + Math.random()*(outerR-innerR);
+    const yJ = (Math.random()-0.5)*40;
+    const pos = new THREE.Vector3(
+      planet.position.x + Math.cos(a)*r,
+      planet.position.y + yJ,
+      planet.position.z + Math.sin(a)*r
+    );
+    const mat = makeAdditiveMaterial(0x33ff66, 0.95);
+    const m = new THREE.Mesh(shieldOrbGeometry, mat);
+    m.position.copy(pos);
+    const baseScale = 1.25; m.scale.setScalar(baseScale);
+    scene.add(m);
+    shieldOrbs.push({ mesh:m, radius: 1.2, bob: Math.random()*Math.PI*2, bobSpeed: 1 + Math.random()*1.5, baseScale, pulseSpeed: 3 + Math.random()*3 });
+  }
   function seedShieldOrbsFromAsteroidCount(){
     const desired = Math.min(CAPS.shield, Math.max(12, Math.floor(asteroids.length * 0.05)));
     while (shieldOrbs.length < desired) spawnShieldOrbAround(shipPosition);
@@ -366,10 +395,25 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     ).add(center);
     const m = new THREE.Mesh(pinkOrbGeometry, makeAdditiveMaterial(0xff33cc, 0.95));
     m.position.copy(pos);
-    const baseScale = 1.25;
+    const baseScale = 1.7;
     m.scale.setScalar(baseScale);
     scene.add(m);
-    pinkOrbs.push({ mesh:m, radius: 1.2, bob: Math.random()*Math.PI*2, bobSpeed: 1.2 + Math.random()*1.8, baseScale, pulseSpeed: 3.5 + Math.random()*3.5 });
+    pinkOrbs.push({ mesh:m, radius: 1.6, bob: Math.random()*Math.PI*2, bobSpeed: 1.6 + Math.random()*2.0, baseScale, pulseSpeed: 4.0 + Math.random()*3.5 });
+  }
+  function spawnPinkOrbOnRing(planet, innerR=3600, outerR=5200){
+    const a = Math.random()*Math.PI*2;
+    const r = innerR + Math.random()*(outerR-innerR);
+    const yJ = (Math.random()-0.5)*40;
+    const pos = new THREE.Vector3(
+      planet.position.x + Math.cos(a)*r,
+      planet.position.y + yJ,
+      planet.position.z + Math.sin(a)*r
+    );
+    const m = new THREE.Mesh(pinkOrbGeometry, makeAdditiveMaterial(0xff33cc, 0.98));
+    m.position.copy(pos);
+    const baseScale = 1.7; m.scale.setScalar(baseScale);
+    scene.add(m);
+    pinkOrbs.push({ mesh:m, radius: 1.6, bob: Math.random()*Math.PI*2, bobSpeed: 1.6 + Math.random()*2.0, baseScale, pulseSpeed: 4.0 + Math.random()*3.5 });
   }
   function seedPinkOrbsFromAsteroidCount(){
     const desired = Math.min(CAPS.pink, Math.max(6, Math.floor(asteroids.length * 0.01)));
@@ -387,11 +431,34 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     const pos = new THREE.Vector3(
       r * Math.sin(phi)*Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi)*Math.sin(theta)
     ).add(center);
-    const m = new THREE.Mesh(fenixOrbGeometry, makeAdditiveMaterial(0xff8800, 0.95));
+    // Neon orange core (more orange hue)
+    const m = new THREE.Mesh(fenixOrbGeometry, makeAdditiveMaterial(0xff7a00, 0.98));
     m.position.copy(pos);
-    const baseScale = 1.3; m.scale.setScalar(baseScale);
-    scene.add(m);
-    fenixOrbs.push({ mesh:m, radius: 1.25, bob: Math.random()*Math.PI*2, bobSpeed: 1.0 + Math.random()*1.6, baseScale, pulseSpeed: 2.8 + Math.random()*3.0 });
+    const baseScale = 1.8; m.scale.setScalar(baseScale);
+    // Yellow glow
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0xfff066, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+    glow.position.copy(pos); glow.scale.set(14,14,1);
+    scene.add(m, glow);
+    fenixOrbs.push({ mesh:m, glow, radius: 1.7, bob: Math.random()*Math.PI*2, bobSpeed: 1.0 + Math.random()*1.6, baseScale, pulseSpeed: 3.6 + Math.random()*3.6 });
+  }
+  function spawnFenixOrbOnRing(planet, innerR=3600, outerR=5200){
+    const a = Math.random()*Math.PI*2;
+    const r = innerR + Math.random()*(outerR-innerR);
+    const yJ = (Math.random()-0.5)*40;
+    const pos = new THREE.Vector3(
+      planet.position.x + Math.cos(a)*r,
+      planet.position.y + yJ,
+      planet.position.z + Math.sin(a)*r
+    );
+    // Neon orange core (more orange hue)
+    const m = new THREE.Mesh(fenixOrbGeometry, makeAdditiveMaterial(0xff7a00, 0.98));
+    m.position.copy(pos);
+    const baseScale = 1.8; m.scale.setScalar(baseScale);
+    // Yellow glow
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0xfff066, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+    glow.position.copy(pos); glow.scale.set(14,14,1);
+    scene.add(m, glow);
+    fenixOrbs.push({ mesh:m, glow, radius: 1.7, bob: Math.random()*Math.PI*2, bobSpeed: 1.0 + Math.random()*1.6, baseScale, pulseSpeed: 3.6 + Math.random()*3.6 });
   }
   function seedFenixOrbsFromAsteroidCount(){
     const desired = Math.min(CAPS.fenix, Math.max(20, Math.floor(asteroids.length * 0.10)));
@@ -418,6 +485,52 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     glow.position.copy(pos); glow.scale.set(14,14,1);
     scene.add(m, glow);
     zaphireOrbs.push({ mesh:m, glow, radius:2.4, bob: Math.random()*Math.PI*2, bobSpeed: 1.1 + Math.random()*1.7, baseScale, pulseSpeed: 3.0 + Math.random()*3.0 });
+  }
+  function spawnZaphireOrbOnRing(planet, innerR=3600, outerR=5200){
+    const a = Math.random()*Math.PI*2;
+    const r = innerR + Math.random()*(outerR-innerR);
+    const yJ = (Math.random()-0.5)*40;
+    const pos = new THREE.Vector3(
+      planet.position.x + Math.cos(a)*r,
+      planet.position.y + yJ,
+      planet.position.z + Math.sin(a)*r
+    );
+    const m = new THREE.Mesh(zaphireOrbGeometry, makeAdditiveMaterial(0xff3333, 1.0));
+    m.position.copy(pos);
+    const baseScale = 2.5; m.scale.setScalar(baseScale);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0xff4444, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }));
+    glow.position.copy(pos); glow.scale.set(14,14,1);
+    scene.add(m, glow);
+    zaphireOrbs.push({ mesh:m, glow, radius:2.4, bob: Math.random()*Math.PI*2, bobSpeed: 1.1 + Math.random()*1.7, baseScale, pulseSpeed: 3.0 + Math.random()*3.0 });
+  }
+
+  function seedAllOrbsInRingByProportion(planet, innerR=3600, outerR=5200){
+    // Keep existing asteroids; clear only orbs
+    for (const o of shieldOrbs) scene.remove(o.mesh); shieldOrbs.length = 0;
+    for (const o of pinkOrbs) scene.remove(o.mesh); pinkOrbs.length = 0;
+    for (const o of fenixOrbs) scene.remove(o.mesh); fenixOrbs.length = 0;
+    for (const o of zaphireOrbs) { scene.remove(o.mesh); if (o.glow) scene.remove(o.glow); } zaphireOrbs.length = 0;
+    for (const w of wormholeOrbs) { scene.remove(w.mesh); scene.remove(w.halo); if (w.glow) scene.remove(w.glow); if (w.cubeCam) scene.remove(w.cubeCam); } wormholeOrbs.length = 0;
+    for (const o of boostOrbs) { scene.remove(o.core); scene.remove(o.ringG); scene.remove(o.ringP); if (o.glow) scene.remove(o.glow); } boostOrbs.length = 0;
+
+    let ring = 0;
+    for (const a of asteroids){ if (a.inRing) ring++; }
+    if (ring <= 0) return;
+
+    // Use generous minimums to guarantee visible saturation
+    const desiredShield = Math.max(80, Math.min(CAPS.shield, Math.floor(ring * 0.05)));
+    const desiredPink   = Math.max(120, Math.min(CAPS.pink,   Math.floor(ring * 0.04)));
+    const desiredFenix  = Math.max(100, Math.min(CAPS.fenix,  Math.floor(ring * 0.12)));
+    const desiredZaph   = Math.max(40, Math.min(CAPS.zaphire,Math.floor(ring * 0.20)));
+    const desiredWorm   = Math.max(60, Math.min(CAPS.wormhole,Math.floor(ring * 0.20)));
+    const desiredBoost  = Math.max(70, Math.min(CAPS.boost,  Math.floor(ring * 0.15)));
+
+    for (let i=0;i<desiredShield;i++) spawnShieldOrbOnRing(planet, innerR, outerR);
+    for (let i=0;i<desiredPink;i++)   spawnPinkOrbOnRing(planet, innerR, outerR);
+    for (let i=0;i<desiredFenix;i++)  spawnFenixOrbOnRing(planet, innerR, outerR);
+    for (let i=0;i<desiredZaph;i++)   spawnZaphireOrbOnRing(planet, innerR, outerR);
+    seedWormholesOnRings(planet, innerR, outerR, Math.max(desiredWorm, Math.floor(ring*0.05)));
+    seedBoostOnRings(planet, innerR, outerR, Math.max(desiredBoost, Math.floor(ring*0.06)));
   }
   function seedZaphireOrbsFromAsteroidCount(){
     const desired = Math.min(CAPS.zaphire, Math.max(40, Math.floor(asteroids.length * 0.20)));
@@ -614,32 +727,46 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   const input = { yawLeft:false, yawRight:false, pitchUp:false, pitchDown:false, speedUp:false, speedDown:false, fire:false };
   function onKeyDown(e){
     const c = e.code;
-    const handled = ['ArrowLeft','ArrowRight','KeyA','KeyD','ArrowUp','ArrowDown','KeyW','KeyS','Space','KeyI','KeyK','KeyH','KeyR'].includes(c);
+    const handled = ['ArrowLeft','ArrowRight','KeyA','KeyD','ArrowUp','ArrowDown','KeyW','KeyS','Space','KeyI','KeyK','KeyH','KeyR','KeyT'].includes(c);
     if (handled) { e.preventDefault(); e.stopImmediatePropagation(); }
+    // Standard yaw: Left/A => yaw left, Right/D => yaw right
     if (c==='ArrowLeft'||c==='KeyA') input.yawLeft = true;
     if (c==='ArrowRight'||c==='KeyD') input.yawRight = true;
-    if (c==='ArrowUp'||c==='KeyW') input.speedUp = true;
-    if (c==='ArrowDown'||c==='KeyS') input.speedDown = true;
-    if (c==='KeyI') input.pitchUp = true;
-    if (c==='KeyK') input.pitchDown = true;
+    // Throttle on W/S
+    if (c==='KeyW') input.speedUp = true;
+    if (c==='KeyS') input.speedDown = true;
+    // Standard pitch: Up/I => pitch up, Down/K => pitch down (mouse unchanged)
+    if (c==='ArrowUp'||c==='KeyI') input.pitchUp = true;
+    if (c==='ArrowDown'||c==='KeyK') input.pitchDown = true;
     if (c==='Space') input.fire = true;
     if (c==='KeyH') {
-      yaw = Math.atan2(-shipPosition.x, -shipPosition.z);
-      pitch = Math.atan2(-shipPosition.y, new THREE.Vector2(shipPosition.x, shipPosition.z).length());
+      const to = new THREE.Vector3().copy(targetPlanet.position).sub(shipPosition).normalize();
+      yaw = Math.atan2(to.x, to.z);
+      pitch = Math.asin(THREE.MathUtils.clamp(to.y, -1, 1));
       targetSpeedUnitsPerSec = Math.max(targetSpeedUnitsPerSec, 22);
+    }
+    if (c==='KeyT') {
+      devTurboActive = !devTurboActive;
+      if (devTurboActive){
+        targetSpeedUnitsPerSec = DEV_TURBO_SPEED;
+        spawnCenteredTextLabel('DEV 500', shipPosition, 0xffee88, 2.2, 1.4);
+      } else {
+        targetSpeedUnitsPerSec = Math.min(targetSpeedUnitsPerSec, baseMaxSpeed);
+        spawnCenteredTextLabel('DEV OFF', shipPosition, 0xff8888, 2.0, 1.2);
+      }
     }
     if (c==='KeyR' && gameOver) resetGame();
   }
   function onKeyUp(e){
     const c = e.code;
-    const handled = ['ArrowLeft','ArrowRight','KeyA','KeyD','ArrowUp','ArrowDown','KeyW','KeyS','Space','KeyI','KeyK','KeyH','KeyR'].includes(c);
+    const handled = ['ArrowLeft','ArrowRight','KeyA','KeyD','ArrowUp','ArrowDown','KeyW','KeyS','Space','KeyI','KeyK','KeyH','KeyR','KeyT'].includes(c);
     if (handled) { e.preventDefault(); e.stopImmediatePropagation(); }
     if (c==='ArrowLeft'||c==='KeyA') input.yawLeft = false;
     if (c==='ArrowRight'||c==='KeyD') input.yawRight = false;
-    if (c==='ArrowUp'||c==='KeyW') input.speedUp = false;
-    if (c==='ArrowDown'||c==='KeyS') input.speedDown = false;
-    if (c==='KeyI') input.pitchUp = false;
-    if (c==='KeyK') input.pitchDown = false;
+    if (c==='KeyW') input.speedUp = false;
+    if (c==='KeyS') input.speedDown = false;
+    if (c==='ArrowUp'||c==='KeyI') input.pitchUp = false;
+    if (c==='ArrowDown'||c==='KeyK') input.pitchDown = false;
     if (c==='Space') input.fire = false;
   }
   document.addEventListener('keydown', onKeyDown, { capture:true });
@@ -711,7 +838,33 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
 
     const list = document.createElement('ul');
     Object.assign(list.style, { listStyle:'none', padding:'0', margin:'6px 0 0 0', lineHeight:'1.8' });
-    ;['Lorem','Ipsum','Banana','Peel'].forEach(item => { const li=document.createElement('li'); li.textContent=item; list.appendChild(li); });
+    const items = [
+      { key:'hp', label:'HP +100% (Cost: 1500)', cost:1500, action: () => { health = 100; } },
+      { key:'fenix', label:'Fenix Upgrade (Cost: 2000)', cost:2000, action: () => { transformToFenixShip(); } },
+      { key:'shield', label:'Shield +100% (Cost: 1000)', cost:1000, action: () => { shield = 100; } },
+    ];
+    items.forEach(entry => {
+      const li = document.createElement('li');
+      li.style.display = 'flex';
+      li.style.alignItems = 'center';
+      li.style.justifyContent = 'space-between';
+      li.style.gap = '10px';
+      const span = document.createElement('span'); span.textContent = entry.label;
+      const buy = document.createElement('button'); buy.textContent = 'Buy';
+      Object.assign(buy.style, { padding:'4px 10px', border:'none', borderRadius:'6px', cursor:'pointer', background:'rgba(0,255,180,0.25)', color:'#fff' });
+      buy.onclick = () => {
+        if (score >= entry.cost){
+          score -= entry.cost;
+          entry.action();
+          updateHud();
+          hideStoreOverlay();
+        } else {
+          buy.textContent = 'Not enough points';
+          setTimeout(()=>{ buy.textContent = 'Buy'; }, 1200);
+        }
+      };
+      li.append(span, buy); list.appendChild(li);
+    });
 
     const actions = document.createElement('div');
     Object.assign(actions.style, {
@@ -730,7 +883,8 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     document.body.appendChild(overlay);
     storeOverlay = overlay; return overlay;
   }
-  function showStoreOverlay(){ ensureStoreOverlay(); storeOverlay.style.display = 'block'; }
+  function rebuildStoreOverlay(){ if (storeOverlay){ try { document.body.removeChild(storeOverlay); } catch(_){} storeOverlay = null; } ensureStoreOverlay(); }
+  function showStoreOverlay(){ rebuildStoreOverlay(); storeOverlay.style.display = 'block'; }
   function hideStoreOverlay(){ if (storeOverlay) storeOverlay.style.display = 'none'; }
 
   // Population/field maintenance
@@ -787,7 +941,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     const desiredZaphire = Math.min(CAPS.zaphire, Math.max(40, Math.floor(asteroids.length * 0.20)));
     for (let i = zaphireOrbs.length - 1; i >= 0; i--){
       const o = zaphireOrbs[i];
-      if (o.mesh.position.distanceTo(shipPosition) > maxDist){ scene.remove(o.mesh); zaphireOrbs.splice(i,1); }
+      if (o.mesh.position.distanceTo(shipPosition) > maxDist){ if (o.glow) scene.remove(o.glow); scene.remove(o.mesh); zaphireOrbs.splice(i,1); }
     }
     while (zaphireOrbs.length < desiredZaphire) spawnZaphireOrbAround(shipPosition);
 
@@ -847,17 +1001,12 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
 
     seedAsteroids(7000, 1400, shipPosition);
     createRings(targetPlanet, 3600, 5200, 13000);
-    seedShieldOrbsFromAsteroidCount();
-    seedPinkOrbsFromAsteroidCount();
-    seedFenixOrbsFromAsteroidCount();
-    seedZaphireOrbsFromAsteroidCount();
-    seedWormholesFromAsteroidCount();
-    seedWormholesOnRings(targetPlanet, 3600, 5200, 100);
-    seedBoostOrbsFromAsteroidCount();
-    seedBoostOnRings(targetPlanet, 3600, 5200, 140);
+    // Focus orb population into the planet ring with proportional counts
+    seedAllOrbsInRingByProportion(targetPlanet, 3600, 5200);
   }
 
   let fireCooldown = 0;
+  let frameCounter = 0; // used to throttle heavy updates
   const clock = new THREE.Clock();
 
   function animate(){
@@ -870,14 +1019,14 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
         if (boostTimer <= 0){ boostActive = false; }
       }
 
-      let effectiveMaxSpeed = fenixActive ? 80 : baseMaxSpeed;
-      if (boostActive) effectiveMaxSpeed *= 3.08; // boost speed reduced by ~30%
+      let effectiveMaxSpeed = devTurboActive ? DEV_TURBO_SPEED : (fenixActive ? 80 : baseMaxSpeed);
+      if (boostActive && !devTurboActive) effectiveMaxSpeed *= 3.08; // boost speed reduced by ~30%
       // If boost just ended, ensure our target is clamped to non-boost top speed
       if (!boostActive) targetSpeedUnitsPerSec = Math.min(targetSpeedUnitsPerSec, effectiveMaxSpeed);
 
       if (input.speedUp) targetSpeedUnitsPerSec = Math.min(effectiveMaxSpeed, targetSpeedUnitsPerSec + 22*dt);
       if (input.speedDown) targetSpeedUnitsPerSec = Math.max(minSpeed, targetSpeedUnitsPerSec - 22*dt);
-      if (boostActive) targetSpeedUnitsPerSec = effectiveMaxSpeed;
+      if (boostActive || devTurboActive) targetSpeedUnitsPerSec = effectiveMaxSpeed;
 
       speedUnitsPerSec += (targetSpeedUnitsPerSec - speedUnitsPerSec) * Math.min(1, boostActive ? 10*dt : 6*dt);
       const fovKick = boostActive ? 10 : 0;
@@ -885,8 +1034,14 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       camera.fov += (fovTarget - camera.fov) * Math.min(1, 6*dt);
       camera.updateProjectionMatrix();
 
-      const yawInput = (input.yawRight?1:0) - (input.yawLeft?1:0) + (mouseDown ? mouseX*0.6 : 0);
-      const pitchInput = (input.pitchUp?1:0) - (input.pitchDown?1:0) + (mouseDown ? -mouseY*0.6 : 0);
+      // Keyboard yaw/pitch: Left/A => yaw left; Right/D => yaw right. Up/I => pitch up; Down/K => pitch down.
+      // Direct, explicit mapping with no extra signs
+      // Left/A should turn left; Right/D should turn right
+      const yawKeys = (input.yawRight?-1:0) + (input.yawLeft?1:0);
+      // Up/I -> positive pitch (nose up), Down/K -> negative pitch (nose down)
+      const pitchKeys = (input.pitchUp?1:0) + (input.pitchDown?-1:0);
+      const yawInput = yawKeys + (mouseDown ? mouseX*0.6 : 0);
+      const pitchInput = pitchKeys + (mouseDown ? -mouseY*0.6 : 0);
       yaw += yawInput * yawRate * dt;
       pitch = THREE.MathUtils.clamp(pitch + pitchInput * pitchRate * dt, -Math.PI/2+0.05, Math.PI/2-0.05);
       const targetRoll = THREE.MathUtils.clamp(-yawInput*0.9 - (mouseDown?mouseX*0.5:0), -0.7, 0.7);
@@ -920,25 +1075,27 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       b.mesh.position.addScaledVector(b.velocity, dt);
     }
 
-    // Update asteroids
+    // Update asteroids (throttle ring orbit updates to reduce per-frame cost)
     outer: for (let i = asteroids.length-1; i>=0; i--){
       const a = asteroids[i];
       if (a.inRing){
+        // Smooth per-frame update to eliminate visible jitter
         a.orbitAngle += a.orbitSpeed * dt;
         const x = targetPlanet.position.x + Math.cos(a.orbitAngle) * a.orbitRadius;
         const z = targetPlanet.position.z + Math.sin(a.orbitAngle) * a.orbitRadius;
         a.mesh.position.set(x, a.mesh.position.y, z);
-        } else {
+      } else {
         a.mesh.position.addScaledVector(a.vel, dt);
       }
       if (a.rotAxis && a.rotSpeed) a.mesh.rotateOnAxis(a.rotAxis, a.rotSpeed*dt);
 
       if (a.nearMissCooldown > 0) a.nearMissCooldown -= dt;
-      const distShip = a.mesh.position.distanceTo(shipPosition);
       const nearMissDist = a.radius + 3.2;
-      if (distShip < nearMissDist && a.nearMissCooldown <= 0){ spawnImpactBurst(a.mesh.position, 0x66ccff, 10); cameraShake += 0.25; a.nearMissCooldown = 1.2; }
+      if (isWithinRadiusSquared(a.mesh.position, shipPosition, nearMissDist) && a.nearMissCooldown <= 0){
+        spawnImpactBurst(a.mesh.position, 0x66ccff, 10); cameraShake += 0.25; a.nearMissCooldown = 1.2;
+      }
 
-      if (!gameOver && distShip < (a.radius + shipHitRadius)){
+      if (!gameOver && isWithinRadiusSquared(a.mesh.position, shipPosition, a.radius + shipHitRadius)){
         applyCrashDamage('asteroid', a.mesh.position);
         scene.remove(a.mesh); asteroids.splice(i,1);
         break outer;
@@ -946,7 +1103,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
 
       for (let j = bullets.length-1; j>=0; j--){
         const b = bullets[j];
-        if (a.mesh.position.distanceTo(b.mesh.position) < (a.radius + b.radius)){
+        if (isWithinRadiusSquared(a.mesh.position, b.mesh.position, a.radius + b.radius)){
           spawnImpactBurst(a.mesh.position);
           scene.remove(a.mesh); asteroids.splice(i,1);
           scene.remove(b.mesh); bullets.splice(j,1);
@@ -966,14 +1123,14 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       o.mesh.rotation.y += 0.8*dt;
 
       if (!gameOver){
-        if (o.mesh.position.distanceTo(shipPosition) < (o.radius + pickupHitRadius)){
+        if (isWithinRadiusSquared(o.mesh.position, shipPosition, o.radius + pickupHitRadius)){
           shield = Math.min(100, shield + 25);
           spawnShieldExplosion(o.mesh.position, 'pickup');
           scene.remove(o.mesh); shieldOrbs.splice(i,1); continue;
         }
         for (let j = bullets.length-1; j>=0; j--){
           const b = bullets[j];
-          if (o.mesh.position.distanceTo(b.mesh.position) < (o.radius + b.radius)){
+          if (isWithinRadiusSquared(o.mesh.position, b.mesh.position, o.radius + b.radius)){
             shield = Math.min(100, shield + 25);
             spawnShieldText(o.mesh.position);
             spawnShieldExplosion(o.mesh.position, 'shot');
@@ -996,12 +1153,12 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
 
       if (!gameOver){
         const trigger = () => { spawnDuendeText(o.mesh.position); spawnImpactBurst(o.mesh.position, 0xff33cc, 20); spawnShieldRing(o.mesh.position, 0xff33cc); };
-        if (o.mesh.position.distanceTo(shipPosition) < (o.radius + pickupHitRadius)){
+        if (isWithinRadiusSquared(o.mesh.position, shipPosition, o.radius + pickupHitRadius)){
           trigger(); scene.remove(o.mesh); pinkOrbs.splice(i,1); continue;
         }
         for (let j = bullets.length-1; j>=0; j--){
           const b = bullets[j];
-          if (o.mesh.position.distanceTo(b.mesh.position) < (o.radius + b.radius)){
+          if (isWithinRadiusSquared(o.mesh.position, b.mesh.position, o.radius + b.radius)){
             trigger(); scene.remove(o.mesh); pinkOrbs.splice(i,1); scene.remove(b.mesh); bullets.splice(j,1); break;
           }
         }
@@ -1012,10 +1169,11 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     for (let i = fenixOrbs.length-1; i>=0; i--){
       const o = fenixOrbs[i];
       o.bob += o.bobSpeed * dt;
-      o.mesh.position.y += Math.sin(o.bob) * 0.02;
-      const pulse = 1 + 0.22 * Math.sin(o.bob * o.pulseSpeed);
+      o.mesh.position.y += Math.sin(o.bob) * 0.03;
+      const pulse = 1 + 0.32 * Math.sin(o.bob * o.pulseSpeed);
       o.mesh.scale.setScalar(o.baseScale * pulse);
-      o.mesh.material.opacity = 0.8 + 0.2 * (0.5 + 0.5*Math.sin(o.bob * o.pulseSpeed + Math.PI*0.5));
+      if (o.glow){ o.glow.scale.setScalar(14 + 7*(0.5 + 0.5*Math.sin(o.bob * o.pulseSpeed))); o.glow.material.opacity = 0.85 + 0.12*(0.5 + 0.5*Math.sin(o.bob * o.pulseSpeed + Math.PI/8)); }
+      o.mesh.material.opacity = 0.9 + 0.1 * (0.5 + 0.5*Math.sin(o.bob * o.pulseSpeed + Math.PI*0.5));
       o.mesh.rotation.y += 0.7*dt;
 
       if (!gameOver){
@@ -1026,6 +1184,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
             spawnImpactBurst(o.mesh.position, 0xffaa55, 24);
             spawnShieldRing(o.mesh.position, 0xffaa55);
             transformToFenixShip();
+            if (o.glow) scene.remove(o.glow);
             scene.remove(o.mesh); fenixOrbs.splice(i,1);
             scene.remove(b.mesh); bullets.splice(j,1); break;
           }
@@ -1048,9 +1207,20 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       o.mesh.rotation.y += 0.8*dt;
 
       if (!gameOver){
+        // Fly-through opens store and removes both core and glow
+        if (isWithinRadiusSquared(o.mesh.position, shipPosition, o.radius + pickupHitRadius)){
+          spawnCenteredTextLabel('STORE', o.mesh.position, 0xffeeee, 2.8, 2.2);
+          spawnImpactBurst(o.mesh.position, 0xff6666, 26);
+          spawnShieldRing(o.mesh.position, 0xff6666);
+          showStoreOverlay();
+          if (o.glow) scene.remove(o.glow);
+          scene.remove(o.mesh); zaphireOrbs.splice(i,1);
+          continue;
+        }
+        // Shot also opens store and cleans up glow + core
         for (let j = bullets.length-1; j>=0; j--){
           const b = bullets[j];
-          if (o.mesh.position.distanceTo(b.mesh.position) < (o.radius + b.radius)){
+          if (isWithinRadiusSquared(o.mesh.position, b.mesh.position, o.radius + b.radius)){
             spawnCenteredTextLabel('STORE', o.mesh.position, 0xffeeee, 2.8, 2.2);
             spawnImpactBurst(o.mesh.position, 0xff6666, 26);
             spawnShieldRing(o.mesh.position, 0xff6666);
@@ -1086,13 +1256,13 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
           scene.remove(o.core); scene.remove(o.ringG); scene.remove(o.ringP); if (o.glow) scene.remove(o.glow); boostOrbs.splice(i,1);
         };
         // Pickup
-        if (o.core.position.distanceTo(shipPosition) < (effR + pickupHitRadius)){
+        if (isWithinRadiusSquared(o.core.position, shipPosition, effR + pickupHitRadius)){
           triggerBoost(); continue;
         }
         // Shot
         for (let j = bullets.length-1; j>=0; j--){
           const b = bullets[j];
-          if (o.core.position.distanceTo(b.mesh.position) < (effR + b.radius)){
+          if (isWithinRadiusSquared(o.core.position, b.mesh.position, effR + b.radius)){
             triggerBoost(); scene.remove(b.mesh); bullets.splice(j,1); break;
           }
         }
@@ -1126,7 +1296,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       if (!gameOver){
         for (let j = bullets.length-1; j>=0; j--){
           const b = bullets[j];
-          if (w.mesh.position.distanceTo(b.mesh.position) < (w.radius + b.radius)){
+          if (isWithinRadiusSquared(w.mesh.position, b.mesh.position, w.radius + b.radius)){
             // Choose a destination at least 12 km away from the source
             const srcPos = w.mesh.position;
             const farCandidates = wormholeOrbs.filter(o => o !== w && o.mesh.position.distanceTo(srcPos) >= MIN_WORMHOLE_TELEPORT_DIST);
@@ -1208,16 +1378,161 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     // Exhaust
     if (!gameOver) spawnExhaust(50 + speedUnitsPerSec*4, dt);
 
+    // --- Bots update ---
+    updateBots(dt);
+
+    // Bot bullets -> player
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      const b = bullets[i];
+      if (b.owner === 'bot') {
+        if (isWithinRadiusSquared(b.mesh.position, shipPosition, shipHitRadius + b.radius)) {
+          if (!gameOver) {
+            spawnImpactBurst(b.mesh.position);
+            cameraShake += 0.25;
+            const shieldDamage = 20, healthDamage = 12;
+            if (shield > 0){ shield = Math.max(0, shield - shieldDamage); }
+            health = Math.max(0, health - healthDamage);
+            if (health <= 0){ gameOver = true; showGameOver(); }
+          }
+          scene.remove(b.mesh); bullets.splice(i, 1);
+        }
+      }
+    }
+
+    // Player bullets -> bots
+    for (let bi = bots.length - 1; bi >= 0; bi--) {
+      const bot = bots[bi];
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
+        if (b.owner !== 'bot') { // player's or fenix beams
+          if (isWithinRadiusSquared(b.mesh.position, bot.pos, bot.radius + b.radius)) {
+            spawnImpactBurst(bot.pos);
+            scene.remove(bot.mesh); bots.splice(bi, 1);
+            scene.remove(b.mesh); bullets.splice(i, 1);
+            break;
+          }
+        }
+      }
+    }
+
     maintainPatches();
     keepFieldPopulated();
     updateHud();
 
     renderer.render(scene, camera);
     requestAnimationFrame(animate);
+    frameCounter++;
   }
 
   function onResize(){ const w = window.innerWidth, h = window.innerHeight; renderer.setSize(w,h); camera.aspect = w/h; camera.updateProjectionMatrix(); }
   window.addEventListener('resize', onResize);
   onResize();
   animate();
+
+  // --- Bots (AI players) ---
+  // bots is declared early above to avoid TDZ errors
+  const BOT_COUNT = 3;
+  const BOT_FIRE_COOLDOWN = 0.45;
+  const BOT_TURN_RATE = 1.2; // rad/s
+  const BOT_PITCH_RATE = 0.9; // rad/s
+  const BOT_SPEED = 20; // units/s
+  const BOT_RANGE = 1400; // engage distance
+  const BOT_SHOT_SPREAD = 0.02; // radians
+
+  function tintShip(mesh, color = 0xff6666) {
+    mesh.traverse?.(n => {
+      if (n.isMesh && n.material) {
+        if (Array.isArray(n.material)) n.material.forEach(m => { m.color?.setHex?.(color); m.emissive?.setHex?.(color); });
+        else { n.material.color?.setHex?.(color); n.material.emissive?.setHex?.(color); }
+      }
+    });
+  }
+
+  function spawnBotAtPosition(pos) {
+    const mesh = buildDefaultShip();
+    tintShip(mesh, 0xff6666);
+    mesh.position.copy(pos);
+    scene.add(mesh);
+    const bot = {
+      mesh,
+      pos: mesh.position,
+      yaw: 0, pitch: 0, roll: 0,
+      speed: BOT_SPEED,
+      fireCooldown: 1.0 + Math.random()*0.5,
+      radius: 1.8
+    };
+    // Face roughly toward player
+    const toPlayer = new THREE.Vector3().copy(shipPosition).sub(bot.pos);
+    bot.yaw = Math.atan2(toPlayer.x, toPlayer.z);
+    bot.pitch = Math.atan2(-toPlayer.y, new THREE.Vector2(toPlayer.x, toPlayer.z).length());
+    bots.push(bot);
+  }
+
+  function botShoot(bot) {
+    // Simple blue-ish shot like player (not Fenix)
+    const mat = new THREE.MeshStandardMaterial({ color: 0xff8866, emissive: 0xff6644, emissiveIntensity: 2.5 });
+    const bullet = new THREE.Mesh(bulletGeometry, mat);
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(bot.pitch, bot.yaw, bot.roll, 'YXZ'));
+    const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(q).normalize();
+    // Apply slight random spread so it's not perfect aim
+    const spread = BOT_SHOT_SPREAD;
+    dir.applyAxisAngle(new THREE.Vector3(0,1,0), (Math.random()-0.5)*spread);
+    dir.applyAxisAngle(new THREE.Vector3(1,0,0), (Math.random()-0.5)*spread);
+
+    const tip = new THREE.Vector3().copy(bot.pos).add(dir.clone().multiplyScalar(1.8));
+    bullet.position.copy(tip);
+    scene.add(bullet);
+    bullets.push({ mesh: bullet, velocity: dir.multiplyScalar(DEFAULT_BULLET_SPEED), life: DEFAULT_BULLET_LIFE, radius: 0.25, owner: 'bot' });
+  }
+
+  function updateBots(dt) {
+    for (let i = bots.length - 1; i >= 0; i--) {
+      const b = bots[i];
+      // Steering toward player
+      const toPlayer = new THREE.Vector3().copy(shipPosition).sub(b.pos);
+      const dist = toPlayer.length();
+      if (dist < 0.001) continue;
+      const desiredYaw = Math.atan2(toPlayer.x, toPlayer.z);
+      const desiredPitch = Math.atan2(-toPlayer.y, new THREE.Vector2(toPlayer.x, toPlayer.z).length());
+
+      // Shortest angle delta for yaw
+      let dy = desiredYaw - b.yaw;
+      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      const dp = desiredPitch - b.pitch;
+
+      const maxYawStep = BOT_TURN_RATE * dt;
+      const maxPitchStep = BOT_PITCH_RATE * dt;
+
+      b.yaw += THREE.MathUtils.clamp(dy, -maxYawStep, maxYawStep);
+      b.pitch += THREE.MathUtils.clamp(dp, -maxPitchStep, maxPitchStep);
+
+      // Move forward
+      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(b.pitch, b.yaw, b.roll, 'YXZ'));
+      const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(q).normalize();
+      b.pos.addScaledVector(forward, b.speed * dt);
+      b.mesh.quaternion.copy(q);
+
+      // Fire when roughly aligned and in range
+      b.fireCooldown -= dt;
+      const facingDot = forward.dot(toPlayer.clone().normalize()); // 1 = directly at player
+      if (dist < BOT_RANGE && facingDot > 0.985 && b.fireCooldown <= 0) {
+        botShoot(b);
+        b.fireCooldown = BOT_FIRE_COOLDOWN + Math.random()*0.2;
+      }
+    }
+  }
+
+  // Spawn initial bots around the player
+  for (let i = 0; i < BOT_COUNT; i++) {
+    const r = 1200 + Math.random()*1600;
+    const theta = Math.random()*Math.PI*2;
+    const phi = (Math.random()-0.5) * 0.6;
+    const offset = new THREE.Vector3(
+      r*Math.cos(theta)*Math.cos(phi),
+      r*Math.sin(phi),
+      r*Math.sin(theta)*Math.cos(phi)
+    );
+    spawnBotAtPosition(new THREE.Vector3().copy(shipPosition).add(offset));
+  }
+
 })();
