@@ -8,7 +8,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   canvas.tabIndex = 0; canvas.style.outline = 'none'; canvas.focus();
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
-  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -48,6 +48,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     hunter: 300,  // blue: x2 kill points
   };
   const ONLY_RING_ORBS = true; // place all orbs in the belt only
+  const USE_SPATIAL_HASH = true; // optimize bullet vs asteroid checks
 
   // Early declaration so ring seeding can reference it
   const boostOrbs = [];
@@ -125,14 +126,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   addPlanet(new THREE.Vector3(15000, 6000, 12000), 900, 0xaa7755);
   addPlanet(new THREE.Vector3(-18000, -4000, -9000), 700, 0x669966);
 
-  // Ring halo/guide for visibility
-  const ringHalo = new THREE.Mesh(
-    new THREE.RingGeometry(3600, 5200, 160),
-    new THREE.MeshBasicMaterial({ color: 0x6fa0ff, transparent: true, opacity: 0.18, side: THREE.DoubleSide })
-  );
-  ringHalo.position.copy(targetPlanet.position);
-  ringHalo.rotation.x = Math.PI / 2;
-  scene.add(ringHalo);
+  // Removed belt "veil" halo for a cleaner look
 
   // Starfield
   (function makeStars(){
@@ -180,6 +174,24 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     const dy = posA.y - posB.y;
     const dz = posA.z - posB.z;
     return (dx*dx + dy*dy + dz*dz) < (combinedRadius * combinedRadius);
+  }
+
+  // Spatial hash for broad-phase collision
+  class SpatialHash {
+    constructor(cellSize){ this.cellSize = cellSize; this.map = new Map(); }
+    key(x,y,z){ const cs=this.cellSize; return ((x/cs)|0)+":"+((y/cs)|0)+":"+((z/cs)|0); }
+    clear(){ this.map.clear(); }
+    insert(obj, pos){ const k=this.key(pos.x,pos.y,pos.z); let a=this.map.get(k); if(!a){ a=[]; this.map.set(k,a);} a.push(obj); }
+    query(pos, radius){
+      const cs=this.cellSize, r=radius; const out=[]; const m=this.map;
+      const minX=((pos.x-r)/cs|0), maxX=((pos.x+r)/cs|0);
+      const minY=((pos.y-r)/cs|0), maxY=((pos.y+r)/cs|0);
+      const minZ=((pos.z-r)/cs|0), maxZ=((pos.z+r)/cs|0);
+      for(let x=minX;x<=maxX;x++) for(let y=minY;y<=maxY;y++) for(let z=minZ;z<=maxZ;z++){
+        const a=m.get(x+":"+y+":"+z); if(a) out.push(...a);
+      }
+      return out;
+    }
   }
 
   // Utility: glow sprite texture for wormholes
@@ -260,11 +272,54 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       m.scale.setScalar(scale);
       m.position.copy(pos);
       scene.add(m);
-      asteroids.push({ mesh:m, radius: scale*0.95, inRing:true, orbitRadius:r, orbitAngle:a, orbitSpeed:(Math.random()*0.5+0.2)*0.06, rotAxis: randomAxis(), rotSpeed: (Math.random()*2-1)*0.8, nearMissCooldown: 0 });
+      asteroids.push({ mesh:m, radius: scale*0.95, inRing:true, orbitRadius:r, orbitAngle:a, orbitSpeed:(Math.random()*0.5+0.2)*0.06, rotAxis: randomAxis(), rotSpeed: (Math.random()*2-1)*0.8, nearMissCooldown: 0, instanceId:-1, instanceGroup:-1, scale });
     }
   }
   // Double the number of ring asteroids for richer belts
   createRings(targetPlanet, 3600, 5200, 13000);
+
+  // Grouped InstancedMesh rendering for ring asteroids (2-3 batches)
+  let ringInstancedGroups = [];
+  const instTmp = new THREE.Object3D();
+  function disposeRingInstancedGroups(){
+    if (!ringInstancedGroups || ringInstancedGroups.length===0) return;
+    for (const im of ringInstancedGroups){ try { scene.remove(im); im.geometry.dispose?.(); if (im.material.dispose) im.material.dispose(); } catch(_){} }
+    ringInstancedGroups = [];
+  }
+  function buildRingInstancedGroups(groupCount=3){
+    disposeRingInstancedGroups();
+    const ringIndices = [];
+    for (let i=0;i<asteroids.length;i++){ if (asteroids[i].inRing) ringIndices.push(i); }
+    if (ringIndices.length === 0) return;
+    // Partition into groupCount buckets
+    const buckets = Array.from({length: groupCount}, ()=>[]);
+    for (let j=0;j<ringIndices.length;j++){ buckets[j % groupCount].push(ringIndices[j]); }
+    const geom = asteroidGeometry.clone();
+    for (let g=0; g<groupCount; g++){
+      const count = buckets[g].length; if (count === 0){ ringInstancedGroups[g] = null; continue; }
+      const mat = new THREE.MeshStandardMaterial({ color: 0xa8a8a8, roughness: 0.95, metalness: 0.05, emissive: 0x222222, emissiveIntensity: 0.18 });
+      const im = new THREE.InstancedMesh(geom, mat, count);
+      im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      scene.add(im);
+      ringInstancedGroups[g] = im;
+      // Assign mapping and initialize matrices
+      for (let k=0;k<count;k++){
+        const idx = buckets[g][k];
+        const a = asteroids[idx];
+        a.instanceGroup = g; a.instanceId = k;
+        a.mesh.visible = false; // hide original render mesh; keep for position/collision
+        instTmp.position.copy(a.mesh.position);
+        instTmp.rotation.set(0,0,0);
+        instTmp.scale.set(a.scale, a.scale, a.scale);
+        instTmp.updateMatrix();
+        im.setMatrixAt(k, instTmp.matrix);
+      }
+      im.instanceMatrix.needsUpdate = true;
+    }
+  }
+  buildRingInstancedGroups(3);
+
+  // Removed InstancedMesh rendering to restore per-mesh movement/rendering for ring asteroids
 
   // Font for 3D labels
   let gameFont = null;
@@ -1301,7 +1356,8 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       b.mesh.position.addScaledVector(b.velocity, dt);
     }
 
-    // Update asteroids (throttle ring orbit updates to reduce per-frame cost)
+    // Update asteroids; build spatial hash for broad-phase
+    const hash = USE_SPATIAL_HASH ? new SpatialHash(120) : null;
     outer: for (let i = asteroids.length-1; i>=0; i--){
       const a = asteroids[i];
       if (a.inRing){
@@ -1310,10 +1366,23 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
         const x = targetPlanet.position.x + Math.cos(a.orbitAngle) * a.orbitRadius;
         const z = targetPlanet.position.z + Math.sin(a.orbitAngle) * a.orbitRadius;
         a.mesh.position.set(x, a.mesh.position.y, z);
+        // Update instanced matrix for its group
+        if (a.instanceGroup>=0 && a.instanceId>=0){
+          const im = ringInstancedGroups[a.instanceGroup];
+          if (im){
+            instTmp.position.copy(a.mesh.position);
+            instTmp.rotation.set(0,0,0);
+            instTmp.scale.set(a.scale, a.scale, a.scale);
+            instTmp.updateMatrix();
+            im.setMatrixAt(a.instanceId, instTmp.matrix);
+            im.instanceMatrix.needsUpdate = true;
+          }
+        }
         } else {
         a.mesh.position.addScaledVector(a.vel, dt);
       }
       if (a.rotAxis && a.rotSpeed) a.mesh.rotateOnAxis(a.rotAxis, a.rotSpeed*dt);
+      if (hash) hash.insert({ i, a }, a.mesh.position);
 
       if (a.nearMissCooldown > 0) a.nearMissCooldown -= dt;
       const nearMissDist = a.radius + 3.2;
@@ -1323,19 +1392,61 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
 
       if (!gameOver && isWithinRadiusSquared(a.mesh.position, shipPosition, a.radius + shipHitRadius)){
         applyCrashDamage('asteroid', a.mesh.position);
+        if (a.instanceGroup>=0 && a.instanceId>=0){
+          const im = ringInstancedGroups[a.instanceGroup];
+          if (im){
+            instTmp.position.set(0,0,0); instTmp.rotation.set(0,0,0); instTmp.scale.set(0,0,0); instTmp.updateMatrix();
+            im.setMatrixAt(a.instanceId, instTmp.matrix); im.instanceMatrix.needsUpdate = true;
+          }
+        }
         scene.remove(a.mesh); asteroids.splice(i,1);
         break outer;
       }
 
+      if (!hash){
+        for (let j = bullets.length-1; j>=0; j--){
+          const b = bullets[j];
+          if (isWithinRadiusSquared(a.mesh.position, b.mesh.position, a.radius + b.radius)){
+            spawnImpactBurst(a.mesh.position);
+            if (a.instanceGroup>=0 && a.instanceId>=0){
+              const im = ringInstancedGroups[a.instanceGroup];
+              if (im){
+                instTmp.position.set(0,0,0); instTmp.rotation.set(0,0,0); instTmp.scale.set(0,0,0); instTmp.updateMatrix();
+                im.setMatrixAt(a.instanceId, instTmp.matrix); im.instanceMatrix.needsUpdate = true;
+              }
+            }
+            scene.remove(a.mesh); asteroids.splice(i,1);
+            scene.remove(b.mesh); bullets.splice(j,1);
+            score += getAsteroidScore(a.inRing ? 160 : 110, a.mesh.position);
+            asteroidsDestroyed++;
+            break outer;
+          }
+        }
+      }
+    }
+
+    if (hash){
       for (let j = bullets.length-1; j>=0; j--){
         const b = bullets[j];
-        if (isWithinRadiusSquared(a.mesh.position, b.mesh.position, a.radius + b.radius)){
-          spawnImpactBurst(a.mesh.position);
-          scene.remove(a.mesh); asteroids.splice(i,1);
-          scene.remove(b.mesh); bullets.splice(j,1);
-          score += getAsteroidScore(a.inRing ? 160 : 110, a.mesh.position);
-          asteroidsDestroyed++;
-          break outer;
+        const near = hash.query(b.mesh.position, 200);
+        for (let k=0;k<near.length;k++){
+          const { i, a } = near[k]; if (!asteroids[i]) continue;
+           if (isWithinRadiusSquared(a.mesh.position, b.mesh.position, a.radius + b.radius)){
+             spawnImpactBurst(a.mesh.position);
+             // Hide instance immediately
+             if (a.instanceGroup>=0 && a.instanceId>=0){
+               const im = ringInstancedGroups[a.instanceGroup];
+               if (im){
+                 instTmp.position.set(0,0,0); instTmp.rotation.set(0,0,0); instTmp.scale.set(0,0,0); instTmp.updateMatrix();
+                 im.setMatrixAt(a.instanceId, instTmp.matrix); im.instanceMatrix.needsUpdate = true;
+               }
+             }
+             scene.remove(a.mesh); asteroids.splice(i,1);
+            scene.remove(b.mesh); bullets.splice(j,1);
+            score += getAsteroidScore(a.inRing ? 160 : 110, a.mesh.position);
+            asteroidsDestroyed++;
+            break;
+          }
         }
       }
     }
@@ -1564,29 +1675,34 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       }
 
       if (!gameOver){
+        const tryTeleport = ()=>{
+          // Choose a destination at least 12 km away from the source
+          const srcPos = w.mesh.position;
+          const farCandidates = wormholeOrbs.filter(o => o !== w && o.mesh.position.distanceTo(srcPos) >= MIN_WORMHOLE_TELEPORT_DIST);
+          let destPos;
+          if (farCandidates.length > 0){
+            const picked = farCandidates[Math.floor(Math.random()*farCandidates.length)];
+            destPos = picked.mesh.position.clone();
+          } else {
+            const rnd = new THREE.Vector3(Math.random()*2-1, Math.random()*2-1, Math.random()*2-1).normalize();
+            const dist = MIN_WORMHOLE_TELEPORT_DIST + Math.random()*8000; // 12–20 km
+            destPos = srcPos.clone().add(rnd.multiplyScalar(dist));
+          }
+          const local = new THREE.Vector3(Math.random()*2-1, Math.random()*2-1, Math.random()*2-1).normalize().multiplyScalar(150 + Math.random()*250);
+          shipPosition.copy(destPos).add(local);
+          ship.position.copy(shipPosition);
+          cameraShake += 1.0; spawnShieldRing(destPos, 0xffffff);
+          scene.remove(w.mesh); scene.remove(w.halo); if (w.glow) scene.remove(w.glow); if (w.cubeCam) scene.remove(w.cubeCam); wormholeOrbs.splice(i,1);
+        };
+        // Fly-through activation
+        if (isWithinRadiusSquared(w.mesh.position, shipPosition, w.radius + pickupHitRadius)){
+          tryTeleport(); continue;
+        }
+        // Shot activation
         for (let j = bullets.length-1; j>=0; j--){
           const b = bullets[j];
           if (isWithinRadiusSquared(w.mesh.position, b.mesh.position, w.radius + b.radius)){
-            // Choose a destination at least 12 km away from the source
-            const srcPos = w.mesh.position;
-            const farCandidates = wormholeOrbs.filter(o => o !== w && o.mesh.position.distanceTo(srcPos) >= MIN_WORMHOLE_TELEPORT_DIST);
-            let destPos;
-            if (farCandidates.length > 0){
-              const picked = farCandidates[Math.floor(Math.random()*farCandidates.length)];
-              destPos = picked.mesh.position.clone();
-            } else {
-              // Fallback: random point at least MIN distance away from the shot orb
-              const rnd = new THREE.Vector3(Math.random()*2-1, Math.random()*2-1, Math.random()*2-1).normalize();
-              const dist = MIN_WORMHOLE_TELEPORT_DIST + Math.random()*8000; // 12–20 km
-              destPos = srcPos.clone().add(rnd.multiplyScalar(dist));
-            }
-            // Small local offset around destination to avoid landing exactly on it
-            const local = new THREE.Vector3(Math.random()*2-1, Math.random()*2-1, Math.random()*2-1).normalize().multiplyScalar(150 + Math.random()*250);
-            shipPosition.copy(destPos).add(local);
-            ship.position.copy(shipPosition);
-            cameraShake += 1.0; spawnShieldRing(destPos, 0xffffff);
-            scene.remove(w.mesh); scene.remove(w.halo); if (w.glow) scene.remove(w.glow); if (w.cubeCam) scene.remove(w.cubeCam); wormholeOrbs.splice(i,1);
-            scene.remove(b.mesh); bullets.splice(j,1); break;
+            tryTeleport(); scene.remove(b.mesh); bullets.splice(j,1); break;
           }
         }
       }
