@@ -737,9 +737,26 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   seedBoostOrbsFromAsteroidCount();
 
   // Particles
-  const bullets = []; // { mesh, velocity, life, radius }
+  const bullets = []; // { mesh, velocity, life, radius, kind?:'player'|'fenix'|'bot' }
   const bulletGeometry = new THREE.SphereGeometry(0.25, 8, 8);
   const beamGeometry = new THREE.CylinderGeometry(0.06, 0.06, 12, 8, 1, true); // thinner Fenix beam
+
+  // Bullet pools (player + fenix only; bots unchanged for now)
+  const playerBulletPool = [];
+  const fenixBeamPool = [];
+  function acquirePlayerBulletMesh(){
+    const m = playerBulletPool.pop();
+    if (m) return m;
+    return new THREE.Mesh(bulletGeometry, new THREE.MeshStandardMaterial({ color: 0x66ffff, emissive: 0x66ffff, emissiveIntensity: 3 }));
+  }
+  function releasePlayerBulletMesh(mesh){ playerBulletPool.push(mesh); }
+  function acquireFenixBeamMesh(){
+    const m = fenixBeamPool.pop();
+    if (m) return m;
+    const mat = new THREE.MeshBasicMaterial({ color: 0xff2222, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+    return new THREE.Mesh(beamGeometry, mat);
+  }
+  function releaseFenixBeamMesh(mesh){ fenixBeamPool.push(mesh); }
 
   const exhaustParticles = []; // { mesh, vel, life }
   const impactParticles = [];  // { mesh, vel, life }
@@ -834,20 +851,18 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     const tipWorld = new THREE.Vector3().copy(shipPosition).add(dir.clone().multiplyScalar(1.8));
 
     if (fenixActive) {
-      const mat = new THREE.MeshBasicMaterial({ color: 0xff2222, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
-      const beam = new THREE.Mesh(beamGeometry, mat);
+      const beam = acquireFenixBeamMesh();
       const alignQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
       beam.quaternion.copy(alignQuat);
       const halfLen = 6; // visual length only; reach is controlled by life * speed
       beam.position.copy(tipWorld).add(dir.clone().multiplyScalar(halfLen));
-      scene.add(beam);
-      bullets.push({ mesh: beam, velocity: dir.multiplyScalar(FENIX_BEAM_SPEED), life: FENIX_BEAM_LIFE, radius: 0.45 });
+      if (!beam.parent) scene.add(beam);
+      bullets.push({ mesh: beam, velocity: dir.multiplyScalar(FENIX_BEAM_SPEED), life: FENIX_BEAM_LIFE, radius: 0.45, kind:'fenix' });
     } else {
-      const mat = new THREE.MeshStandardMaterial({ color: 0x66ffff, emissive: 0x66ffff, emissiveIntensity: 3 });
-      const bullet = new THREE.Mesh(bulletGeometry, mat);
+      const bullet = acquirePlayerBulletMesh();
       bullet.position.copy(tipWorld);
-      scene.add(bullet);
-      bullets.push({ mesh: bullet, velocity: dir.multiplyScalar(DEFAULT_BULLET_SPEED), life: DEFAULT_BULLET_LIFE, radius: 0.25 });
+      if (!bullet.parent) scene.add(bullet);
+      bullets.push({ mesh: bullet, velocity: dir.multiplyScalar(DEFAULT_BULLET_SPEED), life: DEFAULT_BULLET_LIFE, radius: 0.25, kind:'player' });
     }
     cameraShake += 0.05;
   }
@@ -1372,7 +1387,12 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     // Update bullets
     for (let i = bullets.length-1; i>=0; i--){
       const b = bullets[i];
-      b.life -= dt; if (b.life <= 0){ scene.remove(b.mesh); bullets.splice(i,1); continue; }
+      b.life -= dt; if (b.life <= 0){
+        scene.remove(b.mesh);
+        if (b.kind==='player') releasePlayerBulletMesh(b.mesh);
+        else if (b.kind==='fenix') releaseFenixBeamMesh(b.mesh);
+        bullets.splice(i,1); continue;
+      }
       b.mesh.position.addScaledVector(b.velocity, dt);
     }
 
@@ -1436,7 +1456,9 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
               }
             }
             scene.remove(a.mesh); asteroids.splice(i,1);
-            scene.remove(b.mesh); bullets.splice(j,1);
+            scene.remove(b.mesh);
+            if (b.kind==='player') releasePlayerBulletMesh(b.mesh); else if (b.kind==='fenix') releaseFenixBeamMesh(b.mesh);
+            bullets.splice(j,1);
             score += getAsteroidScore(a.inRing ? 160 : 110, a.mesh.position);
             asteroidsDestroyed++;
             break outer;
@@ -1462,7 +1484,9 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
                }
              }
              scene.remove(a.mesh); asteroids.splice(i,1);
-            scene.remove(b.mesh); bullets.splice(j,1);
+            scene.remove(b.mesh);
+            if (b.kind==='player') releasePlayerBulletMesh(b.mesh); else if (b.kind==='fenix') releaseFenixBeamMesh(b.mesh);
+            bullets.splice(j,1);
             score += getAsteroidScore(a.inRing ? 160 : 110, a.mesh.position);
             asteroidsDestroyed++;
             break;
@@ -1494,7 +1518,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
             spawnShieldText(o.mesh.position);
             spawnShieldExplosion(o.mesh.position, 'shot');
             scene.remove(o.mesh); shieldOrbs.splice(i,1);
-            scene.remove(b.mesh); bullets.splice(j,1); break;
+            scene.remove(b.mesh); if (b.kind==='player') releasePlayerBulletMesh(b.mesh); else if (b.kind==='fenix') releaseFenixBeamMesh(b.mesh); bullets.splice(j,1); break;
           }
         }
       }
@@ -1518,7 +1542,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
         for (let j = bullets.length-1; j>=0; j--){
           const b = bullets[j];
           if (isWithinRadiusSquared(o.mesh.position, b.mesh.position, o.radius + b.radius)){
-            trigger(); scene.remove(o.mesh); pinkOrbs.splice(i,1); scene.remove(b.mesh); bullets.splice(j,1); break;
+            trigger(); scene.remove(o.mesh); pinkOrbs.splice(i,1); scene.remove(b.mesh); if (b.kind==='player') releasePlayerBulletMesh(b.mesh); else if (b.kind==='fenix') releaseFenixBeamMesh(b.mesh); bullets.splice(j,1); break;
           }
         }
       }
@@ -1538,14 +1562,14 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       if (!gameOver){
         for (let j = bullets.length-1; j>=0; j--){
           const b = bullets[j];
-          if (o.mesh.position.distanceTo(b.mesh.position) < (o.radius + b.radius)){
+           if (o.mesh.position.distanceTo(b.mesh.position) < (o.radius + b.radius)){
             spawnFenixLabel(o.mesh.position);
             spawnImpactBurst(o.mesh.position, 0xffaa55, 24);
             spawnShieldRing(o.mesh.position, 0xffaa55);
             transformToFenixShip();
             if (o.glow) scene.remove(o.glow);
             scene.remove(o.mesh); fenixOrbs.splice(i,1);
-            scene.remove(b.mesh); bullets.splice(j,1); break;
+             scene.remove(b.mesh); if (b.kind==='player') releasePlayerBulletMesh(b.mesh); else if (b.kind==='fenix') releaseFenixBeamMesh(b.mesh); bullets.splice(j,1); break;
           }
         }
       }
@@ -1579,14 +1603,14 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
         // Shot also opens store and cleans up glow + core
         for (let j = bullets.length-1; j>=0; j--){
           const b = bullets[j];
-          if (isWithinRadiusSquared(o.mesh.position, b.mesh.position, o.radius + b.radius)){
+            if (isWithinRadiusSquared(o.mesh.position, b.mesh.position, o.radius + b.radius)){
             spawnCenteredTextLabel('STORE', o.mesh.position, 0xffeeee, 2.8, 2.2);
             spawnImpactBurst(o.mesh.position, 0xff6666, 26);
             spawnShieldRing(o.mesh.position, 0xff6666);
             showStoreOverlay();
             if (o.glow) scene.remove(o.glow);
             scene.remove(o.mesh); zaphireOrbs.splice(i,1);
-            scene.remove(b.mesh); bullets.splice(j,1); break;
+            scene.remove(b.mesh); if (b.kind==='player') releasePlayerBulletMesh(b.mesh); else if (b.kind==='fenix') releaseFenixBeamMesh(b.mesh); bullets.splice(j,1); break;
           }
         }
       }
@@ -1622,7 +1646,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
         for (let j = bullets.length-1; j>=0; j--){
           const b = bullets[j];
           if (isWithinRadiusSquared(o.core.position, b.mesh.position, effR + b.radius)){
-            triggerBoost(); scene.remove(b.mesh); bullets.splice(j,1); break;
+            triggerBoost(); scene.remove(b.mesh); if (b.kind==='player') releasePlayerBulletMesh(b.mesh); else if (b.kind==='fenix') releaseFenixBeamMesh(b.mesh); bullets.splice(j,1); break;
           }
         }
       }
@@ -1645,7 +1669,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
           scene.remove(o.core); scene.remove(o.ring); minerOrbs.splice(i,1);
         };
         if (isWithinRadiusSquared(o.core.position, shipPosition, effR + pickupHitRadius)){ trigger(); continue; }
-        for (let j = bullets.length-1; j>=0; j--){ const b = bullets[j]; if (isWithinRadiusSquared(o.core.position, b.mesh.position, effR + b.radius)){ trigger(); scene.remove(b.mesh); bullets.splice(j,1); break; } }
+        for (let j = bullets.length-1; j>=0; j--){ const b = bullets[j]; if (isWithinRadiusSquared(o.core.position, b.mesh.position, effR + b.radius)){ trigger(); scene.remove(b.mesh); if (b.kind==='player') releasePlayerBulletMesh(b.mesh); else if (b.kind==='fenix') releaseFenixBeamMesh(b.mesh); bullets.splice(j,1); break; } }
       }
     }
 
@@ -1666,7 +1690,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
           scene.remove(o.core); scene.remove(o.ring); hunterOrbs.splice(i,1);
         };
         if (isWithinRadiusSquared(o.core.position, shipPosition, effR + pickupHitRadius)){ trigger(); continue; }
-        for (let j = bullets.length-1; j>=0; j--){ const b = bullets[j]; if (isWithinRadiusSquared(o.core.position, b.mesh.position, effR + b.radius)){ trigger(); scene.remove(b.mesh); bullets.splice(j,1); break; } }
+        for (let j = bullets.length-1; j>=0; j--){ const b = bullets[j]; if (isWithinRadiusSquared(o.core.position, b.mesh.position, effR + b.radius)){ trigger(); scene.remove(b.mesh); if (b.kind==='player') releasePlayerBulletMesh(b.mesh); else if (b.kind==='fenix') releaseFenixBeamMesh(b.mesh); bullets.splice(j,1); break; } }
       }
     }
 
@@ -1722,7 +1746,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
         for (let j = bullets.length-1; j>=0; j--){
           const b = bullets[j];
           if (isWithinRadiusSquared(w.mesh.position, b.mesh.position, w.radius + b.radius)){
-            tryTeleport(); scene.remove(b.mesh); bullets.splice(j,1); break;
+            tryTeleport(); scene.remove(b.mesh); if (b.kind==='player') releasePlayerBulletMesh(b.mesh); else if (b.kind==='fenix') releaseFenixBeamMesh(b.mesh); bullets.splice(j,1); break;
           }
         }
       }
