@@ -743,6 +743,26 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
 
   const exhaustParticles = []; // { mesh, vel, life }
   const impactParticles = [];  // { mesh, vel, life }
+  // Simple object pools to reduce GC churn
+  const exhaustPool = [];
+  const impactPool = [];
+  function acquireExhaustMesh(){
+    const m = exhaustPool.pop();
+    if (m) return m;
+    return new THREE.Mesh(exhaustGeometry, makeAdditiveMaterial(0x66ccff, 0.7));
+  }
+  function releaseExhaustMesh(mesh){
+    exhaustPool.push(mesh);
+  }
+  function acquireImpactMesh(baseColor){
+    const m = impactPool.pop();
+    if (m){ if (m.material && m.material.color) m.material.color.setHex(baseColor); return m; }
+    const mat = makeAdditiveMaterial(baseColor, 0.95);
+    return new THREE.Mesh(impactGeometry, mat);
+  }
+  function releaseImpactMesh(mesh){
+    impactPool.push(mesh);
+  }
   const exhaustGeometry = new THREE.SphereGeometry(0.18, 6, 6);
   const impactGeometry = new THREE.SphereGeometry(0.22, 6, 6);
 
@@ -768,10 +788,10 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       .addScaledVector(back, backOffset)
       .add(new THREE.Vector3(0,0.25,0).applyQuaternion(q));
     for (let i=0;i<count;i++){
-      const p = new THREE.Mesh(exhaustGeometry, makeAdditiveMaterial(0x66ccff, 0.7));
+      const p = acquireExhaustMesh();
       p.position.copy(origin).add(randomVel(0.4));
       p.scale.setScalar(0.6 + Math.random()*0.5);
-      scene.add(p);
+      if (!p.parent) scene.add(p);
       // Give particles some ship velocity so the trail stays connected and smooth at high speeds
       const vel = new THREE.Vector3().copy(velocity)
         .add(back.clone().multiplyScalar(14 + speedUnitsPerSec*0.55))
@@ -782,10 +802,10 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
 
   function spawnImpactBurst(position, baseColor=0xffaa66, count=26){
     for (let i=0;i<count;i++){
-      const p = new THREE.Mesh(impactGeometry, makeAdditiveMaterial(baseColor, 0.95));
+      const p = acquireImpactMesh(baseColor);
       p.position.copy(position);
       p.scale.setScalar(0.7 + Math.random()*0.9);
-      scene.add(p);
+      if (!p.parent) scene.add(p);
       const vel = randomVel(20);
       impactParticles.push({ mesh:p, vel, life: 0.6 + Math.random()*0.2 });
     }
@@ -797,10 +817,10 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     const mainColor = variant === 'shot' ? 0x99ffcc : 0x66ff99;
     const count = variant === 'shot' ? 16 : 28;
     for (let i=0;i<count;i++){
-      const p = new THREE.Mesh(impactGeometry, makeAdditiveMaterial(mainColor, 0.95));
+      const p = acquireImpactMesh(mainColor);
       p.position.copy(position);
       p.scale.setScalar(0.6 + Math.random()*1.0);
-      scene.add(p);
+      if (!p.parent) scene.add(p);
       const vel = randomVel(variant === 'shot' ? 16 : 12);
       impactParticles.push({ mesh:p, vel, life: variant === 'shot' ? (0.45 + Math.random()*0.2) : (0.7 + Math.random()*0.25) });
     }
@@ -953,7 +973,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
       lbWs.onmessage = (ev)=>{
         try {
           const msg = JSON.parse(ev.data);
-          if (msg && msg.type === 'leaderboards'){ latestServerLB = msg.payload; if (lbOverlay && lbOverlay.style.display !== 'none') renderLb(); }
+          if (msg && msg.type === 'leaderboards'){ latestServerLB = msg.data; if (lbOverlay && lbOverlay.style.display !== 'none') renderLb(); }
         } catch(_){}
       };
       lbWs.onclose = ()=>{ lbWs = null; setTimeout(connectLbWS, 2000); };
@@ -1737,7 +1757,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     // Particles update
     for (let i = exhaustParticles.length-1; i>=0; i--){
       const p = exhaustParticles[i];
-      p.life -= dt; if (p.life <= 0){ scene.remove(p.mesh); exhaustParticles.splice(i,1); continue; }
+      p.life -= dt; if (p.life <= 0){ scene.remove(p.mesh); releaseExhaustMesh(p.mesh); exhaustParticles.splice(i,1); continue; }
       p.mesh.position.addScaledVector(p.vel, dt);
       const s2 = Math.max(0.1, p.mesh.scale.x * (1 - 2.2*dt));
       p.mesh.scale.setScalar(s2);
@@ -1745,7 +1765,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
     }
     for (let i = impactParticles.length-1; i>=0; i--){
       const p = impactParticles[i];
-      p.life -= dt; if (p.life <= 0){ scene.remove(p.mesh); impactParticles.splice(i,1); continue; }
+      p.life -= dt; if (p.life <= 0){ scene.remove(p.mesh); releaseImpactMesh(p.mesh); impactParticles.splice(i,1); continue; }
       p.mesh.position.addScaledVector(p.vel, dt);
       p.vel.multiplyScalar(1 - 2.0*dt);
       const s3 = Math.max(0.05, p.mesh.scale.x * (1 - 1.8*dt));
