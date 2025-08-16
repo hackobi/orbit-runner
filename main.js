@@ -17,6 +17,11 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
 
   const scene = new THREE.Scene();
 
+  // Default API endpoint to the host serving the page (LAN-friendly)
+  if (!window.ORBIT_RUNNER_API) {
+    window.ORBIT_RUNNER_API = `${location.protocol}//${location.hostname}:8787`;
+  }
+
   const baseFov = 70;
   const camera = new THREE.PerspectiveCamera(baseFov, window.innerWidth / window.innerHeight, 0.1, 100000);
   const starLight = new THREE.PointLight(0x88bbff, 1.0, 800);
@@ -955,7 +960,8 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   let statsSaved = false;
   let serverAvailable = false;
   async function detectServer(){
-    const url = window.ORBIT_RUNNER_API || 'http://localhost:8787';
+    const defaultApi = `${location.protocol}//${location.hostname}:8787`;
+    const url = window.ORBIT_RUNNER_API || defaultApi;
     try{ const r = await fetch(url + '/health', { method:'GET', mode:'cors' }); if (r.ok){ window.ORBIT_RUNNER_API = url; serverAvailable = true; } }
     catch(_){ serverAvailable = false; }
   }
@@ -983,7 +989,8 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   function connectLbWS(){
     if (!serverAvailable || lbWs) return;
     try {
-      const wsUrl = (window.ORBIT_RUNNER_API || '').replace(/^http/, 'ws');
+      const httpBase = window.ORBIT_RUNNER_API || `${location.protocol}//${location.hostname}:8787`;
+      const wsUrl = httpBase.replace(/^http/, 'ws');
       lbWs = new WebSocket(wsUrl);
       lbWs.onmessage = (ev)=>{
         try {
