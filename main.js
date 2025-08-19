@@ -1,7 +1,7 @@
 // Orbit‑Runner: Open‑World Space Flight
 // Excitement + Damage/Shield pass + Massive Asteroid Fields with Dense Patches + Green Shield Orbs
-import { FontLoader } from './node_modules/three/examples/jsm/loaders/FontLoader.js';
-import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextGeometry.js';
+import { FontLoader } from 'https://unpkg.com/three@0.164.0/examples/jsm/loaders/FontLoader.js';
+import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geometries/TextGeometry.js';
 (() => {
   const canvas = document.getElementById('gameCanvas');
   if (!canvas) { console.error('Canvas not found'); return; }
@@ -16,11 +16,6 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   renderer.setClearColor(0x030a1a, 1);
 
   const scene = new THREE.Scene();
-
-  // Default API endpoint to the host serving the page (LAN-friendly)
-  if (!window.ORBIT_RUNNER_API) {
-    window.ORBIT_RUNNER_API = `${location.protocol}//${location.hostname}:8787`;
-  }
 
   const baseFov = 70;
   const camera = new THREE.PerspectiveCamera(baseFov, window.innerWidth / window.innerHeight, 0.1, 100000);
@@ -329,7 +324,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   // Font for 3D labels
   let gameFont = null;
   const fontLoader = new FontLoader();
-  fontLoader.load('./node_modules/three/examples/fonts/helvetiker_regular.typeface.json', f => { gameFont = f; }, undefined, e => console.error('Font load error', e));
+  fontLoader.load('https://unpkg.com/three@0.164.0/examples/fonts/helvetiker_regular.typeface.json', f => { gameFont = f; }, undefined, e => console.error('Font load error', e));
   const shieldTextLabels = []; // { mesh, life }
   function spawnShieldText(position){
     if (!gameFont) return;
@@ -960,7 +955,7 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   let statsSaved = false;
   let serverAvailable = false;
   async function detectServer(){
-    const defaultApi = `${location.protocol}//${location.hostname}:8787`;
+    const defaultApi = `http://${location.hostname}:8787`;
     const url = window.ORBIT_RUNNER_API || defaultApi;
     try{ const r = await fetch(url + '/health', { method:'GET', mode:'cors' }); if (r.ok){ window.ORBIT_RUNNER_API = url; serverAvailable = true; } }
     catch(_){ serverAvailable = false; }
@@ -989,13 +984,13 @@ import { TextGeometry } from './node_modules/three/examples/jsm/geometries/TextG
   function connectLbWS(){
     if (!serverAvailable || lbWs) return;
     try {
-      const httpBase = window.ORBIT_RUNNER_API || `${location.protocol}//${location.hostname}:8787`;
+      const httpBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
       const wsUrl = httpBase.replace(/^http/, 'ws');
       lbWs = new WebSocket(wsUrl);
       lbWs.onmessage = (ev)=>{
         try {
           const msg = JSON.parse(ev.data);
-          if (msg && msg.type === 'leaderboards'){ latestServerLB = msg.data; if (lbOverlay && lbOverlay.style.display !== 'none') renderLb(); }
+          if (msg && msg.type === 'leaderboards'){ latestServerLB = msg.payload; if (lbOverlay && lbOverlay.style.display !== 'none') renderLb(); }
         } catch(_){}
       };
       lbWs.onclose = ()=>{ lbWs = null; setTimeout(connectLbWS, 2000); };

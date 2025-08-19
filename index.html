@@ -11,14 +11,14 @@
   <script type="importmap">
   {
     "imports": {
-      "three": "./node_modules/three/build/three.module.min.js"
+      "three": "https://unpkg.com/three@0.164.0/build/three.module.min.js"
     }
   }
   </script>
 
   <!-- Load Three.js ESM directly from node_modules, then start the game -->
   <script type="module">
-    import * as THREE from './node_modules/three/build/three.module.min.js';
+    import * as THREE from 'https://unpkg.com/three@0.164.0/build/three.module.min.js';
     window.THREE = THREE;
     // Cache-bust main.js so changes always load on refresh during development
     await import(`./main.js?cb=${Date.now()}`);
