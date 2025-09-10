@@ -1702,8 +1702,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         for (let j = bullets.length-1; j>=0; j--){
           const b = bullets[j];
           if (isWithinRadiusSquared(a.mesh.position, b.mesh.position, a.radius + b.radius)){
-            spawnImpactBurst(a.mesh.position);
-            if (typeof spawnShieldRing === 'function') spawnShieldRing(a.mesh.position, 0xffffff);
+            spawnImpactBurst(a.mesh.position, 0xffaa66, 26);
             cameraShake += 0.25;
             if (a.instanceGroup>=0 && a.instanceId>=0){
               const im = ringInstancedGroups[a.instanceGroup];
@@ -1731,8 +1730,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         for (let k=0;k<near.length;k++){
           const { i, a } = near[k]; if (!asteroids[i]) continue;
            if (isWithinRadiusSquared(a.mesh.position, b.mesh.position, a.radius + b.radius)){
-             spawnImpactBurst(a.mesh.position);
-             if (typeof spawnShieldRing === 'function') spawnShieldRing(a.mesh.position, 0xffffff);
+             spawnImpactBurst(a.mesh.position, 0xffaa66, 26);
              cameraShake += 0.25;
              // Hide instance immediately
              if (a.instanceGroup>=0 && a.instanceId>=0){
@@ -2150,6 +2148,21 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     renderer.render(scene, camera);
     requestAnimationFrame(animate);
     frameCounter++;
+
+    // Periodic integrity sweep to remove orphan glows/rings (prevents glow-only orbs)
+    if ((frameCounter % 60) === 0){
+      // Fenix
+      for (let i=fenixOrbs.length-1;i>=0;i--){ const o=fenixOrbs[i]; if (!o.mesh.parent){ if (o.glow) scene.remove(o.glow); fenixOrbs.splice(i,1); } }
+      // Zaphire
+      for (let i=zaphireOrbs.length-1;i>=0;i--){ const o=zaphireOrbs[i]; if (!o.mesh.parent){ if (o.glow) scene.remove(o.glow); zaphireOrbs.splice(i,1); } }
+      // Wormholes
+      for (let i=wormholeOrbs.length-1;i>=0;i--){ const w=wormholeOrbs[i]; if (!w.mesh.parent){ scene.remove(w.mesh); scene.remove(w.halo); if (w.glow) scene.remove(w.glow); wormholeOrbs.splice(i,1); } }
+      // Boost
+      for (let i=boostOrbs.length-1;i>=0;i--){ const o=boostOrbs[i]; if (!o.core.parent){ if (o.glow) scene.remove(o.glow); if (o.ringG) scene.remove(o.ringG); if (o.ringP) scene.remove(o.ringP); boostOrbs.splice(i,1); } }
+      // Multipliers
+      for (let i=minerOrbs.length-1;i>=0;i--){ const o=minerOrbs[i]; if (!o.core.parent){ scene.remove(o.ring); minerOrbs.splice(i,1); } }
+      for (let i=hunterOrbs.length-1;i>=0;i--){ const o=hunterOrbs[i]; if (!o.core.parent){ scene.remove(o.ring); hunterOrbs.splice(i,1); } }
+    }
   }
 
   function onResize(){ const w = window.innerWidth, h = window.innerHeight; renderer.setSize(w,h); camera.aspect = w/h; camera.updateProjectionMatrix(); }
