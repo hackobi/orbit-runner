@@ -208,7 +208,9 @@ function sanitizeInput(msg, nowMs){
 const TICK_HZ = 30;
 const TICK_MS = Math.floor(1000 / TICK_HZ);
 const MIN_SPEED = 5;
-const MAX_SPEED = 60;
+const MAX_SPEED_BASE = 60;
+const FENIX_MULT = 1.05;
+const BOOST_MULT = 3.08;
 const YAW_RATE = 2.0;     // rad/sec
 const PITCH_RATE = 1.35;  // rad/sec
 const SPEED_ACCEL = 22;   // units/sec^2
@@ -239,8 +241,11 @@ function integratePlayers(dt){
     // Clamp pitch to avoid flips
     const HALF_PI = Math.PI/2 - 0.05;
     if (s.pitch > HALF_PI) s.pitch = HALF_PI; if (s.pitch < -HALF_PI) s.pitch = -HALF_PI;
-    // Target speed from throttle
-    const targetSp = MIN_SPEED + clampNum(i?.throttle ?? 0.25, 0, 1) * (MAX_SPEED - MIN_SPEED);
+    // Target speed from throttle with boost/fenix multipliers to match client
+    let effectiveMax = MAX_SPEED_BASE;
+    if (i?.fenix) effectiveMax *= FENIX_MULT;
+    if (i?.boost) effectiveMax *= BOOST_MULT;
+    const targetSp = MIN_SPEED + clampNum(i?.throttle ?? 0.25, 0, 1) * (effectiveMax - MIN_SPEED);
     if (s.sp < targetSp){ s.sp = Math.min(targetSp, s.sp + SPEED_ACCEL*dt); }
     else if (s.sp > targetSp){ s.sp = Math.max(targetSp, s.sp - SPEED_ACCEL*dt); }
     // Move

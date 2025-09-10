@@ -213,7 +213,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
 
   // Seeded RNG for MP deterministic world
-  let rng = null;
+  var rng = null;
   function mulberry32(seed){ return function(){ let t = seed += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
   function setRand(seed){ rng = mulberry32(seed>>>0); }
   function rand(){ return rng ? rng() : Math.random(); }
@@ -803,11 +803,13 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   function spawnExhaust(ratePerSec, dt){
     const count = Math.max(0, Math.floor(ratePerSec * dt));
     if (count === 0) return;
-    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, roll, 'YXZ'));
+    let q;
+    q = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, roll, 'YXZ'));
     const back = new THREE.Vector3(0,0,1).applyQuaternion(q).normalize().multiplyScalar(-1);
     // Move the exhaust origin further back as speed rises to avoid a visible gap
     const backOffset = 1.6 + Math.min(8, speedUnitsPerSec * 0.04);
-    const origin = new THREE.Vector3().copy(shipPosition)
+    const basePos = shipPosition;
+    const origin = new THREE.Vector3().copy(basePos)
       .addScaledVector(back, backOffset)
       .add(new THREE.Vector3(0,0.25,0).applyQuaternion(q));
     for (let i=0;i<count;i++){
@@ -1055,7 +1057,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       const BYTES_PER = 2 + 4 + 12 + 16 + 12 + 1;
       const count = Math.floor(dv.byteLength / BYTES_PER);
       let off = 0;
-      const nowLocal = performance.now();
+      const nowLocal = Date.now();
       for (let i=0;i<count;i++){
         const numId = dv.getUint16(off); off+=2;
         const t = dv.getUint32(off); off+=4;
@@ -1063,10 +1065,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         const q = [dv.getFloat32(off), dv.getFloat32(off+4), dv.getFloat32(off+8), dv.getFloat32(off+12)]; off+=16;
         const v = [dv.getFloat32(off), dv.getFloat32(off+4), dv.getFloat32(off+8)]; off+=12;
         const flags = dv.getUint8(off); off+=1;
-        // Estimate server time offset EMA
-        const estOffset = (t - nowLocal);
-        MP.serverOffsetEma = (MP.serverOffsetEma==null? estOffset : MP.serverOffsetEma*0.9 + estOffset*0.1);
+        // Do not update offset here (use ping/pong for more stable estimate)
         if (numId === MP.myNumId){
+          // Track authoritative self state for resync after tab visibility changes, but do not render from it in real-time
           MP.selfServerState = { t, p, q, v, flags };
           continue;
         }
@@ -1120,7 +1121,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         return;
       }
       if (msg.type === 'pong'){
-        const nowLocal = performance.now();
+        const nowLocal = Date.now();
         const rtt = nowLocal - msg.tClient;
         const estServerNow = msg.tServer + rtt*0.5;
         const estOffset = estServerNow - nowLocal;
@@ -1199,7 +1200,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Ping loop to estimate server offset (ms)
   setInterval(()=>{
     if (!MP.ws || MP.ws.readyState!==1) return;
-    try{ MP.ws.send(JSON.stringify({ type:'ping', t: performance.now() })); }catch(_){ }
+    try{ MP.ws.send(JSON.stringify({ type:'ping', t: Date.now() })); }catch(_){ }
   }, 1000);
 
   // Reconcile local player gently to server truth when drift is large
@@ -1209,16 +1210,28 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     const sp = vec3From(s.p);
     const sq = quatFrom(s.q);
     const posErr = shipPosition.distanceTo(sp);
-    if (posErr > 6){ // snap if way off
+    if (posErr > 10){ // snap if way off
       shipPosition.copy(sp); ship.position.copy(sp); ship.quaternion.copy(sq);
-      yaw = 0; pitch = 0; // allow controls to rebuild
       return;
     }
-    if (posErr > 1){ // nudge toward server
-      shipPosition.lerp(sp, Math.min(1, dt*2)); ship.position.copy(shipPosition);
-      ship.quaternion.slerp(sq, Math.min(1, dt*2));
+    if (posErr > 2){ // gentle nudge toward server
+      const alpha = Math.min(0.5, dt*0.8);
+      shipPosition.lerp(sp, alpha); ship.position.copy(shipPosition);
+      ship.quaternion.slerp(sq, alpha);
     }
   }
+
+  // When tab visibility changes, resync to server state soon after focus to avoid pause drift
+  document.addEventListener('visibilitychange', ()=>{
+    if (!document.hidden){
+      // On focus, if we have an authoritative snapshot, snap closer
+      if (MP && MP.selfServerState){
+        const s = MP.selfServerState;
+        const sp = vec3From(s.p), sq = quatFrom(s.q);
+        shipPosition.lerp(sp, 0.8); ship.position.copy(shipPosition); ship.quaternion.slerp(sq, 0.8);
+      }
+    }
+  });
   function getSessionStats(){
     const now = performance.now();
     const survivalSec = Math.max(0, Math.round((now - survivalStartMs)/1000));
@@ -1495,8 +1508,19 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
     damageCooldown = 0.6;
     if (health <= 0){
+      // Ship explosion on death
+      const explodeAt = (hitPosition || shipPosition).clone();
+      for (let i=0;i<30;i++){
+        const burst = acquireImpactMesh(0xff8855);
+        burst.position.copy(explodeAt).add(randomVel(1.2));
+        burst.scale.setScalar(0.9 + Math.random()*1.2);
+        if (!burst.parent) scene.add(burst);
+        const vel = randomVel(30 + Math.random()*40);
+        impactParticles.push({ mesh: burst, vel, life: 0.6 + Math.random()*0.5 });
+      }
+      ship.visible = false;
       gameOver = true;
-      try { if (!statsSaved){ saveLeaderboards(); statsSaved = true; } } catch(_){}
+      try { if (!statsSaved){ saveLeaderboards(); statsSaved = true; } } catch(_){ }
       showGameOver();
     }
   }
@@ -1514,7 +1538,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     for (const o of boostOrbs) { scene.remove(o.core); scene.remove(o.ringG); scene.remove(o.ringP); if (o.glow) scene.remove(o.glow); } boostOrbs.length = 0;
     patches.length = 0;
 
-    scene.remove(ship); ship = buildDefaultShip(); scene.add(ship);
+    scene.remove(ship); ship = buildDefaultShip(); ship.visible = true; scene.add(ship);
 
     health = 100; shield = 0; score = 0; gameOver = false; hideGameOver();
     fenixActive = false; boostActive = false; boostTimer = 0;
@@ -1562,12 +1586,21 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       const yawKeys = (input.yawRight?-1:0) + (input.yawLeft?1:0);
       // Up/I -> positive pitch (nose up), Down/K -> negative pitch (nose down)
       const pitchKeys = (input.pitchUp?1:0) + (input.pitchDown?-1:0);
-      const yawInput = yawKeys + (mouseDown ? mouseX*0.6 : 0);
-      const pitchInput = pitchKeys + (mouseDown ? -mouseY*0.6 : 0);
+      const mouseYaw = (mouseDown ? mouseX*0.6 : 0);
+      const mousePitch = (mouseDown ? -mouseY*0.6 : 0);
+      const devScale = devTurboActive ? 0.25 : 1; // damp mouse at dev speed
+      const yawInput = yawKeys + mouseYaw * devScale;
+      const pitchInput = pitchKeys + mousePitch * devScale;
       yaw += yawInput * yawRate * dt;
       pitch = THREE.MathUtils.clamp(pitch + pitchInput * pitchRate * dt, -Math.PI/2+0.05, Math.PI/2-0.05);
       const targetRoll = THREE.MathUtils.clamp(-yawInput*0.9 - (mouseDown?mouseX*0.5:0), -0.7, 0.7);
       roll += (targetRoll - roll) * Math.min(1, 8*dt);
+
+      // Auto-level at dev turbo to avoid unintended vertical drift
+      if (devTurboActive){
+        pitch += (-pitch) * Math.min(1, 1.2*dt);
+        roll += (-roll) * Math.min(1, 1.2*dt);
+      }
 
       const forward = new THREE.Vector3(0,0,1).applyEuler(new THREE.Euler(pitch, yaw, roll, 'YXZ')).normalize();
       const speedMultiplier = fenixActive ? 1.05 : 1.0; // Fenix is 5% faster
@@ -2076,7 +2109,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
 
     // Multiplayer: render remotes with 120ms interpolation buffer
     if (MP.active && MP.remotes.size){
-      const renderNow = performance.now() + (MP.serverOffsetEma||0) - 120;
+      const renderNow = Date.now() + ((MP.serverOffsetEma||0)) - 200; // larger buffer for stability
       for (const [numId, r] of MP.remotes){
         const s = r.samples;
         if (!s || s.length === 0) continue;
@@ -2095,9 +2128,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         const qa = quatFrom(a.q), qb = quatFrom(b.q);
         let p = pa.lerp(pb, t);
         let q = lerpQuat(qa, qb, t);
-        // If buffer underflow (renderNow beyond last sample), do a small extrapolation using last velocity
-        if (renderNow > b.t + 16){
-          const dtEx = Math.min(0.12, (renderNow - b.t)/1000);
+        // If buffer underflow (renderNow beyond last sample), do a tiny capped extrapolation using last velocity
+        if (renderNow > b.t + 24){
+          const dtEx = Math.min(0.06, (renderNow - b.t)/1000);
           const vv = vec3From(b.v);
           p = vec3From(b.p).addScaledVector(vv, dtEx);
           q = qb; // keep last orientation
@@ -2107,8 +2140,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
     }
 
-    // Reconcile self toward authoritative server state
-    reconcileSelf(dt);
+    // Optional: continuous self reconciliation is disabled to avoid high-speed jitter
+    // reconcileSelf(dt);
 
     renderer.render(scene, camera);
     requestAnimationFrame(animate);
