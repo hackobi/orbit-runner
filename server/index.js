@@ -131,7 +131,7 @@ mpWss.on('connection', ws => {
       const state = { t: now(), p: spawn.p, q: spawn.q, v: [0,0,0], sp: 20, fenix:false, yaw: 0, pitch: 0, roll: 0 };
       const input = { t: now(), throttle: 0.25, yaw: 0, pitch: 0, roll: 0, boost: false, fire: false };
       const numId = (mpRoom.nextNumericId = (mpRoom.nextNumericId % 65534) + 1);
-      mpRoom.players.set(playerId, { id: playerId, numId, name, color, lastSeen: now(), state, input, hp:100, shield:0, invulnUntil:0, history:[] });
+      mpRoom.players.set(playerId, { id: playerId, numId, name, color, lastSeen: now(), state, input, hp:100, shield:0, invulnUntil:0, history:[], score:0 });
 
       // Send welcome with snapshot
       const snapshot = Array.from(mpRoom.players.values()).map(p=>({ id:p.id, numId:p.numId, name:p.name, color:p.color, state:p.state }));
@@ -139,6 +139,8 @@ mpWss.on('connection', ws => {
 
       // Notify others
       broadcastToOthers({ type:'player-add', id: playerId, numId, name, color, state });
+      // Broadcast room stats to everyone (names + scores)
+      broadcastRoomStats();
       return;
     }
 
@@ -156,6 +158,16 @@ mpWss.on('connection', ws => {
       if (rec){
         rec.input = sanitizeInput(msg, nowMs);
         rec.lastSeen = nowMs;
+      }
+      return;
+    }
+
+    if (msg.type === 'score'){
+      const rec = mpRoom.players.get(playerId);
+      if (rec){
+        const v = clampNum(msg.v, 0, 1_000_000_000);
+        rec.score = v;
+        broadcastRoomStats();
       }
       return;
     }
@@ -182,6 +194,7 @@ mpWss.on('connection', ws => {
     mpRoom.players.delete(playerId);
     const data = JSON.stringify({ type:'player-remove', id: playerId });
     mpWss.clients.forEach(c=>{ if (c.readyState===1){ try{ c.send(data); }catch(_){} } });
+    broadcastRoomStats();
   });
 });
 
@@ -346,6 +359,12 @@ function buildStateBufferFor(center, radius, excludePlayerId){
 function writeF32Array(buf, off, arr){
   for (let k=0;k<arr.length;k++){ buf.writeFloatBE(arr[k], off); off+=4; }
   return off;
+}
+
+function broadcastRoomStats(){
+  const players = Array.from(mpRoom.players.values()).map(p=>({ id:p.id, name:p.name, score: p.score>>>0 }));
+  const msg = JSON.stringify({ type:'room-stats', players });
+  mpWss.clients.forEach(c=>{ if (c.readyState===1){ try{ c.send(msg); }catch(_){} } });
 }
 
 setInterval(()=>{

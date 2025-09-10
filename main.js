@@ -60,6 +60,10 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   // HUD and overlays
   const hud = document.getElementById('hud') || (() => { const d = document.createElement('div'); d.id='hud'; d.style.position='absolute'; d.style.top='10px'; d.style.left='10px'; d.style.color='#0ff'; d.style.fontSize='1.1rem'; document.body.appendChild(d); return d; })();
   const help = document.getElementById('help') || (() => { const d = document.createElement('div'); d.id='help'; d.style.position='absolute'; d.style.bottom='12px'; d.style.left='50%'; d.style.transform='translateX(-50%)'; d.style.fontSize='0.95rem'; d.style.color='#ccc'; d.style.opacity='0.85'; d.style.background='rgba(0,0,0,0.35)'; d.style.padding='6px 10px'; d.style.borderRadius='6px'; d.textContent='W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H home • T dev 500 • R restart'; document.body.appendChild(d); return d; })();
+  // MP overlay (P to toggle)
+  let mpOverlay = null; let mpOverlayOn = false; let latestRoomStats = [];
+  function ensureMpOverlay(){ if (mpOverlay) return mpOverlay; const d=document.createElement('div'); d.id='mpOverlay'; Object.assign(d.style,{ position:'absolute', top:'10px', right:'10px', color:'#fff', background:'rgba(0,0,0,0.5)', padding:'8px 10px', borderRadius:'8px', fontSize:'12px', display:'none', zIndex:9999, whiteSpace:'pre' }); document.body.appendChild(d); mpOverlay=d; return d; }
+  function renderMpOverlay(){ if (!mpOverlayOn) return; ensureMpOverlay(); const rows = latestRoomStats.slice().sort((a,b)=> (b.score||0)-(a.score||0)).map(p=> `${(p.name||'Anon').slice(0,16).padEnd(16)}  ${String(p.score||0).padStart(6)}`); mpOverlay.innerText = ['Players (P to hide):', ...rows].join('\n'); }
   const gameOverEl = document.getElementById('gameover') || (()=>{ const d=document.createElement('div'); d.id='gameover'; d.style.position='absolute'; d.style.top='45%'; d.style.left='50%'; d.style.transform='translate(-50%,-50%)'; d.style.fontSize='2rem'; d.style.color='#fff'; d.style.display='none'; d.style.textAlign='center'; d.style.textShadow='0 0 8px #000'; d.innerHTML='CRASHED<br/>Press R to Restart'; document.body.appendChild(d); return d; })();
 
   // Placeholder patch system to avoid reference errors
@@ -905,7 +909,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   const input = { yawLeft:false, yawRight:false, pitchUp:false, pitchDown:false, speedUp:false, speedDown:false, fire:false, toggleLb:false };
   function onKeyDown(e){
     const c = e.code;
-    const handled = ['ArrowLeft','ArrowRight','KeyA','KeyD','ArrowUp','ArrowDown','KeyW','KeyS','Space','KeyI','KeyK','KeyH','KeyR','KeyT','KeyL'].includes(c);
+    const handled = ['ArrowLeft','ArrowRight','KeyA','KeyD','ArrowUp','ArrowDown','KeyW','KeyS','Space','KeyI','KeyK','KeyH','KeyR','KeyT','KeyL','KeyP'].includes(c);
     if (handled) { e.preventDefault(); e.stopImmediatePropagation(); }
     // Standard yaw: Left/A => yaw left, Right/D => yaw right
     if (c==='ArrowLeft'||c==='KeyA') input.yawLeft = true;
@@ -934,6 +938,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
     }
     if (c==='KeyL') { input.toggleLb = true; renderLb(); ensureLbOverlay().style.display = (ensureLbOverlay().style.display==='none'?'block':'none'); }
+    if (c==='KeyP') { mpOverlayOn = !mpOverlayOn; ensureMpOverlay().style.display = mpOverlayOn ? 'block' : 'none'; renderMpOverlay(); }
     if (c==='KeyR' && gameOver) resetGame();
   }
   function onKeyUp(e){
@@ -1142,6 +1147,11 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         if (numId!=null){ removeRemoteShipByNumId(numId); MP.idToNum.delete(msg.id); }
         return;
       }
+      if (msg.type === 'room-stats'){
+        latestRoomStats = msg.players||[];
+        renderMpOverlay();
+        return;
+      }
       if (msg.type === 'pong'){
         const nowLocal = Date.now();
         const rtt = nowLocal - msg.tClient;
@@ -1179,7 +1189,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     const pitchInput = pitchKeys + (mouseDown ? -mouseY*0.6 : 0);
     const throttle = THREE.MathUtils.clamp((targetSpeedUnitsPerSec - minSpeed) / (baseMaxSpeed - minSpeed), 0, 1);
     const msg = { type:'input', t: Date.now(), throttle, yaw: THREE.MathUtils.clamp(yawInput, -1, 1), pitch: THREE.MathUtils.clamp(pitchInput, -1, 1), roll: 0, boost: boostActive, fire: !!input.fire, fenix: !!fenixActive };
-    try{ MP.ws.send(JSON.stringify(msg)); }catch(_){}
+    try{ MP.ws.send(JSON.stringify(msg)); }catch(_){ }
+    // Periodically send score to update room-stats overlay
+    if ((Math.floor(Date.now()/1000) % 2) === 0){ try{ MP.ws.send(JSON.stringify({ type:'score', v: (score>>>0) })); }catch(_){ } }
   }, 33);
 
   // Defer MP connect slightly after server detection
