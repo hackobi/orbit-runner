@@ -1690,6 +1690,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         } else {
         a.mesh.position.addScaledVector(a.vel, dt);
       }
+      // Enable collisions for ring asteroids as well
       if (a.rotAxis && a.rotSpeed) a.mesh.rotateOnAxis(a.rotAxis, a.rotSpeed*dt);
       if (hash) hash.insert({ i, a }, a.mesh.position);
 
