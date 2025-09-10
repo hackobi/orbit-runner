@@ -128,6 +128,28 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   // Removed belt "veil" halo for a cleaner look
 
+  // Multiplayer meetup landmark: Mothership inside the ring
+  function addMotherShip(planet, radius=4400){
+    const angle = 0; // fixed reference
+    const pos = new THREE.Vector3(
+      planet.position.x + Math.cos(angle)*radius,
+      planet.position.y,
+      planet.position.z + Math.sin(angle)*radius
+    );
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(160, 40, 520), new THREE.MeshStandardMaterial({ color:0x223344, metalness:0.6, roughness:0.3, emissive:0x112233, emissiveIntensity:0.3 }));
+    hull.position.copy(pos);
+    hull.rotation.y = Math.PI/2;
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(60, 28, 80), new THREE.MeshStandardMaterial({ color:0x334455, metalness:0.5, roughness:0.35, emissive:0x223344, emissiveIntensity:0.35 }));
+    bridge.position.copy(pos).add(new THREE.Vector3(0, 28, 160));
+    const beacon = new THREE.PointLight(0x66ccff, 2.0, 2000);
+    beacon.position.copy(pos).add(new THREE.Vector3(0, 80, 0));
+    const beaconGlow = new THREE.Mesh(new THREE.SphereGeometry(14, 18, 18), new THREE.MeshBasicMaterial({ color:0x66ccff, transparent:true, opacity:0.7, blending:THREE.AdditiveBlending, depthWrite:false }));
+    beaconGlow.position.copy(beacon.position);
+    scene.add(hull, bridge, beacon, beaconGlow);
+    return { hull, bridge, beacon };
+  }
+  const motherShip = addMotherShip(targetPlanet, (RING_INNER+RING_OUTER)/2);
+
   // Starfield
   (function makeStars(){
     const count = 7000;
@@ -1429,20 +1451,12 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     const t = THREE.MathUtils.clamp(1 - (distToPlanet / 22000), 0, 1);
     const desiredAmbient = Math.floor(7000 + t * 7000);
     let ambientCount = 0; for (const a of asteroids) if (!a.inRing) ambientCount++;
-    while (ambientCount < desiredAmbient) { spawnAsteroidAround(shipPosition, 800, 11000); ambientCount++; }
+    // Disable dynamic spawning to avoid sudden configuration changes in MP
+    // while (ambientCount < desiredAmbient) { spawnAsteroidAround(shipPosition, 800, 11000); ambientCount++; }
 
     let excess = ambientCount - Math.floor(desiredAmbient * 1.2);
-    if (excess > 0){
-      for (let i = asteroids.length - 1; i >= 0 && excess > 0; i--){
-        const a = asteroids[i];
-        if (!a.inRing){
-          const d = a.mesh.position.distanceTo(shipPosition);
-          if (d > 12000 || (d > 9000 && Math.random() < 0.2)){
-            scene.remove(a.mesh); asteroids.splice(i,1); excess--;
-          }
-        }
-      }
-    }
+    // Disable dynamic removal to keep layout stable for MP experience
+    // if (excess > 0){ ... }
 
     const desiredOrbs = Math.min(CAPS.shield, Math.max(12, Math.floor(asteroids.length * 0.05)));
     for (let i = shieldOrbs.length - 1; i >= 0; i--){
