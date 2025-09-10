@@ -134,9 +134,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     const geo = new THREE.BufferGeometry();
     const positions = new Float32Array(count*3);
     for (let i=0;i<count;i++){
-      const r = 22000 + Math.random()*32000;
-      const theta = Math.random()*Math.PI*2;
-      const phi = Math.acos(2*Math.random()-1);
+      const r = 22000 + rand()*32000;
+      const theta = rand()*Math.PI*2;
+      const phi = Math.acos(2*rand()-1);
       positions[i*3+0] = r * Math.sin(phi)*Math.cos(theta);
       positions[i*3+1] = r * Math.cos(phi);
       positions[i*3+2] = r * Math.sin(phi)*Math.sin(theta);
@@ -212,45 +212,51 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     return glowTexture;
   }
 
+  // Seeded RNG for MP deterministic world
+  let rng = null;
+  function mulberry32(seed){ return function(){ let t = seed += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  function setRand(seed){ rng = mulberry32(seed>>>0); }
+  function rand(){ return rng ? rng() : Math.random(); }
+
   // Asteroids
   const asteroids = [];      // { mesh, radius, inRing?, inPatch?, vel?, rotAxis?, rotSpeed?, orbitRadius?, orbitAngle?, orbitSpeed?, nearMissCooldown? }
   const asteroidGeometry = new THREE.DodecahedronGeometry(1, 0);
-  function randomAxis() { const v = new THREE.Vector3(Math.random()*2-1,Math.random()*2-1,Math.random()*2-1); v.normalize(); return v; }
-  function randomVel(scale){ return new THREE.Vector3(Math.random()*2-1,Math.random()*2-1,Math.random()*2-1).multiplyScalar(scale); }
+  function randomAxis() { const v = new THREE.Vector3(rand()*2-1,rand()*2-1,rand()*2-1); v.normalize(); return v; }
+  function randomVel(scale){ return new THREE.Vector3(rand()*2-1,rand()*2-1,rand()*2-1).multiplyScalar(scale); }
 
   function spawnAsteroidAround(center, minR, maxR) {
-    const r = minR + Math.random()*(maxR-minR);
-    const theta = Math.random()*Math.PI*2;
-    const phi = Math.acos(2*Math.random()-1);
+    const r = minR + rand()*(maxR-minR);
+    const theta = rand()*Math.PI*2;
+    const phi = Math.acos(2*rand()-1);
     const pos = new THREE.Vector3(
       r * Math.sin(phi)*Math.cos(theta),
       r * Math.cos(phi),
       r * Math.sin(phi)*Math.sin(theta)
     ).add(center);
-    const scale = 0.8 + Math.random()*3.2;
+    const scale = 0.8 + rand()*3.2;
     const mat = new THREE.MeshStandardMaterial({ color: 0xb0b0b0, roughness: 0.95, metalness: 0.05, emissive: 0x222222, emissiveIntensity: 0.15 });
     const m = new THREE.Mesh(asteroidGeometry, mat);
     m.scale.setScalar(scale);
     m.position.copy(pos);
     scene.add(m);
-    asteroids.push({ mesh: m, radius: scale*0.95, vel: randomVel(1.5), rotAxis: randomAxis(), rotSpeed: (Math.random()*2-1)*0.8, nearMissCooldown: 0 });
+    asteroids.push({ mesh: m, radius: scale*0.95, vel: randomVel(1.5), rotAxis: randomAxis(), rotSpeed: (rand()*2-1)*0.8, nearMissCooldown: 0 });
   }
   function spawnAsteroidClose(center, minR, maxR) {
-    const r = minR + Math.random()*(maxR-minR);
-    const theta = Math.random()*Math.PI*2;
-    const phi = Math.acos(2*Math.random()-1);
+    const r = minR + rand()*(maxR-minR);
+    const theta = rand()*Math.PI*2;
+    const phi = Math.acos(2*rand()-1);
     const pos = new THREE.Vector3(
       r * Math.sin(phi)*Math.cos(theta),
       r * Math.cos(phi),
       r * Math.sin(phi)*Math.sin(theta)
     ).add(center);
-    const scale = 1.2 + Math.random()*2.5;
+    const scale = 1.2 + rand()*2.5;
     const mat = new THREE.MeshStandardMaterial({ color: 0xc0c0c0, roughness: 0.9, metalness: 0.05, emissive: 0x333333, emissiveIntensity: 0.25 });
     const m = new THREE.Mesh(asteroidGeometry, mat);
     m.scale.setScalar(scale);
     m.position.copy(pos);
     scene.add(m);
-    asteroids.push({ mesh: m, radius: scale*0.95, vel: randomVel(2.2), rotAxis: randomAxis(), rotSpeed: (Math.random()*2-1)*1.0, nearMissCooldown: 0 });
+    asteroids.push({ mesh: m, radius: scale*0.95, vel: randomVel(2.2), rotAxis: randomAxis(), rotSpeed: (rand()*2-1)*1.0, nearMissCooldown: 0 });
   }
   function seedAsteroids(countFar, countNear, around) {
     for (let i=0;i<countFar;i++) spawnAsteroidAround(around, 1500, 9000);
@@ -260,19 +266,19 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   function createRings(planet, innerR, outerR, count){
     for (let i=0;i<count;i++){
-      const a = Math.random()*Math.PI*2;
-      const r = innerR + Math.random()*(outerR-innerR);
-      const yJitter = (Math.random()-0.5)*120;
+      const a = rand()*Math.PI*2;
+      const r = innerR + rand()*(outerR-innerR);
+      const yJitter = (rand()-0.5)*120;
       const x = planet.position.x + Math.cos(a)*r;
       const z = planet.position.z + Math.sin(a)*r;
       const pos = new THREE.Vector3(x, planet.position.y + yJitter, z);
-      const scale = 0.9 + Math.random()*3.2;
+      const scale = 0.9 + rand()*3.2;
       const mat = new THREE.MeshStandardMaterial({ color: 0xa8a8a8, roughness: 0.95, metalness: 0.05, emissive: 0x222222, emissiveIntensity: 0.18 });
       const m = new THREE.Mesh(asteroidGeometry, mat);
       m.scale.setScalar(scale);
       m.position.copy(pos);
       scene.add(m);
-      asteroids.push({ mesh:m, radius: scale*0.95, inRing:true, orbitRadius:r, orbitAngle:a, orbitSpeed:(Math.random()*0.5+0.2)*0.06, rotAxis: randomAxis(), rotSpeed: (Math.random()*2-1)*0.8, nearMissCooldown: 0, instanceId:-1, instanceGroup:-1, scale });
+      asteroids.push({ mesh:m, radius: scale*0.95, inRing:true, orbitRadius:r, orbitAngle:a, orbitSpeed:(rand()*0.5+0.2)*0.06, rotAxis: randomAxis(), rotSpeed: (rand()*2-1)*0.8, nearMissCooldown: 0, instanceId:-1, instanceGroup:-1, scale });
     }
   }
   // Double the number of ring asteroids for richer belts
@@ -426,9 +432,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   const shieldOrbGeometry = new THREE.SphereGeometry(0.9, 16, 16);
   function makeAdditiveMaterial(color, opacity=0.9){ return new THREE.MeshBasicMaterial({ color, transparent:true, opacity, blending:THREE.AdditiveBlending, depthWrite:false }); }
   function spawnShieldOrbAround(center, minR=800, maxR=9000){
-    const r = minR + Math.random()*(maxR-minR);
-    const theta = Math.random()*Math.PI*2;
-    const phi = Math.acos(2*Math.random()-1);
+    const r = minR + rand()*(maxR-minR);
+    const theta = rand()*Math.PI*2;
+    const phi = Math.acos(2*rand()-1);
     const pos = new THREE.Vector3(
       r * Math.sin(phi)*Math.cos(theta),
       r * Math.cos(phi),
@@ -440,12 +446,12 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     const baseScale = 1.25;
     m.scale.setScalar(baseScale);
     scene.add(m);
-    shieldOrbs.push({ mesh:m, radius: 1.2, bob: Math.random()*Math.PI*2, bobSpeed: 1 + Math.random()*1.5, baseScale, pulseSpeed: 3 + Math.random()*3 });
+    shieldOrbs.push({ mesh:m, radius: 1.2, bob: rand()*Math.PI*2, bobSpeed: 1 + rand()*1.5, baseScale, pulseSpeed: 3 + rand()*3 });
   }
   function spawnShieldOrbOnRing(planet, innerR=3600, outerR=5200){
-    const a = Math.random()*Math.PI*2;
-    const r = innerR + Math.random()*(outerR-innerR);
-    const yJ = (Math.random()-0.5)*40;
+    const a = rand()*Math.PI*2;
+    const r = innerR + rand()*(outerR-innerR);
+    const yJ = (rand()-0.5)*40;
     const pos = new THREE.Vector3(
       planet.position.x + Math.cos(a)*r,
       planet.position.y + yJ,
@@ -456,7 +462,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     m.position.copy(pos);
     const baseScale = 1.25; m.scale.setScalar(baseScale);
     scene.add(m);
-    shieldOrbs.push({ mesh:m, radius: 1.2, bob: Math.random()*Math.PI*2, bobSpeed: 1 + Math.random()*1.5, baseScale, pulseSpeed: 3 + Math.random()*3 });
+    shieldOrbs.push({ mesh:m, radius: 1.2, bob: rand()*Math.PI*2, bobSpeed: 1 + rand()*1.5, baseScale, pulseSpeed: 3 + rand()*3 });
   }
   function seedShieldOrbsFromAsteroidCount(){
     const desired = Math.min(CAPS.shield, Math.max(12, Math.floor(asteroids.length * 0.05)));
@@ -468,9 +474,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   const pinkOrbs = []; // { mesh, radius, bob, bobSpeed, baseScale, pulseSpeed }
   const pinkOrbGeometry = shieldOrbGeometry; // same base shape
   function spawnPinkOrbAround(center, minR=800, maxR=9000){
-    const r = minR + Math.random()*(maxR-minR);
-    const theta = Math.random()*Math.PI*2;
-    const phi = Math.acos(2*Math.random()-1);
+    const r = minR + rand()*(maxR-minR);
+    const theta = rand()*Math.PI*2;
+    const phi = Math.acos(2*rand()-1);
     const pos = new THREE.Vector3(
       r * Math.sin(phi)*Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi)*Math.sin(theta)
     ).add(center);
@@ -479,12 +485,12 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     const baseScale = 1.7;
     m.scale.setScalar(baseScale);
     scene.add(m);
-    pinkOrbs.push({ mesh:m, radius: 1.6, bob: Math.random()*Math.PI*2, bobSpeed: 1.6 + Math.random()*2.0, baseScale, pulseSpeed: 4.0 + Math.random()*3.5 });
+    pinkOrbs.push({ mesh:m, radius: 1.6, bob: rand()*Math.PI*2, bobSpeed: 1.6 + rand()*2.0, baseScale, pulseSpeed: 4.0 + rand()*3.5 });
   }
   function spawnPinkOrbOnRing(planet, innerR=3600, outerR=5200){
-    const a = Math.random()*Math.PI*2;
-    const r = innerR + Math.random()*(outerR-innerR);
-    const yJ = (Math.random()-0.5)*40;
+    const a = rand()*Math.PI*2;
+    const r = innerR + rand()*(outerR-innerR);
+    const yJ = (rand()-0.5)*40;
     const pos = new THREE.Vector3(
       planet.position.x + Math.cos(a)*r,
       planet.position.y + yJ,
@@ -494,7 +500,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     m.position.copy(pos);
     const baseScale = 1.7; m.scale.setScalar(baseScale);
     scene.add(m);
-    pinkOrbs.push({ mesh:m, radius: 1.6, bob: Math.random()*Math.PI*2, bobSpeed: 1.6 + Math.random()*2.0, baseScale, pulseSpeed: 4.0 + Math.random()*3.5 });
+    pinkOrbs.push({ mesh:m, radius: 1.6, bob: rand()*Math.PI*2, bobSpeed: 1.6 + rand()*2.0, baseScale, pulseSpeed: 4.0 + rand()*3.5 });
   }
   function seedPinkOrbsFromAsteroidCount(){
     const desired = Math.min(CAPS.pink, Math.max(6, Math.floor(asteroids.length * 0.01)));
@@ -506,9 +512,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   const fenixOrbs = [];
   const fenixOrbGeometry = shieldOrbGeometry;
   function spawnFenixOrbAround(center, minR=800, maxR=9000){
-    const r = minR + Math.random()*(maxR-minR);
-    const theta = Math.random()*Math.PI*2;
-    const phi = Math.acos(2*Math.random()-1);
+    const r = minR + rand()*(maxR-minR);
+    const theta = rand()*Math.PI*2;
+    const phi = Math.acos(2*rand()-1);
     const pos = new THREE.Vector3(
       r * Math.sin(phi)*Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi)*Math.sin(theta)
     ).add(center);
@@ -520,12 +526,12 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0xfff066, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
     glow.position.copy(pos); glow.scale.set(14,14,1);
     scene.add(m, glow);
-    fenixOrbs.push({ mesh:m, glow, radius: 1.7, bob: Math.random()*Math.PI*2, bobSpeed: 1.0 + Math.random()*1.6, baseScale, pulseSpeed: 3.6 + Math.random()*3.6 });
+    fenixOrbs.push({ mesh:m, glow, radius: 1.7, bob: rand()*Math.PI*2, bobSpeed: 1.0 + rand()*1.6, baseScale, pulseSpeed: 3.6 + rand()*3.6 });
   }
   function spawnFenixOrbOnRing(planet, innerR=3600, outerR=5200){
-    const a = Math.random()*Math.PI*2;
-    const r = innerR + Math.random()*(outerR-innerR);
-    const yJ = (Math.random()-0.5)*40;
+    const a = rand()*Math.PI*2;
+    const r = innerR + rand()*(outerR-innerR);
+    const yJ = (rand()-0.5)*40;
     const pos = new THREE.Vector3(
       planet.position.x + Math.cos(a)*r,
       planet.position.y + yJ,
@@ -539,7 +545,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0xfff066, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
     glow.position.copy(pos); glow.scale.set(14,14,1);
     scene.add(m, glow);
-    fenixOrbs.push({ mesh:m, glow, radius: 1.7, bob: Math.random()*Math.PI*2, bobSpeed: 1.0 + Math.random()*1.6, baseScale, pulseSpeed: 3.6 + Math.random()*3.6 });
+    fenixOrbs.push({ mesh:m, glow, radius: 1.7, bob: rand()*Math.PI*2, bobSpeed: 1.0 + rand()*1.6, baseScale, pulseSpeed: 3.6 + rand()*3.6 });
   }
   function seedFenixOrbsFromAsteroidCount(){
     const desired = Math.min(CAPS.fenix, Math.max(20, Math.floor(asteroids.length * 0.10)));
@@ -551,9 +557,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   const zaphireOrbs = [];
   const zaphireOrbGeometry = shieldOrbGeometry;
   function spawnZaphireOrbAround(center, minR=800, maxR=9000){
-    const r = minR + Math.random()*(maxR-minR);
-    const theta = Math.random()*Math.PI*2;
-    const phi = Math.acos(2*Math.random()-1);
+    const r = minR + rand()*(maxR-minR);
+    const theta = rand()*Math.PI*2;
+    const phi = Math.acos(2*rand()-1);
     const pos = new THREE.Vector3(
       r * Math.sin(phi)*Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi)*Math.sin(theta)
     ).add(center);
@@ -565,12 +571,12 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0xff4444, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }));
     glow.position.copy(pos); glow.scale.set(14,14,1);
     scene.add(m, glow);
-    zaphireOrbs.push({ mesh:m, glow, radius:2.4, bob: Math.random()*Math.PI*2, bobSpeed: 1.1 + Math.random()*1.7, baseScale, pulseSpeed: 3.0 + Math.random()*3.0 });
+    zaphireOrbs.push({ mesh:m, glow, radius:2.4, bob: rand()*Math.PI*2, bobSpeed: 1.1 + rand()*1.7, baseScale, pulseSpeed: 3.0 + rand()*3.0 });
   }
   function spawnZaphireOrbOnRing(planet, innerR=3600, outerR=5200){
-    const a = Math.random()*Math.PI*2;
-    const r = innerR + Math.random()*(outerR-innerR);
-    const yJ = (Math.random()-0.5)*40;
+    const a = rand()*Math.PI*2;
+    const r = innerR + rand()*(outerR-innerR);
+    const yJ = (rand()-0.5)*40;
     const pos = new THREE.Vector3(
       planet.position.x + Math.cos(a)*r,
       planet.position.y + yJ,
@@ -582,7 +588,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0xff4444, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }));
     glow.position.copy(pos); glow.scale.set(14,14,1);
     scene.add(m, glow);
-    zaphireOrbs.push({ mesh:m, glow, radius:2.4, bob: Math.random()*Math.PI*2, bobSpeed: 1.1 + Math.random()*1.7, baseScale, pulseSpeed: 3.0 + Math.random()*3.0 });
+    zaphireOrbs.push({ mesh:m, glow, radius:2.4, bob: rand()*Math.PI*2, bobSpeed: 1.1 + rand()*1.7, baseScale, pulseSpeed: 3.0 + rand()*3.0 });
   }
 
   function seedAllOrbsInRingByProportion(planet, innerR=3600, outerR=5200){
@@ -639,12 +645,12 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0xffffff, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false }));
     glow.position.copy(pos); glow.scale.set(12,12,1);
     scene.add(core, halo, glow);
-    wormholeOrbs.push({ mesh:core, halo, glow, cubeCam, coreMat, radius: 1.8, bob: Math.random()*Math.PI*2, bobSpeed: 1.2 + Math.random()*1.8, pulseSpeed: 3.0 + Math.random()*3.0, lastCubeUpdate: 0 });
+    wormholeOrbs.push({ mesh:core, halo, glow, cubeCam, coreMat, radius: 1.8, bob: rand()*Math.PI*2, bobSpeed: 1.2 + rand()*1.8, pulseSpeed: 3.0 + rand()*3.0, lastCubeUpdate: 0 });
   }
   function spawnWormholeOrbAround(center, minR=1200, maxR=12000){
-    const r = minR + Math.random()*(maxR-minR);
-    const theta = Math.random()*Math.PI*2;
-    const phi = Math.acos(2*Math.random()-1);
+    const r = minR + rand()*(maxR-minR);
+    const theta = rand()*Math.PI*2;
+    const phi = Math.acos(2*rand()-1);
     const pos = new THREE.Vector3(
       r * Math.sin(phi)*Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi)*Math.sin(theta)
     ).add(center);
@@ -659,9 +665,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Heavily bias wormholes/boost into planet rings on init
   function seedWormholesOnRings(planet, innerR, outerR, count){
     for (let i=0;i<count;i++){
-      const a = Math.random()*Math.PI*2;
-      const r = innerR + Math.random()*(outerR-innerR);
-      const yJitter = (Math.random()-0.5)*40; // tighter vertical spread
+      const a = rand()*Math.PI*2;
+      const r = innerR + rand()*(outerR-innerR);
+      const yJitter = (rand()-0.5)*40; // tighter vertical spread
       const x = planet.position.x + Math.cos(a)*r;
       const z = planet.position.z + Math.sin(a)*r;
       createWormholeAtPosition(new THREE.Vector3(x, planet.position.y + yJitter, z));
@@ -669,9 +675,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
   function seedBoostOnRings(planet, innerR, outerR, count){
     for (let i=0;i<count;i++){
-      const a = Math.random()*Math.PI*2;
-      const r = innerR + Math.random()*(outerR-innerR);
-      const yJitter = (Math.random()-0.5)*40;
+      const a = rand()*Math.PI*2;
+      const r = innerR + rand()*(outerR-innerR);
+      const yJitter = (rand()-0.5)*40;
       const x = planet.position.x + Math.cos(a)*r;
       const z = planet.position.z + Math.sin(a)*r;
       // use existing boost orb creation but at fixed position
@@ -681,7 +687,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       const ringP = new THREE.Mesh(new THREE.RingGeometry(2.8, 3.8, 64), new THREE.MeshBasicMaterial({ color:0xaa55ff, transparent:true, opacity:0.45, blending:THREE.AdditiveBlending, side:THREE.DoubleSide, depthWrite:false })); ringP.position.copy(pos); ringP.lookAt(camera.position);
       const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0x88ccff, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false })); glow.position.copy(pos); glow.scale.set(10,10,1);
       scene.add(core, ringG, ringP, glow);
-      boostOrbs.push({ core, ringG, ringP, glow, radius:1.2, bob: Math.random()*Math.PI*2, bobSpeed: 1.1 + Math.random()*1.7, pulseSpeed: 3.0 + Math.random()*3.0 });
+      boostOrbs.push({ core, ringG, ringP, glow, radius:1.2, bob: rand()*Math.PI*2, bobSpeed: 1.1 + rand()*1.7, pulseSpeed: 3.0 + rand()*3.0 });
     }
   }
   // Initial ring saturation
@@ -693,9 +699,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   // New: Boost Orbs (green + purple)
   function spawnBoostOrbAround(center, minR=800, maxR=9000){
-    const r = minR + Math.random()*(maxR-minR);
-    const theta = Math.random()*Math.PI*2;
-    const phi = Math.acos(2*Math.random()-1);
+    const r = minR + rand()*(maxR-minR);
+    const theta = rand()*Math.PI*2;
+    const phi = Math.acos(2*rand()-1);
     const pos = new THREE.Vector3(
       r * Math.sin(phi)*Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi)*Math.sin(theta)
     ).add(center);
@@ -708,27 +714,27 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: getGlowTexture(), color: 0x88ccff, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false }));
     glow.position.copy(pos); glow.scale.set(10,10,1);
     scene.add(core, ringG, ringP, glow);
-    boostOrbs.push({ core, ringG, ringP, glow, radius:1.2, bob: Math.random()*Math.PI*2, bobSpeed: 1.1 + Math.random()*1.7, pulseSpeed: 3.0 + Math.random()*3.0 });
+    boostOrbs.push({ core, ringG, ringP, glow, radius:1.2, bob: rand()*Math.PI*2, bobSpeed: 1.1 + rand()*1.7, pulseSpeed: 3.0 + rand()*3.0 });
   }
 
   // New: Miner (green) and Hunter (blue) multiplier orbs
   function spawnMinerOrbOnRing(planet, innerR=3600, outerR=5200){
-    const a = Math.random()*Math.PI*2; const r = innerR + Math.random()*(outerR-innerR); const yJ=(Math.random()-0.5)*40;
+    const a = rand()*Math.PI*2; const r = innerR + rand()*(outerR-innerR); const yJ=(rand()-0.5)*40;
     const pos = new THREE.Vector3(planet.position.x+Math.cos(a)*r, planet.position.y+yJ, planet.position.z+Math.sin(a)*r);
     const core = new THREE.Mesh(new THREE.SphereGeometry(1.2, 18, 18), makeAdditiveMaterial(0x33ff66, 0.98)); core.position.copy(pos);
     const ring = new THREE.Mesh(new THREE.RingGeometry(1.8, 2.8, 48), new THREE.MeshBasicMaterial({ color:0x66ff99, transparent:true, opacity:0.6, blending:THREE.AdditiveBlending, side:THREE.DoubleSide, depthWrite:false })); ring.position.copy(pos);
     ring.lookAt(camera.position);
     scene.add(core, ring);
-    minerOrbs.push({ core, ring, radius:1.3, bob: Math.random()*Math.PI*2, bobSpeed: 1.1 + Math.random()*1.7, pulseSpeed: 3 + Math.random()*3 });
+    minerOrbs.push({ core, ring, radius:1.3, bob: rand()*Math.PI*2, bobSpeed: 1.1 + rand()*1.7, pulseSpeed: 3 + rand()*3 });
   }
   function spawnHunterOrbOnRing(planet, innerR=3600, outerR=5200){
-    const a = Math.random()*Math.PI*2; const r = innerR + Math.random()*(outerR-innerR); const yJ=(Math.random()-0.5)*40;
+    const a = rand()*Math.PI*2; const r = innerR + rand()*(outerR-innerR); const yJ=(rand()-0.5)*40;
     const pos = new THREE.Vector3(planet.position.x+Math.cos(a)*r, planet.position.y+yJ, planet.position.z+Math.sin(a)*r);
     const core = new THREE.Mesh(new THREE.SphereGeometry(1.2, 18, 18), makeAdditiveMaterial(0x3399ff, 0.98)); core.position.copy(pos);
     const ring = new THREE.Mesh(new THREE.RingGeometry(1.8, 2.8, 48), new THREE.MeshBasicMaterial({ color:0x66aaff, transparent:true, opacity:0.6, blending:THREE.AdditiveBlending, side:THREE.DoubleSide, depthWrite:false })); ring.position.copy(pos);
     ring.lookAt(camera.position);
     scene.add(core, ring);
-    hunterOrbs.push({ core, ring, radius:1.3, bob: Math.random()*Math.PI*2, bobSpeed: 1.1 + Math.random()*1.7, pulseSpeed: 3 + Math.random()*3 });
+    hunterOrbs.push({ core, ring, radius:1.3, bob: rand()*Math.PI*2, bobSpeed: 1.1 + rand()*1.7, pulseSpeed: 3 + rand()*3 });
   }
   function seedBoostOrbsFromAsteroidCount(){
     const desired = Math.min(CAPS.boost, Math.max(30, Math.floor(asteroids.length * 0.15))); // ~15%
@@ -865,6 +871,10 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       bullets.push({ mesh: bullet, velocity: dir.multiplyScalar(DEFAULT_BULLET_SPEED), life: DEFAULT_BULLET_LIFE, radius: 0.25, kind:'player' });
     }
     cameraShake += 0.05;
+    // Notify server for authoritative hitscan
+    if (MP.ws && MP.ws.readyState === 1){
+      try{ MP.ws.send(JSON.stringify({ type:'shoot', t: Date.now(), p:[tipWorld.x, tipWorld.y, tipWorld.z], dir:[dir.x, dir.y, dir.z], fenix: !!fenixActive })); }catch(_){ }
+    }
   }
 
   // Inputs
@@ -944,7 +954,13 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     const sh = Math.max(0, Math.round(shield));
     const ax2 = asteroidMultTimer>0 ? ` | Ax2 ${Math.ceil(asteroidMultTimer)}s` : '';
     const kx2 = killMultTimer>0 ? ` | Kx2 ${Math.ceil(killMultTimer)}s` : '';
-    hud.textContent = `Speed ${speedTxt} | HP ${hp}% | Shield ${sh}% | Points ${score} | Kills ${killsCount} | Ast ${asteroidsDestroyed}${ax2}${kx2} | Dist ${distFromOrigin} | Target ${distToTarget}`;
+    let mp = '';
+    if (MP && MP.ws){
+      const st = MP.ws.readyState;
+      const status = st===1?`ON (${MP.remotes.size+1||1})`:(st===0? 'CONNECTING':'OFF');
+      mp = ` | MP ${status}`;
+    }
+    hud.textContent = `Speed ${speedTxt} | HP ${hp}% | Shield ${sh}% | Points ${score} | Kills ${killsCount} | Ast ${asteroidsDestroyed}${ax2}${kx2} | Dist ${distFromOrigin} | Target ${distToTarget}${mp}`;
   }
 
   function showGameOver(){ gameOverEl.style.display = 'block'; }
@@ -999,6 +1015,210 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
   // try to connect shortly after detection
   setTimeout(connectLbWS, 500);
+  
+  // --- Multiplayer (input → server, binary state ← server) ---
+  const MP = {
+    active: false,
+    ws: null,
+    myId: null,
+    myNumId: null,
+    worldSeed: 0,
+    serverOffsetMs: 0,
+    serverOffsetEma: null,
+    idToNum: new Map(), // string id -> numId
+    remotes: new Map(), // numId -> { mesh, samples:[{t,p,q,v}], lastRender:{p,q} }
+    selfServerState: null,
+  };
+
+  function vec3From(arr){ return new THREE.Vector3(arr[0]||0, arr[1]||0, arr[2]||0); }
+  function quatFrom(arr){ return new THREE.Quaternion(arr[0]||0, arr[1]||0, arr[2]||0, arr[3]||1); }
+  function lerpQuat(a, b, t){ return a.clone().slerp(b, t); }
+
+  function createRemoteShip(numId){
+    const m = buildDefaultShip();
+    m.matrixAutoUpdate = true;
+    scene.add(m);
+    MP.remotes.set(numId, { mesh: m, samples: [], lastRender: { p: new THREE.Vector3(), q: new THREE.Quaternion() } });
+  }
+  function removeRemoteShipByNumId(numId){
+    const r = MP.remotes.get(numId); if (!r) return;
+    try { scene.remove(r.mesh); } catch(_){}
+    MP.remotes.delete(numId);
+  }
+
+  async function handleMpMessage(ev){
+    if (!ev || !ev.data) return;
+    if (typeof ev.data !== 'string'){
+      // Binary state buffer
+      const buf = ev.data instanceof ArrayBuffer ? ev.data : await ev.data.arrayBuffer();
+      const dv = new DataView(buf);
+      const BYTES_PER = 2 + 4 + 12 + 16 + 12 + 1;
+      const count = Math.floor(dv.byteLength / BYTES_PER);
+      let off = 0;
+      const nowLocal = performance.now();
+      for (let i=0;i<count;i++){
+        const numId = dv.getUint16(off); off+=2;
+        const t = dv.getUint32(off); off+=4;
+        const p = [dv.getFloat32(off), dv.getFloat32(off+4), dv.getFloat32(off+8)]; off+=12;
+        const q = [dv.getFloat32(off), dv.getFloat32(off+4), dv.getFloat32(off+8), dv.getFloat32(off+12)]; off+=16;
+        const v = [dv.getFloat32(off), dv.getFloat32(off+4), dv.getFloat32(off+8)]; off+=12;
+        const flags = dv.getUint8(off); off+=1;
+        // Estimate server time offset EMA
+        const estOffset = (t - nowLocal);
+        MP.serverOffsetEma = (MP.serverOffsetEma==null? estOffset : MP.serverOffsetEma*0.9 + estOffset*0.1);
+        if (numId === MP.myNumId){
+          MP.selfServerState = { t, p, q, v, flags };
+          continue;
+        }
+        let r = MP.remotes.get(numId);
+        if (!r){ createRemoteShip(numId); r = MP.remotes.get(numId); }
+        const MAX_BUF = 30;
+        r.samples.push({ t, p, q, v, flags });
+        if (r.samples.length > MAX_BUF) r.samples.shift();
+      }
+      return;
+    }
+    // JSON control/event message
+    try {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === 'welcome'){
+        MP.active = true;
+        MP.myId = msg.playerId;
+        MP.worldSeed = msg.worldSeed;
+        // Build id->num and remote meshes
+        MP.idToNum.clear();
+        for (const p of (msg.players||[])){
+          if (p.id === msg.playerId){ MP.myNumId = p.numId; continue; }
+          if (p.numId!=null){ MP.idToNum.set(p.id, p.numId); createRemoteShip(p.numId); }
+        }
+        return;
+      }
+      if (msg.type === 'respawn'){
+        if (msg.id === MP.myId){
+          const p = vec3From(msg.p), q = quatFrom(msg.q);
+          shipPosition.copy(p); ship.position.copy(p);
+          ship.quaternion.copy(q);
+        } else {
+          const numId = MP.idToNum.get(msg.id);
+          const r = numId!=null ? MP.remotes.get(numId) : null;
+          if (r){ r.mesh.position.copy(vec3From(msg.p)); r.mesh.quaternion.copy(quatFrom(msg.q)); r.samples.length = 0; }
+        }
+        return;
+      }
+      if (msg.type === 'hit'){
+        if (msg.id === MP.myId){ cameraShake += 0.4; }
+        return;
+      }
+      if (msg.type === 'player-add'){
+        if (msg.id === MP.myId) return;
+        if (msg.numId!=null){ MP.idToNum.set(msg.id, msg.numId); createRemoteShip(msg.numId); }
+        return;
+      }
+      if (msg.type === 'player-remove'){
+        const numId = MP.idToNum.get(msg.id);
+        if (numId!=null){ removeRemoteShipByNumId(numId); MP.idToNum.delete(msg.id); }
+        return;
+      }
+      if (msg.type === 'pong'){
+        const nowLocal = performance.now();
+        const rtt = nowLocal - msg.tClient;
+        const estServerNow = msg.tServer + rtt*0.5;
+        const estOffset = estServerNow - nowLocal;
+        MP.serverOffsetEma = (MP.serverOffsetEma==null? estOffset : MP.serverOffsetEma*0.8 + estOffset*0.2);
+        return;
+      }
+    } catch(_){}
+  }
+
+  function connectMP(){
+    if (!serverAvailable || MP.ws) return;
+    try {
+      const httpBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
+      const wsUrl = httpBase.replace(/^http/, 'ws') + '/mp';
+      const ws = new WebSocket(wsUrl);
+      ws.binaryType = 'arraybuffer';
+      ws.onopen = ()=>{
+        ws.send(JSON.stringify({ type:'hello', name: ensurePlayerName(), clientVersion: 'mp1' }));
+      };
+      ws.onmessage = handleMpMessage;
+      ws.onclose = ()=>{ MP.ws = null; MP.active = false; setTimeout(connectMP, 1500); };
+      ws.onerror = ()=>{ try{ ws.close(); }catch(_){} };
+      MP.ws = ws;
+    } catch(_){ /* ignore */ }
+  }
+
+  // Send inputs at 30 Hz
+  setInterval(()=>{
+    if (!MP.ws || MP.ws.readyState !== 1) return;
+    const yawKeys = (input.yawRight?-1:0) + (input.yawLeft?1:0);
+    const pitchKeys = (input.pitchUp?1:0) + (input.pitchDown?-1:0);
+    const yawInput = yawKeys + (mouseDown ? mouseX*0.6 : 0);
+    const pitchInput = pitchKeys + (mouseDown ? -mouseY*0.6 : 0);
+    const throttle = THREE.MathUtils.clamp((targetSpeedUnitsPerSec - minSpeed) / (baseMaxSpeed - minSpeed), 0, 1);
+    const msg = { type:'input', t: Date.now(), throttle, yaw: THREE.MathUtils.clamp(yawInput, -1, 1), pitch: THREE.MathUtils.clamp(pitchInput, -1, 1), roll: 0, boost: boostActive, fire: !!input.fire, fenix: !!fenixActive };
+    try{ MP.ws.send(JSON.stringify(msg)); }catch(_){}
+  }, 33);
+
+  // Defer MP connect slightly after server detection
+  setTimeout(connectMP, 800);
+
+  // When MP becomes active (welcome), rebuild deterministic world
+  const originalSeedAll = seedAllOrbsInRingByProportion;
+  function rebuildWorldForMP(){
+    if (!MP.active) return;
+    // Reset world random and clear existing spawned collections
+    setRand(MP.worldSeed>>>0);
+    // Clear existing orbs and asteroids
+    for (const a of asteroids){ scene.remove(a.mesh); }
+    asteroids.length = 0;
+    disposeRingInstancedGroups();
+    for (const o of shieldOrbs) scene.remove(o.mesh); shieldOrbs.length = 0;
+    for (const o of pinkOrbs) scene.remove(o.mesh); pinkOrbs.length = 0;
+    for (const o of fenixOrbs) { scene.remove(o.mesh); if (o.glow) scene.remove(o.glow); } fenixOrbs.length = 0;
+    for (const o of zaphireOrbs) { scene.remove(o.mesh); if (o.glow) scene.remove(o.glow); } zaphireOrbs.length = 0;
+    for (const w of wormholeOrbs) { scene.remove(w.mesh); scene.remove(w.halo); if (w.glow) scene.remove(w.glow); if (w.cubeCam) scene.remove(w.cubeCam); } wormholeOrbs.length = 0;
+    for (const o of boostOrbs) { scene.remove(o.core); scene.remove(o.ringG); scene.remove(o.ringP); if (o.glow) scene.remove(o.glow); } boostOrbs.length = 0;
+    for (const o of minerOrbs) { scene.remove(o.core); scene.remove(o.ring); } minerOrbs.length = 0;
+    for (const o of hunterOrbs) { scene.remove(o.core); scene.remove(o.ring); } hunterOrbs.length = 0;
+
+    // Reseed deterministic world
+    seedAsteroids(7000, 1400, new THREE.Vector3());
+    createRings(targetPlanet, 3600, 5200, 13000);
+    buildRingInstancedGroups(3);
+    seedAllOrbsInRingByProportion(targetPlanet, 3600, 5200);
+  }
+
+  // Hook welcome to trigger rebuild
+  const prevHandleMpMessage = handleMpMessage;
+  handleMpMessage = async function(ev){
+    const wasActive = MP.active;
+    await prevHandleMpMessage(ev);
+    if (!wasActive && MP.active){ rebuildWorldForMP(); }
+  };
+
+  // Ping loop to estimate server offset (ms)
+  setInterval(()=>{
+    if (!MP.ws || MP.ws.readyState!==1) return;
+    try{ MP.ws.send(JSON.stringify({ type:'ping', t: performance.now() })); }catch(_){ }
+  }, 1000);
+
+  // Reconcile local player gently to server truth when drift is large
+  function reconcileSelf(dt){
+    if (!MP.active || !MP.selfServerState) return;
+    const s = MP.selfServerState;
+    const sp = vec3From(s.p);
+    const sq = quatFrom(s.q);
+    const posErr = shipPosition.distanceTo(sp);
+    if (posErr > 6){ // snap if way off
+      shipPosition.copy(sp); ship.position.copy(sp); ship.quaternion.copy(sq);
+      yaw = 0; pitch = 0; // allow controls to rebuild
+      return;
+    }
+    if (posErr > 1){ // nudge toward server
+      shipPosition.lerp(sp, Math.min(1, dt*2)); ship.position.copy(shipPosition);
+      ship.quaternion.slerp(sq, Math.min(1, dt*2));
+    }
+  }
   function getSessionStats(){
     const now = performance.now();
     const survivalSec = Math.max(0, Math.round((now - survivalStartMs)/1000));
@@ -1853,6 +2073,42 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     maintainPatches();
     keepFieldPopulated();
     updateHud();
+
+    // Multiplayer: render remotes with 120ms interpolation buffer
+    if (MP.active && MP.remotes.size){
+      const renderNow = performance.now() + (MP.serverOffsetEma||0) - 120;
+      for (const [numId, r] of MP.remotes){
+        const s = r.samples;
+        if (!s || s.length === 0) continue;
+        // find two samples around renderNow
+        let a = null, b = null;
+        for (let i=0;i<s.length;i++){
+          if (s[i].t <= renderNow) a = s[i];
+          if (s[i].t > renderNow){ b = s[i]; break; }
+        }
+        if (!a) a = s[0]; if (!b) b = s[s.length-1];
+        const ta = a.t, tb = Math.max(a.t+1, b.t);
+        let t = (renderNow - ta) / (tb - ta);
+        if (!Number.isFinite(t)) t = 1;
+        t = THREE.MathUtils.clamp(t, 0, 1);
+        const pa = vec3From(a.p), pb = vec3From(b.p);
+        const qa = quatFrom(a.q), qb = quatFrom(b.q);
+        let p = pa.lerp(pb, t);
+        let q = lerpQuat(qa, qb, t);
+        // If buffer underflow (renderNow beyond last sample), do a small extrapolation using last velocity
+        if (renderNow > b.t + 16){
+          const dtEx = Math.min(0.12, (renderNow - b.t)/1000);
+          const vv = vec3From(b.v);
+          p = vec3From(b.p).addScaledVector(vv, dtEx);
+          q = qb; // keep last orientation
+        }
+        r.mesh.position.copy(p);
+        r.mesh.quaternion.copy(q);
+      }
+    }
+
+    // Reconcile self toward authoritative server state
+    reconcileSelf(dt);
 
     renderer.render(scene, camera);
     requestAnimationFrame(animate);

@@ -3,6 +3,7 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
+const { randomUUID } = require('crypto');
 const app = express();
 const PORT = process.env.PORT || 8787;
 
@@ -75,15 +76,346 @@ app.post('/submit', (req, res)=>{
 
 const server = app.listen(PORT, ()=> console.log(`Leaderboard API listening on :${PORT}`));
 
-// WebSocket broadcast of updates
-const wss = new WebSocketServer({ server });
-function broadcast(msg){
+// Leaderboards WS on root path; Multiplayer WS on /mp
+const lbWss = new WebSocketServer({ noServer: true });
+const mpWss = new WebSocketServer({ noServer: true });
+
+function lbBroadcast(msg){
   const data = JSON.stringify(msg);
-  wss.clients.forEach(c=>{ try{ if (c.readyState === 1) c.send(data); }catch(_){} });
+  lbWss.clients.forEach(c=>{ try{ if (c.readyState === 1) c.send(data); }catch(_){} });
 }
-wss.on('connection', ws => {
+
+lbWss.on('connection', ws => {
   // send snapshot
   ws.send(JSON.stringify({ type:'leaderboards', payload: {
     points: top.points, kills: top.kills, asteroids: top.asteroids, belt: top.belt, survival: top.survival
   }}));
+});
+
+// --- Minimal single-room multiplayer (MVP) ---
+const mpRoom = {
+  id: 'default',
+  worldSeed: Math.floor(Math.random()*1e9),
+  players: new Map(), // id -> { id, numId, name, color, lastSeen, state, input, hp, shield, invulnUntil, history:[] }
+  lastTick: Date.now(),
+  nextNumericId: 1,
+};
+
+function makePlayerId(){ return randomUUID().slice(0, 8); }
+function now(){ return Date.now(); }
+
+mpWss.on('connection', ws => {
+  ws.isAlive = true;
+  ws.on('pong', ()=>{ ws.isAlive = true; });
+
+  let playerId = null;
+
+  function send(obj){ try{ ws.send(JSON.stringify(obj)); }catch(_){} }
+  function broadcastToOthers(obj){
+    const data = JSON.stringify(obj);
+    mpWss.clients.forEach(c=>{ if (c!==ws && c.readyState===1) { try{ c.send(data); }catch(_){} } });
+  }
+
+  // Expect a hello first
+  ws.on('message', (data)=>{
+    let msg = null;
+    try{ msg = JSON.parse(String(data)); }catch(_){ return; }
+    if (!msg || typeof msg !== 'object') return;
+
+    if (msg.type === 'hello' && !playerId){
+      const name = String(msg.name||'').slice(0,24) || 'Anon';
+      playerId = makePlayerId();
+      ws.playerId = playerId;
+      const color = 0x47e6ff; // same color for all players (per requirement)
+      const spawn = pickSpawnPoint(mpRoom.worldSeed);
+      const state = { t: now(), p: spawn.p, q: spawn.q, v: [0,0,0], sp: 20, fenix:false, yaw: 0, pitch: 0, roll: 0 };
+      const input = { t: now(), throttle: 0.25, yaw: 0, pitch: 0, roll: 0, boost: false, fire: false };
+      const numId = (mpRoom.nextNumericId = (mpRoom.nextNumericId % 65534) + 1);
+      mpRoom.players.set(playerId, { id: playerId, numId, name, color, lastSeen: now(), state, input, hp:100, shield:0, invulnUntil:0, history:[] });
+
+      // Send welcome with snapshot
+      const snapshot = Array.from(mpRoom.players.values()).map(p=>({ id:p.id, numId:p.numId, name:p.name, color:p.color, state:p.state }));
+      send({ type:'welcome', playerId, roomId: mpRoom.id, worldSeed: mpRoom.worldSeed, worldVersion:'v1', worldChecksum: worldChecksum(mpRoom.worldSeed), players: snapshot });
+
+      // Notify others
+      broadcastToOthers({ type:'player-add', id: playerId, numId, name, color, state });
+      return;
+    }
+
+    if (!playerId) return; // ignore anything until hello completes
+
+    // Basic per-socket rate limit for spammy messages
+    const nowMs = now();
+    ws._rl = ws._rl || { last:0, count:0 };
+    if (nowMs - ws._rl.last > 1000){ ws._rl.last = nowMs; ws._rl.count = 0; }
+    ws._rl.count++;
+    if (ws._rl.count > 30) return; // drop if >30 msgs/sec
+
+    if (msg.type === 'input'){
+      const rec = mpRoom.players.get(playerId);
+      if (rec){
+        rec.input = sanitizeInput(msg, nowMs);
+        rec.lastSeen = nowMs;
+      }
+      return;
+    }
+
+    if (msg.type === 'shoot'){
+      const p = toVec3(msg.p); const dir = toVec3(msg.dir);
+      const fenix = !!msg.fenix;
+      const shotT = clampNum(msg.t, nowMs-500, nowMs+100);
+      // Visuals for others
+      broadcastToOthers({ type:'shoot', id: playerId, t: shotT, p, dir, fenix });
+      // Authoritative hitscan against players
+      processHitscan(playerId, p, dir, shotT, fenix);
+      return;
+    }
+
+    if (msg.type === 'ping'){
+      send({ type:'pong', tServer: nowMs, tClient: msg.t||nowMs });
+      return;
+    }
+  });
+
+  ws.on('close', ()=>{
+    if (!playerId) return;
+    mpRoom.players.delete(playerId);
+    const data = JSON.stringify({ type:'player-remove', id: playerId });
+    mpWss.clients.forEach(c=>{ if (c.readyState===1){ try{ c.send(data); }catch(_){} } });
+  });
+});
+
+// Shared helpers
+function toNum(n, def=0){ n=Number(n); return Number.isFinite(n)?n:def; }
+function clampNum(n, min, max){ n=toNum(n); if (n<min) return min; if (n>max) return max; return n; }
+function toVec3(a){ if (!Array.isArray(a) || a.length!==3) return [0,0,0]; return [toNum(a[0]), toNum(a[1]), toNum(a[2])]; }
+function toQuat(a){ if (!Array.isArray(a) || a.length!==4) return [0,0,0,1]; return [toNum(a[0]), toNum(a[1]), toNum(a[2]), toNum(a[3])]; }
+
+function sanitizeInput(msg, nowMs){
+  return {
+    t: Number(msg.t)||nowMs,
+    throttle: clampNum(msg.throttle, 0, 1),
+    yaw: clampNum(msg.yaw, -1, 1),
+    pitch: clampNum(msg.pitch, -1, 1),
+    roll: clampNum(msg.roll, -1, 1),
+    boost: !!msg.boost,
+    fire: !!msg.fire,
+    fenix: !!msg.fenix,
+  };
+}
+
+// Kinematic integration (minimal flight model)
+const TICK_HZ = 30;
+const TICK_MS = Math.floor(1000 / TICK_HZ);
+const MIN_SPEED = 5;
+const MAX_SPEED = 60;
+const YAW_RATE = 2.0;     // rad/sec
+const PITCH_RATE = 1.35;  // rad/sec
+const SPEED_ACCEL = 22;   // units/sec^2
+
+function eulerToQuatYXZ(pitch, yaw, roll){
+  const cy = Math.cos(yaw*0.5), sy = Math.sin(yaw*0.5);
+  const cx = Math.cos(pitch*0.5), sx = Math.sin(pitch*0.5);
+  const cz = Math.cos(roll*0.5), sz = Math.sin(roll*0.5);
+  // q = qY * qX * qZ
+  const w = cy*cx*cz + sy*sx*sz;
+  const x = cy*sx*cz + sy*cx*sz;
+  const y = sy*cx*cz - cy*sx*sz;
+  const z = cy*cx*sz - sy*sx*cz;
+  return [x,y,z,w];
+}
+
+function forwardFromYawPitch(yaw, pitch){
+  const cp = Math.cos(pitch);
+  return [Math.sin(yaw)*cp, Math.sin(pitch), Math.cos(yaw)*cp];
+}
+
+function integratePlayers(dt){
+  for (const [id, rec] of mpRoom.players){
+    const i = rec.input; const s = rec.state;
+    // Turn
+    s.yaw += (i?.yaw||0) * YAW_RATE * dt;
+    s.pitch += (i?.pitch||0) * PITCH_RATE * dt;
+    // Clamp pitch to avoid flips
+    const HALF_PI = Math.PI/2 - 0.05;
+    if (s.pitch > HALF_PI) s.pitch = HALF_PI; if (s.pitch < -HALF_PI) s.pitch = -HALF_PI;
+    // Target speed from throttle
+    const targetSp = MIN_SPEED + clampNum(i?.throttle ?? 0.25, 0, 1) * (MAX_SPEED - MIN_SPEED);
+    if (s.sp < targetSp){ s.sp = Math.min(targetSp, s.sp + SPEED_ACCEL*dt); }
+    else if (s.sp > targetSp){ s.sp = Math.max(targetSp, s.sp - SPEED_ACCEL*dt); }
+    // Move
+    const fwd = forwardFromYawPitch(s.yaw, s.pitch);
+    s.p = [ s.p[0] + fwd[0]*s.sp*dt, s.p[1] + fwd[1]*s.sp*dt, s.p[2] + fwd[2]*s.sp*dt ];
+    s.v = [ fwd[0]*s.sp, fwd[1]*s.sp, fwd[2]*s.sp ];
+    s.q = eulerToQuatYXZ(s.pitch, s.yaw, s.roll||0);
+    s.t = now();
+  }
+}
+
+// Simple PvP collision detection and damage
+const SHIP_RADIUS = 1.8;
+function distanceSq(a,b){ const dx=a[0]-b[0], dy=a[1]-b[1], dz=a[2]-b[2]; return dx*dx+dy*dy+dz*dz; }
+function length(v){ return Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2]); }
+function applyDamage(rec, dmg){
+  if (!rec) return;
+  const nowMs = Date.now();
+  if (nowMs < (rec.invulnUntil||0)) return;
+  let remaining = dmg;
+  if (rec.shield>0){ const absorbed = Math.min(rec.shield, remaining); rec.shield -= absorbed; remaining -= absorbed; }
+  if (remaining>0){ rec.hp -= remaining; }
+  if (rec.hp <= 0){ handleDeath(rec); }
+}
+function handleDeath(rec){
+  rec.hp = 0; rec.invulnUntil = Date.now() + 1300; // i-frames after respawn
+  // Broadcast death then respawn
+  const spawn = pickSpawnPoint(mpRoom.worldSeed);
+  rec.state.p = spawn.p.slice();
+  rec.state.q = spawn.q.slice();
+  rec.state.v = [0,0,0];
+  rec.state.sp = 20;
+  rec.hp = 100; rec.shield = 0;
+  const data = JSON.stringify({ type:'respawn', id: rec.id, p: rec.state.p, q: rec.state.q });
+  mpWss.clients.forEach(c=>{ if (c.readyState===1){ try{ c.send(data); }catch(_){} } });
+}
+
+function processHitscan(shooterId, origin, dir, shotT, fenix){
+  const maxRange = fenix ? 380 : 300; // meters
+  const shooter = mpRoom.players.get(shooterId);
+  if (!shooter) return;
+  // Test players only for MVP
+  let closest = null; let closestDist = Infinity;
+  for (const [id, rec] of mpRoom.players){
+    if (id === shooterId) continue;
+    // Rewind approximation: assume constant velocity; project to shotT
+    const dt = (shotT - rec.state.t)/1000;
+    const px = rec.state.p[0] + rec.state.v[0]*dt;
+    const py = rec.state.p[1] + rec.state.v[1]*dt;
+    const pz = rec.state.p[2] + rec.state.v[2]*dt;
+    // Closest approach from ray to sphere center
+    const ox = origin[0], oy = origin[1], oz = origin[2];
+    const dx = dir[0], dy = dir[1], dz = dir[2];
+    const cx = px-ox, cy = py-oy, cz = pz-oz;
+    const t = Math.max(0, Math.min(maxRange, (cx*dx+cy*dy+cz*dz)));
+    const qx = ox + dx*t, qy = oy + dy*t, qz = oz + dz*t;
+    const d2 = (qx-px)*(qx-px)+(qy-py)*(qy-py)+(qz-pz)*(qz-pz);
+    if (d2 <= (SHIP_RADIUS*SHIP_RADIUS)){
+      if (t < closestDist){ closestDist = t; closest = rec; }
+    }
+  }
+  if (closest){
+    const dmg = fenix ? 35 : 20;
+    applyDamage(closest, dmg);
+    const hitMsg = JSON.stringify({ type:'hit', target:'player', id: closest.id, by: shooterId, dmg });
+    mpWss.clients.forEach(c=>{ if (c.readyState===1){ try{ c.send(hitMsg); }catch(_){} } });
+  }
+}
+
+// Binary broadcaster for state
+function buildStateBuffer(){ return buildStateBufferFor(null, Infinity, null); }
+
+function buildStateBufferFor(center, radius, excludePlayerId){
+  const BYTES_PER = 2 + 4 + 12 + 16 + 12 + 1; // id,u32,p(3*f32),q(4*f32),v(3*f32),flags
+  // Count first
+  let count = 0;
+  for (const [id, rec] of mpRoom.players){
+    if (excludePlayerId && id===excludePlayerId) { count++; continue; } // include self for reconciliation
+    if (center){ const d2 = distanceSq(rec.state.p, center); if (d2 > radius*radius) continue; }
+    count++;
+  }
+  const buf = Buffer.allocUnsafe(count * BYTES_PER);
+  let off = 0;
+  for (const [id, rec] of mpRoom.players){
+    if (excludePlayerId && id===excludePlayerId){ /* still include self */ }
+    if (center){ const d2 = distanceSq(rec.state.p, center); if (d2 > radius*radius) continue; }
+    const s = rec.state; const flags = (s.fenix?1:0);
+    buf.writeUInt16BE(rec.numId&0xffff, off); off+=2;
+    buf.writeUInt32BE(Math.floor(s.t)>>>0, off); off+=4;
+    off = writeF32Array(buf, off, s.p);
+    off = writeF32Array(buf, off, s.q);
+    off = writeF32Array(buf, off, s.v);
+    buf.writeUInt8(flags, off); off+=1;
+  }
+  return buf;
+}
+
+function writeF32Array(buf, off, arr){
+  for (let k=0;k<arr.length;k++){ buf.writeFloatBE(arr[k], off); off+=4; }
+  return off;
+}
+
+setInterval(()=>{
+  const nowMs = Date.now();
+  const dt = Math.min(0.1, (nowMs - mpRoom.lastTick)/1000);
+  mpRoom.lastTick = nowMs;
+  integratePlayers(dt);
+  // PvP collision check (pairwise naive for MVP)
+  const players = Array.from(mpRoom.players.values());
+  for (let i=0;i<players.length;i++){
+    for (let j=i+1;j<players.length;j++){
+      const a = players[i], b = players[j];
+      const d2 = distanceSq(a.state.p, b.state.p);
+      const rad = SHIP_RADIUS*2;
+      if (d2 <= rad*rad){
+        // Damage proportional to relative speed
+        const rel = [a.state.v[0]-b.state.v[0], a.state.v[1]-b.state.v[1], a.state.v[2]-b.state.v[2]];
+        const relSpeed = length(rel);
+        const dmg = Math.max(10, Math.min(120, relSpeed * 0.8));
+        applyDamage(a, dmg*0.5);
+        applyDamage(b, dmg*0.5);
+        const hitMsg = JSON.stringify({ type:'hit', target:'player', id: a.id, by: b.id, dmg: Math.round(dmg*0.5) });
+        const hitMsg2 = JSON.stringify({ type:'hit', target:'player', id: b.id, by: a.id, dmg: Math.round(dmg*0.5) });
+        mpWss.clients.forEach(c=>{ if (c.readyState===1){ try{ c.send(hitMsg); c.send(hitMsg2); }catch(_){} } });
+      }
+    }
+  }
+  // Interest-filtered binary broadcast per client
+  const INTEREST_RADIUS = 10000; // meters
+  mpWss.clients.forEach(c=>{
+    if (c.readyState!==1) return;
+    const pid = c.playerId; const rec = pid? mpRoom.players.get(pid): null;
+    const center = rec? rec.state.p : null;
+    const payload = buildStateBufferFor(center, INTEREST_RADIUS, pid);
+    try{ c.send(payload, { binary: true }); }catch(_){}
+  });
+}, TICK_MS);
+
+// Deterministic spawn picker around the target belt region (approx.)
+function mulberry32(seed){ return function(){ let t = seed += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function pickSpawnPoint(worldSeed){
+  const rand = mulberry32(worldSeed ^ (Math.floor(Math.random()*1e9)>>>0));
+  const angle = rand()*Math.PI*2;
+  const radius = 4200 + rand()*600; // within belt
+  const y = (rand()-0.5)*120; // slight vertical jitter
+  const x = Math.cos(angle)*radius;
+  const z = Math.sin(angle)*radius - 20000; // offset near target planet belt
+  // Default forward along +Z
+  const q = [0,0,0,1];
+  return { p:[x,y,z], q };
+}
+
+// Simple checksum over seed for client verification
+function worldChecksum(seed){
+  let x = seed>>>0; x ^= x<<13; x ^= x>>>17; x ^= x<<5; x = x>>>0;
+  return ('00000000'+x.toString(16)).slice(-8);
+}
+
+// Periodic liveness check and stale player cleanup
+setInterval(()=>{
+  lbWss.clients.forEach(ws=>{ if (ws.isAlive === false) return ws.terminate(); ws.isAlive = false; try{ ws.ping(); }catch(_){} });
+  mpWss.clients.forEach(ws=>{ if (ws.isAlive === false) return ws.terminate(); ws.isAlive = false; try{ ws.ping(); }catch(_){} });
+  // prune idle players
+  const cutoff = Date.now() - 15000;
+  for (const [id, p] of mpRoom.players){ if (p.lastSeen < cutoff){ mpRoom.players.delete(id); const data = JSON.stringify({ type:'player-remove', id }); mpWss.clients.forEach(c=>{ if (c.readyState===1){ try{ c.send(data); }catch(_){} } }); } }
+}, 10000);
+
+// Route upgrades by path
+server.on('upgrade', (req, socket, head) => {
+  try {
+    const url = new URL(req.url, 'http://localhost');
+    if (url.pathname === '/mp'){
+      mpWss.handleUpgrade(req, socket, head, function done(ws){ mpWss.emit('connection', ws, req); });
+    } else {
+      lbWss.handleUpgrade(req, socket, head, function done(ws){ lbWss.emit('connection', ws, req); });
+    }
+  } catch (e){ socket.destroy(); }
 });
