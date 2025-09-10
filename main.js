@@ -1718,14 +1718,15 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
           if (isWithinRadiusSquared(a.mesh.position, b.mesh.position, a.radius + b.radius)){
             spawnImpactBurst(a.mesh.position, 0xffaa66, 26);
             cameraShake += 0.25;
+            // Remove instance after one frame to allow VFX to be seen
             if (a.instanceGroup>=0 && a.instanceId>=0){
               const im = ringInstancedGroups[a.instanceGroup];
-              if (im){
+              if (im){ setTimeout(()=>{ try{
                 instTmp.position.set(0,0,0); instTmp.rotation.set(0,0,0); instTmp.scale.set(0,0,0); instTmp.updateMatrix();
                 im.setMatrixAt(a.instanceId, instTmp.matrix); im.instanceMatrix.needsUpdate = true;
-              }
+              }catch(_){ } }, 0); }
             }
-            scene.remove(a.mesh); asteroids.splice(i,1);
+            setTimeout(()=>{ try{ scene.remove(a.mesh); }catch(_){ } }, 0); asteroids.splice(i,1);
             scene.remove(b.mesh);
             if (b.kind==='player') releasePlayerBulletMesh(b.mesh); else if (b.kind==='fenix') releaseFenixBeamMesh(b.mesh);
             bullets.splice(j,1);
@@ -1746,15 +1747,15 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
            if (isWithinRadiusSquared(a.mesh.position, b.mesh.position, a.radius + b.radius)){
              spawnImpactBurst(a.mesh.position, 0xffaa66, 26);
              cameraShake += 0.25;
-             // Hide instance immediately
+             // Hide instance after one frame to allow VFX to be seen
              if (a.instanceGroup>=0 && a.instanceId>=0){
                const im = ringInstancedGroups[a.instanceGroup];
-               if (im){
+               if (im){ setTimeout(()=>{ try{
                  instTmp.position.set(0,0,0); instTmp.rotation.set(0,0,0); instTmp.scale.set(0,0,0); instTmp.updateMatrix();
                  im.setMatrixAt(a.instanceId, instTmp.matrix); im.instanceMatrix.needsUpdate = true;
-               }
+               }catch(_){ } }, 0); }
              }
-             scene.remove(a.mesh); asteroids.splice(i,1);
+             setTimeout(()=>{ try{ scene.remove(a.mesh); }catch(_){ } }, 0); asteroids.splice(i,1);
             scene.remove(b.mesh);
             if (b.kind==='player') releasePlayerBulletMesh(b.mesh); else if (b.kind==='fenix') releaseFenixBeamMesh(b.mesh);
             bullets.splice(j,1);
