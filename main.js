@@ -1703,6 +1703,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
           const b = bullets[j];
           if (isWithinRadiusSquared(a.mesh.position, b.mesh.position, a.radius + b.radius)){
             spawnImpactBurst(a.mesh.position);
+            if (typeof spawnShieldRing === 'function') spawnShieldRing(a.mesh.position, 0xffffff);
+            cameraShake += 0.25;
             if (a.instanceGroup>=0 && a.instanceId>=0){
               const im = ringInstancedGroups[a.instanceGroup];
               if (im){
@@ -1730,6 +1732,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
           const { i, a } = near[k]; if (!asteroids[i]) continue;
            if (isWithinRadiusSquared(a.mesh.position, b.mesh.position, a.radius + b.radius)){
              spawnImpactBurst(a.mesh.position);
+             if (typeof spawnShieldRing === 'function') spawnShieldRing(a.mesh.position, 0xffffff);
+             cameraShake += 0.25;
              // Hide instance immediately
              if (a.instanceGroup>=0 && a.instanceId>=0){
                const im = ringInstancedGroups[a.instanceGroup];

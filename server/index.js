@@ -374,7 +374,7 @@ setInterval(()=>{
     }
   }
   // Interest-filtered binary broadcast per client
-  const INTEREST_RADIUS = 10000; // meters
+  const INTEREST_RADIUS = 100000; // meters (MVP: wide radius so players see each other)
   mpWss.clients.forEach(c=>{
     if (c.readyState!==1) return;
     const pid = c.playerId; const rec = pid? mpRoom.players.get(pid): null;
