@@ -148,7 +148,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     scene.add(hull, bridge, beacon, beaconGlow);
     return { hull, bridge, beacon };
   }
-  const motherShip = addMotherShip(targetPlanet, (RING_INNER+RING_OUTER)/2);
+  const motherShip = addMotherShip(targetPlanet, 4400);
 
   // Starfield
   (function makeStars(){
