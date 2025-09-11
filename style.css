@@ -19,7 +19,7 @@ html, body {
 .welcome-btn.enabled:active { transform: translateY(1px); }
 .welcome-desc { font-size:14px; color:#aaa; line-height:1.5; margin-top:20px; }
 #gameCanvas {
-  display: block;
+  display: none;
   width: 100%; height: 100%;
 }
 #hud {

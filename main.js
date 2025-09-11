@@ -85,7 +85,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       if (!playerName.trim()) return;
       localStorage.setItem('or_name', playerName.trim().slice(0,24));
       if (welcomeScreen) welcomeScreen.classList.add('hidden');
-      if (canvas) canvas.classList.remove('hidden');
+      if (canvas){ canvas.classList.remove('hidden'); canvas.style.display='block'; }
       // ensure HUD becomes visible when created dynamically later
       startGame();
       canvas.focus();
@@ -948,6 +948,11 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Inputs
   const input = { yawLeft:false, yawRight:false, pitchUp:false, pitchDown:false, speedUp:false, speedDown:false, fire:false, toggleLb:false };
   function onKeyDown(e){
+    // Disable game controls while welcome screen is visible or when typing in inputs
+    const active = document.activeElement;
+    const typing = active && ((active.tagName==='INPUT') || (active.tagName==='TEXTAREA') || active.isContentEditable);
+    const welcomeVisible = !!(welcomeScreen && !welcomeScreen.classList.contains('hidden'));
+    if (welcomeVisible || typing){ return; }
     const c = e.code;
     const handled = ['ArrowLeft','ArrowRight','KeyA','KeyD','ArrowUp','ArrowDown','KeyW','KeyS','Space','KeyI','KeyK','KeyH','KeyR','KeyT','KeyL','KeyP','KeyN'].includes(c);
     if (handled) { e.preventDefault(); e.stopImmediatePropagation(); }
@@ -990,6 +995,10 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (c==='KeyR' && gameOver) resetGame();
   }
   function onKeyUp(e){
+    const active = document.activeElement;
+    const typing = active && ((active.tagName==='INPUT') || (active.tagName==='TEXTAREA') || active.isContentEditable);
+    const welcomeVisible = !!(welcomeScreen && !welcomeScreen.classList.contains('hidden'));
+    if (welcomeVisible || typing){ return; }
     const c = e.code;
     const handled = ['ArrowLeft','ArrowRight','KeyA','KeyD','ArrowUp','ArrowDown','KeyW','KeyS','Space','KeyI','KeyK','KeyH','KeyR','KeyT','KeyL','KeyN'].includes(c);
     if (handled) { e.preventDefault(); e.stopImmediatePropagation(); }
