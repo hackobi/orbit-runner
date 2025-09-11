@@ -70,7 +70,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     Object.assign(card.style, { width:'min(520px, 90vw)', background:'rgba(12,18,28,0.85)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:'12px', padding:'20px 18px', color:'#eef', boxShadow:'0 18px 50px rgba(0,0,0,0.5)', backdropFilter:'blur(4px)' });
     const title = document.createElement('div'); title.textContent='Orbit‑Runner'; Object.assign(title.style, { fontSize:'28px', fontWeight:'800', marginBottom:'6px' });
     const sub = document.createElement('div'); sub.textContent='Enter a display name to launch'; Object.assign(sub.style, { opacity:'0.85', marginBottom:'14px' });
-    const input = document.createElement('input'); input.type='text'; input.maxLength=24; input.placeholder='Commander name';
+    const input = document.createElement('input'); input.id='homeStartInput'; input.type='text'; input.maxLength=24; input.placeholder='Commander name';
     Object.assign(input.style, { width:'100%', padding:'10px 12px', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.18)', background:'rgba(255,255,255,0.06)', color:'#fff', outline:'none' });
     const btn = document.createElement('button'); btn.textContent='Launch'; Object.assign(btn.style, { marginTop:'12px', width:'100%', padding:'10px 12px', border:'none', borderRadius:'8px', background:'linear-gradient(90deg, #16a085, #27ae60)', color:'#fff', fontWeight:'700', cursor:'pointer' });
     btn.onclick = ()=>{
@@ -78,8 +78,12 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       if (!name) { input.focus(); return; }
       localStorage.setItem('or_name', name);
       wrap.style.display='none';
-      startGame();
+      if (MP.ws && MP.ws.readyState===1){ try{ MP.ws.close(); }catch(_){ } MP.ws = null; MP.active = false; setTimeout(connectMP, 50); }
+      else startGame();
     };
+    const saved = localStorage.getItem('or_name') || '';
+    if (saved) input.value = saved;
+    input.addEventListener('keydown', (e)=>{ if (e.key==='Enter') btn.click(); });
     card.append(title, sub, input, btn); wrap.appendChild(card); document.body.appendChild(wrap); return wrap;
   }
   function startGame(){ if (gameStarted) return; gameStarted=true; connectMP(); }
@@ -968,6 +972,11 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         spawnCenteredTextLabel('DEV OFF', shipPosition, 0xff8888, 2.0, 1.2);
       }
     }
+    if (c==='KeyH') {
+      const o = ensureHomeOverlay();
+      o.style.display = 'flex';
+      const inp = document.getElementById('homeStartInput'); if (inp) inp.focus();
+    }
     if (c==='KeyL') { input.toggleLb = true; renderLb(); ensureLbOverlay().style.display = (ensureLbOverlay().style.display==='none'?'block':'none'); }
     if (c==='KeyP') { mpOverlayOn = !mpOverlayOn; ensureMpOverlay().style.display = mpOverlayOn ? 'block' : 'none'; renderMpOverlay(); }
     if (c==='KeyR' && gameOver) resetGame();
@@ -1037,8 +1046,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     catch(_){ serverAvailable = false; }
   }
   detectServer();
-  // Show home overlay unless a name exists
-  if (!localStorage.getItem('or_name')) ensureHomeOverlay(); else setTimeout(()=> startGame(), 200);
+  // Always show home overlay; prefill name if present
+  ensureHomeOverlay();
 
   // Identity (local only; for display on leaderboards)
   function getOrMakeUid(){
