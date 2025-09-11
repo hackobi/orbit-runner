@@ -59,7 +59,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   // HUD and overlays
   const hud = document.getElementById('hud') || (() => { const d = document.createElement('div'); d.id='hud'; d.style.position='absolute'; d.style.top='10px'; d.style.left='10px'; d.style.color='#0ff'; d.style.fontSize='1.1rem'; document.body.appendChild(d); return d; })();
-  const help = document.getElementById('help') || (() => { const d = document.createElement('div'); d.id='help'; d.style.position='absolute'; d.style.bottom='12px'; d.style.left='50%'; d.style.transform='translateX(-50%)'; d.style.fontSize='0.95rem'; d.style.color='#ccc'; d.style.opacity='0.85'; d.style.background='rgba(0,0,0,0.35)'; d.style.padding='6px 10px'; d.style.borderRadius='6px'; d.textContent='W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H home • T dev 500 • R restart'; document.body.appendChild(d); return d; })();
+  const help = document.getElementById('help') || (() => { const d = document.createElement('div'); d.id='help'; d.style.position='absolute'; d.style.bottom='12px'; d.style.left='50%'; d.style.transform='translateX(-50%)'; d.style.fontSize='0.95rem'; d.style.color='#ccc'; d.style.opacity='0.85'; d.style.background='rgba(0,0,0,0.35)'; d.style.padding='6px 10px'; d.style.borderRadius='6px'; d.textContent='W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H target • N name • T dev 500 • R restart'; document.body.appendChild(d); return d; })();
   // Simple start/home overlay requiring a name before launching
   let gameStarted = false;
   function ensureHomeOverlay(){
@@ -944,7 +944,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   const input = { yawLeft:false, yawRight:false, pitchUp:false, pitchDown:false, speedUp:false, speedDown:false, fire:false, toggleLb:false };
   function onKeyDown(e){
     const c = e.code;
-    const handled = ['ArrowLeft','ArrowRight','KeyA','KeyD','ArrowUp','ArrowDown','KeyW','KeyS','Space','KeyI','KeyK','KeyH','KeyR','KeyT','KeyL','KeyP'].includes(c);
+    const handled = ['ArrowLeft','ArrowRight','KeyA','KeyD','ArrowUp','ArrowDown','KeyW','KeyS','Space','KeyI','KeyK','KeyH','KeyR','KeyT','KeyL','KeyP','KeyN'].includes(c);
     if (handled) { e.preventDefault(); e.stopImmediatePropagation(); }
     // Standard yaw: Left/A => yaw left, Right/D => yaw right
     if (c==='ArrowLeft'||c==='KeyA') input.yawLeft = true;
@@ -961,6 +961,11 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       yaw = Math.atan2(to.x, to.z);
       pitch = Math.asin(THREE.MathUtils.clamp(to.y, -1, 1));
       targetSpeedUnitsPerSec = Math.max(targetSpeedUnitsPerSec, 22);
+    }
+    if (c==='KeyN') {
+      const o = ensureHomeOverlay();
+      o.style.display = 'flex';
+      const inp = document.getElementById('homeStartInput'); if (inp) inp.focus();
     }
     if (c==='KeyT') {
       devTurboActive = !devTurboActive;
@@ -983,7 +988,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
   function onKeyUp(e){
     const c = e.code;
-    const handled = ['ArrowLeft','ArrowRight','KeyA','KeyD','ArrowUp','ArrowDown','KeyW','KeyS','Space','KeyI','KeyK','KeyH','KeyR','KeyT','KeyL'].includes(c);
+    const handled = ['ArrowLeft','ArrowRight','KeyA','KeyD','ArrowUp','ArrowDown','KeyW','KeyS','Space','KeyI','KeyK','KeyH','KeyR','KeyT','KeyL','KeyN'].includes(c);
     if (handled) { e.preventDefault(); e.stopImmediatePropagation(); }
     if (c==='ArrowLeft'||c==='KeyA') input.yawLeft = false;
     if (c==='ArrowRight'||c==='KeyD') input.yawRight = false;
