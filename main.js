@@ -60,6 +60,29 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   // HUD and overlays
   const hud = document.getElementById('hud') || (() => { const d = document.createElement('div'); d.id='hud'; d.style.position='absolute'; d.style.top='10px'; d.style.left='10px'; d.style.color='#0ff'; d.style.fontSize='1.1rem'; document.body.appendChild(d); return d; })();
   const help = document.getElementById('help') || (() => { const d = document.createElement('div'); d.id='help'; d.style.position='absolute'; d.style.bottom='12px'; d.style.left='50%'; d.style.transform='translateX(-50%)'; d.style.fontSize='0.95rem'; d.style.color='#ccc'; d.style.opacity='0.85'; d.style.background='rgba(0,0,0,0.35)'; d.style.padding='6px 10px'; d.style.borderRadius='6px'; d.textContent='W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H home • T dev 500 • R restart'; document.body.appendChild(d); return d; })();
+  // Simple start/home overlay requiring a name before launching
+  let gameStarted = false;
+  function ensureHomeOverlay(){
+    const existing = document.getElementById('homeStart'); if (existing) return existing;
+    const wrap = document.createElement('div'); wrap.id='homeStart';
+    Object.assign(wrap.style, { position:'fixed', inset:'0', display:'flex', alignItems:'center', justifyContent:'center', background:'linear-gradient(180deg, rgba(2,8,20,0.85), rgba(2,8,20,0.65))', zIndex:'10000' });
+    const card = document.createElement('div');
+    Object.assign(card.style, { width:'min(520px, 90vw)', background:'rgba(12,18,28,0.85)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:'12px', padding:'20px 18px', color:'#eef', boxShadow:'0 18px 50px rgba(0,0,0,0.5)', backdropFilter:'blur(4px)' });
+    const title = document.createElement('div'); title.textContent='Orbit‑Runner'; Object.assign(title.style, { fontSize:'28px', fontWeight:'800', marginBottom:'6px' });
+    const sub = document.createElement('div'); sub.textContent='Enter a display name to launch'; Object.assign(sub.style, { opacity:'0.85', marginBottom:'14px' });
+    const input = document.createElement('input'); input.type='text'; input.maxLength=24; input.placeholder='Commander name';
+    Object.assign(input.style, { width:'100%', padding:'10px 12px', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.18)', background:'rgba(255,255,255,0.06)', color:'#fff', outline:'none' });
+    const btn = document.createElement('button'); btn.textContent='Launch'; Object.assign(btn.style, { marginTop:'12px', width:'100%', padding:'10px 12px', border:'none', borderRadius:'8px', background:'linear-gradient(90deg, #16a085, #27ae60)', color:'#fff', fontWeight:'700', cursor:'pointer' });
+    btn.onclick = ()=>{
+      const name = (input.value||'').trim().slice(0,24);
+      if (!name) { input.focus(); return; }
+      localStorage.setItem('or_name', name);
+      wrap.style.display='none';
+      startGame();
+    };
+    card.append(title, sub, input, btn); wrap.appendChild(card); document.body.appendChild(wrap); return wrap;
+  }
+  function startGame(){ if (gameStarted) return; gameStarted=true; connectMP(); }
   // MP overlay (P to toggle)
   let mpOverlay = null; let mpOverlayOn = false; let latestRoomStats = [];
   function ensureMpOverlay(){ if (mpOverlay) return mpOverlay; const d=document.createElement('div'); d.id='mpOverlay'; Object.assign(d.style,{ position:'absolute', top:'10px', right:'10px', color:'#fff', background:'rgba(0,0,0,0.5)', padding:'8px 10px', borderRadius:'8px', fontSize:'12px', display:'none', zIndex:9999, whiteSpace:'pre' }); document.body.appendChild(d); mpOverlay=d; return d; }
@@ -631,10 +654,10 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (ring <= 0) return;
 
     // Use generous minimums to guarantee visible saturation
-    const desiredShield = Math.max(80, Math.min(CAPS.shield, Math.floor(ring * 0.05)));
-    const desiredPink   = Math.max(120, Math.min(CAPS.pink,   Math.floor(ring * 0.04)));
-    const desiredFenix  = Math.max(100, Math.min(CAPS.fenix,  Math.floor(ring * 0.12)));
-    const desiredZaph   = Math.max(40, Math.min(CAPS.zaphire,Math.floor(ring * 0.20)));
+    const desiredShield = Math.max(80, Math.min(CAPS.shield, Math.floor(ring * 0.03)));
+    const desiredPink   = Math.max(80, Math.min(CAPS.pink,   Math.floor(ring * 0.03)));
+    const desiredFenix  = Math.max(80, Math.min(CAPS.fenix,  Math.floor(ring * 0.08)));
+    const desiredZaph   = Math.max(40, Math.min(CAPS.zaphire,Math.floor(ring * 0.10)));
     const desiredWorm   = Math.max(60, Math.min(CAPS.wormhole,Math.floor(ring * 0.20)));
     const desiredBoost  = Math.max(70, Math.min(CAPS.boost,  Math.floor(ring * 0.15)));
 
@@ -642,8 +665,16 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     for (let i=0;i<desiredPink;i++)   spawnPinkOrbOnRing(planet, innerR, outerR);
     for (let i=0;i<desiredFenix;i++)  spawnFenixOrbOnRing(planet, innerR, outerR);
     for (let i=0;i<desiredZaph;i++)   spawnZaphireOrbOnRing(planet, innerR, outerR);
-    seedWormholesOnRings(planet, innerR, outerR, Math.max(desiredWorm, Math.floor(ring*0.05)));
-    seedBoostOnRings(planet, innerR, outerR, Math.max(desiredBoost, Math.floor(ring*0.06)));
+    // Disperse uniformly by sampling the full [0..2π) ring range evenly
+    const slots = 64;
+    const angles = Array.from({length: slots}, (_,i)=> (i/slots)*Math.PI*2 + rand()*((Math.PI*2)/slots*0.25));
+    const placeRing = (count, fn)=>{ const step = Math.max(1, Math.floor(slots / Math.max(1,count))); let placed=0; for (let i=0;i<slots && placed<count;i+=step){ const a=angles[i%slots]; fn(a); placed++; } };
+    placeRing(desiredShield, (a)=> spawnShieldOrbOnRing(planet, innerR, outerR));
+    placeRing(desiredPink,   (a)=> spawnPinkOrbOnRing(planet, innerR, outerR));
+    placeRing(desiredFenix,  (a)=> spawnFenixOrbOnRing(planet, innerR, outerR));
+    placeRing(desiredZaph,   (a)=> spawnZaphireOrbOnRing(planet, innerR, outerR));
+    seedWormholesOnRings(planet, innerR, outerR, Math.max(desiredWorm, Math.floor(ring*0.03)));
+    seedBoostOnRings(planet, innerR, outerR, Math.max(desiredBoost, Math.floor(ring*0.03)));
     // Add multiplier orbs in the belt
     const desiredMiner  = Math.min(CAPS.miner,  Math.max(50, Math.floor(ring * 0.15)));   // 5x
     const desiredHunter = Math.min(CAPS.hunter, Math.max(50, Math.floor(ring * 0.15)));   // 5x
@@ -1006,6 +1037,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     catch(_){ serverAvailable = false; }
   }
   detectServer();
+  // Show home overlay unless a name exists
+  if (!localStorage.getItem('or_name')) ensureHomeOverlay(); else setTimeout(()=> startGame(), 200);
 
   // Identity (local only; for display on leaderboards)
   function getOrMakeUid(){
@@ -1016,10 +1049,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   function getPlayerName(){ return localStorage.getItem('or_name') || ''; }
   function ensurePlayerName(){
     let name = getPlayerName();
-    if (!name){
-      name = (window.prompt('Enter a display name for leaderboards:', '') || '').trim().slice(0,24);
-      if (name) localStorage.setItem('or_name', name);
-    }
+    if (!name){ ensureHomeOverlay(); return ''; }
     return name;
   }
 
@@ -1202,7 +1232,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   }, 33);
 
   // Defer MP connect slightly after server detection
-  setTimeout(connectMP, 800);
+  // MP connect happens after home overlay triggers startGame()
 
   // When MP becomes active (welcome), rebuild deterministic world
   const originalSeedAll = seedAllOrbsInRingByProportion;
@@ -1265,12 +1295,11 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   // When tab visibility changes, resync to server state soon after focus to avoid pause drift
   document.addEventListener('visibilitychange', ()=>{
     if (!document.hidden){
-      // On focus, if we have an authoritative snapshot, snap closer
-      if (MP && MP.selfServerState){
-        const s = MP.selfServerState;
-        const sp = vec3From(s.p), sq = quatFrom(s.q);
-        shipPosition.lerp(sp, 0.8); ship.position.copy(shipPosition); ship.quaternion.slerp(sq, 0.8);
-      }
+      // On focus, hard snap to server snapshot if present to avoid drift
+      if (MP && MP.selfServerState){ const s=MP.selfServerState; const sp=vec3From(s.p), sq=quatFrom(s.q); shipPosition.copy(sp); ship.position.copy(sp); ship.quaternion.copy(sq); }
+    } else {
+      // Pause input sender while hidden
+      input.fire = false;
     }
   });
   function getSessionStats(){
