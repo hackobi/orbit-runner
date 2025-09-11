@@ -1149,6 +1149,13 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
       if (msg.type === 'room-stats'){
         latestRoomStats = msg.players||[];
+        // Ensure remotes exist for any known ids
+        for (const p of latestRoomStats){
+          if (p.id && p.id !== MP.myId){
+            const numId = MP.idToNum.get(p.id);
+            if (numId!=null){ if (!MP.remotes.get(numId)) createRemoteShip(numId); }
+          }
+        }
         renderMpOverlay();
         return;
       }

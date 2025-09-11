@@ -139,7 +139,8 @@ mpWss.on('connection', ws => {
 
       // Notify others
       broadcastToOthers({ type:'player-add', id: playerId, numId, name, color, state });
-      // Broadcast room stats to everyone (names + scores)
+      // Send room stats to this client and broadcast to others
+      send(roomStatsPayload());
       broadcastRoomStats();
       return;
     }
@@ -362,9 +363,13 @@ function writeF32Array(buf, off, arr){
 }
 
 function broadcastRoomStats(){
-  const players = Array.from(mpRoom.players.values()).map(p=>({ id:p.id, name:p.name, score: p.score>>>0 }));
-  const msg = JSON.stringify({ type:'room-stats', players });
+  const msg = JSON.stringify(roomStatsPayload());
   mpWss.clients.forEach(c=>{ if (c.readyState===1){ try{ c.send(msg); }catch(_){} } });
+}
+
+function roomStatsPayload(){
+  const players = Array.from(mpRoom.players.values()).map(p=>({ id:p.id, name:p.name, score: p.score>>>0 }));
+  return { type:'room-stats', players };
 }
 
 setInterval(()=>{
