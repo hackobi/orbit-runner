@@ -4,6 +4,12 @@ import { FontLoader } from 'https://unpkg.com/three@0.164.0/examples/jsm/loaders
 import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geometries/TextGeometry.js';
 (() => {
   const canvas = document.getElementById('gameCanvas');
+  // Welcome DOM
+  const welcomeScreen = document.getElementById('welcome-screen');
+  const nameInput = document.getElementById('pilot-name-input');
+  const launchBtn = document.getElementById('launch-btn');
+  let playerName = '';
+  let gameInitialized = false;
   if (!canvas) { console.error('Canvas not found'); return; }
   canvas.tabIndex = 0; canvas.style.outline = 'none'; canvas.focus();
 
@@ -60,33 +66,32 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   // HUD and overlays
   const hud = document.getElementById('hud') || (() => { const d = document.createElement('div'); d.id='hud'; d.style.position='absolute'; d.style.top='10px'; d.style.left='10px'; d.style.color='#0ff'; d.style.fontSize='1.1rem'; document.body.appendChild(d); return d; })();
   const help = document.getElementById('help') || (() => { const d = document.createElement('div'); d.id='help'; d.style.position='absolute'; d.style.bottom='12px'; d.style.left='50%'; d.style.transform='translateX(-50%)'; d.style.fontSize='0.95rem'; d.style.color='#ccc'; d.style.opacity='0.85'; d.style.background='rgba(0,0,0,0.35)'; d.style.padding='6px 10px'; d.style.borderRadius='6px'; d.textContent='W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H target • N name • T dev 500 • R restart'; document.body.appendChild(d); return d; })();
-  // Simple start/home overlay requiring a name before launching
-  let gameStarted = false;
-  function ensureHomeOverlay(){
-    const existing = document.getElementById('homeStart'); if (existing) return existing;
-    const wrap = document.createElement('div'); wrap.id='homeStart';
-    Object.assign(wrap.style, { position:'fixed', inset:'0', display:'flex', alignItems:'center', justifyContent:'center', background:'linear-gradient(180deg, rgba(2,8,20,0.85), rgba(2,8,20,0.65))', zIndex:'10000' });
-    const card = document.createElement('div');
-    Object.assign(card.style, { width:'min(520px, 90vw)', background:'rgba(12,18,28,0.85)', border:'1px solid rgba(255,255,255,0.12)', borderRadius:'12px', padding:'20px 18px', color:'#eef', boxShadow:'0 18px 50px rgba(0,0,0,0.5)', backdropFilter:'blur(4px)' });
-    const title = document.createElement('div'); title.textContent='Orbit‑Runner'; Object.assign(title.style, { fontSize:'28px', fontWeight:'800', marginBottom:'6px' });
-    const sub = document.createElement('div'); sub.textContent='Enter a display name to launch'; Object.assign(sub.style, { opacity:'0.85', marginBottom:'14px' });
-    const input = document.createElement('input'); input.id='homeStartInput'; input.type='text'; input.maxLength=24; input.placeholder='Commander name';
-    Object.assign(input.style, { width:'100%', padding:'10px 12px', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.18)', background:'rgba(255,255,255,0.06)', color:'#fff', outline:'none' });
-    const btn = document.createElement('button'); btn.textContent='Launch'; Object.assign(btn.style, { marginTop:'12px', width:'100%', padding:'10px 12px', border:'none', borderRadius:'8px', background:'linear-gradient(90deg, #16a085, #27ae60)', color:'#fff', fontWeight:'700', cursor:'pointer' });
-    btn.onclick = ()=>{
-      const name = (input.value||'').trim().slice(0,24);
-      if (!name) { input.focus(); return; }
-      localStorage.setItem('or_name', name);
-      wrap.style.display='none';
-      if (MP.ws && MP.ws.readyState===1){ try{ MP.ws.close(); }catch(_){ } MP.ws = null; MP.active = false; setTimeout(connectMP, 50); }
-      else startGame();
-    };
-    const saved = localStorage.getItem('or_name') || '';
-    if (saved) input.value = saved;
-    input.addEventListener('keydown', (e)=>{ if (e.key==='Enter') btn.click(); });
-    card.append(title, sub, input, btn); wrap.appendChild(card); document.body.appendChild(wrap); return wrap;
+  function updateLaunchButton(){
+    const isValid = playerName.trim().length > 0;
+    if (launchBtn){
+      launchBtn.disabled = !isValid;
+      if (isValid) launchBtn.classList.add('enabled'); else launchBtn.classList.remove('enabled');
+    }
   }
-  function startGame(){ if (gameStarted) return; gameStarted=true; connectMP(); }
+  if (nameInput){
+    nameInput.value = localStorage.getItem('or_name') || '';
+    playerName = nameInput.value;
+    updateLaunchButton();
+    nameInput.addEventListener('input', ()=>{ playerName = nameInput.value; updateLaunchButton(); });
+    nameInput.addEventListener('keypress', (e)=>{ if (e.key==='Enter' && playerName.trim()) launchBtn.click(); });
+  }
+  if (launchBtn){
+    launchBtn.addEventListener('click', ()=>{
+      if (!playerName.trim()) return;
+      localStorage.setItem('or_name', playerName.trim().slice(0,24));
+      if (welcomeScreen) welcomeScreen.classList.add('hidden');
+      if (canvas) canvas.classList.remove('hidden');
+      // ensure HUD becomes visible when created dynamically later
+      startGame();
+      canvas.focus();
+    });
+  }
+  function startGame(){ if (gameInitialized) return; gameInitialized=true; connectMP(); }
   // MP overlay (P to toggle)
   let mpOverlay = null; let mpOverlayOn = false; let latestRoomStats = [];
   function ensureMpOverlay(){ if (mpOverlay) return mpOverlay; const d=document.createElement('div'); d.id='mpOverlay'; Object.assign(d.style,{ position:'absolute', top:'10px', right:'10px', color:'#fff', background:'rgba(0,0,0,0.5)', padding:'8px 10px', borderRadius:'8px', fontSize:'12px', display:'none', zIndex:9999, whiteSpace:'pre' }); document.body.appendChild(d); mpOverlay=d; return d; }
@@ -963,9 +968,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       targetSpeedUnitsPerSec = Math.max(targetSpeedUnitsPerSec, 22);
     }
     if (c==='KeyN') {
-      const o = ensureHomeOverlay();
-      o.style.display = 'flex';
-      const inp = document.getElementById('homeStartInput'); if (inp) inp.focus();
+      if (welcomeScreen){ welcomeScreen.classList.remove('hidden'); const inp = document.getElementById('pilot-name-input'); if (inp) inp.focus(); }
     }
     if (c==='KeyT') {
       devTurboActive = !devTurboActive;
@@ -1051,8 +1054,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     catch(_){ serverAvailable = false; }
   }
   detectServer();
-  // Always show home overlay; prefill name if present
-  ensureHomeOverlay();
+  // Use structured welcome screen in index.html; no dynamic overlay needed now
 
   // Identity (local only; for display on leaderboards)
   function getOrMakeUid(){
@@ -1061,11 +1063,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     return id;
   }
   function getPlayerName(){ return localStorage.getItem('or_name') || ''; }
-  function ensurePlayerName(){
-    let name = getPlayerName();
-    if (!name){ ensureHomeOverlay(); return ''; }
-    return name;
-  }
+  function ensurePlayerName(){ return localStorage.getItem('or_name') || playerName || ''; }
 
   // Live server leaderboards via WebSocket
   let lbWs = null;

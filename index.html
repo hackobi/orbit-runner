@@ -6,6 +6,17 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div id="welcome-screen" class="welcome-container">
+    <div class="welcome-card">
+      <div class="welcome-emoji">🚀</div>
+      <h1 class="welcome-title">Orbit Runner<br/>3D</h1>
+      <h2 class="welcome-sub">Multiplayer Space Combat</h2>
+      <input id="pilot-name-input" class="welcome-input" type="text" maxlength="24" placeholder="Enter your pilot name..." />
+      <button id="launch-btn" class="welcome-btn" disabled>Launch Into Space</button>
+      <p class="welcome-desc">Join other pilots in real-time 3D space combat! Fly, fight, and explore together in the asteroid belt.</p>
+    </div>
+  </div>
+
   <canvas id="gameCanvas"></canvas>
 
   <script type="importmap">
