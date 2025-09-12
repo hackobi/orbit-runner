@@ -1320,6 +1320,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   document.addEventListener('visibilitychange', ()=>{
     if (!document.hidden){
       dbg('focus');
+      // Consume the accumulated time to reset the clock's delta after backgrounding
+      clock.getDelta();
       focusReconcileTimer = 1.0; // seconds of gentle lerp toward server state
     } else {
       // Pause input sender while hidden
