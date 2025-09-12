@@ -411,14 +411,14 @@ setInterval(()=>{
 // Deterministic spawn picker around the target belt region (approx.)
 function mulberry32(seed){ return function(){ let t = seed += 0x6D2B79F5; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 function pickSpawnPoint(worldSeed){
-  // Spawn near the mothership rendezvous inside the belt for easy meetup
+  // Spawn far from the blue planet (near origin), NEVER in/near the asteroid belt
+  // Blue planet is at z=-20000 with belt radii ~3600-5200; origin is ~20km away
   const rand = mulberry32((worldSeed>>>0) ^ (Date.now()>>>0));
-  const baseAngle = 0; // mothership angle reference
-  const angle = baseAngle + (rand()-0.5)*0.2; // small jitter
-  const radius = 4400 + (rand()-0.5)*200; // near mothership radius
-  const y = (rand()-0.5)*60; // slight vertical jitter
+  const angle = rand()*Math.PI*2;
+  const radius = 800 + rand()*600; // 800..1400 from origin for spacing
+  const y = (rand()-0.5)*80;       // slight vertical jitter
   const x = Math.cos(angle)*radius;
-  const z = Math.sin(angle)*radius - 20000; // belt plane offset
+  const z = Math.sin(angle)*radius; // stay around origin plane
   const q = [0,0,0,1];
   return { p:[x,y,z], q };
 }
