@@ -23,6 +23,12 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   const scene = new THREE.Scene();
 
+  // --- Debug logger (ring buffer) ---
+  const DBG = { on: true, buf: [] };
+  function vecToArr(v){ return v ? [Number(v.x?.toFixed?.(1) ?? v[0] ?? 0), Number(v.y?.toFixed?.(1) ?? v[1] ?? 0), Number(v.z?.toFixed?.(1) ?? v[2] ?? 0)] : [0,0,0]; }
+  function dbg(tag, data){ const rec = Object.assign({ t: new Date().toISOString(), tag }, data||{}); DBG.buf.push(rec); if (DBG.buf.length>400) DBG.buf.shift(); try{ console.log('[OR]', tag, rec); }catch(_){} }
+  window.orDbg = { dump: () => { try{ const s = JSON.stringify(DBG.buf, null, 2); console.log(s); return s; }catch(e){ return '[]'; } }, clear: ()=>{ DBG.buf.length=0; }, buf: DBG.buf };
+
   const baseFov = 70;
   const camera = new THREE.PerspectiveCamera(baseFov, window.innerWidth / window.innerHeight, 0.1, 100000);
   const starLight = new THREE.PointLight(0x88bbff, 1.0, 800);
@@ -1142,6 +1148,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         if (numId === MP.myNumId){
           // Track authoritative self state for resync after tab visibility changes, but do not render from it in real-time
           MP.selfServerState = { t, p, q, v, flags };
+          if ((i%12)===0) dbg('self-state', { t, p, v });
           continue;
         }
         let r = MP.remotes.get(numId);
@@ -1156,6 +1163,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     try {
       const msg = JSON.parse(ev.data);
       if (msg.type === 'welcome'){
+        dbg('welcome', { you: msg.playerId, players: (msg.players||[]).length, seed: msg.worldSeed });
         MP.active = true;
         MP.myId = msg.playerId;
         MP.worldSeed = msg.worldSeed;
@@ -1168,6 +1176,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         return;
       }
       if (msg.type === 'respawn'){
+        dbg('respawn', { id: msg.id, p: msg.p });
         if (msg.id === MP.myId){
           const p = vec3From(msg.p), q = quatFrom(msg.q);
           shipPosition.copy(p); ship.position.copy(p);
@@ -1223,12 +1232,10 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       const wsUrl = httpBase.replace(/^http/, 'ws') + '/mp';
       const ws = new WebSocket(wsUrl);
       ws.binaryType = 'arraybuffer';
-      ws.onopen = ()=>{
-        ws.send(JSON.stringify({ type:'hello', name: ensurePlayerName(), clientVersion: 'mp1' }));
-      };
+      ws.onopen = ()=>{ dbg('ws-open'); ws.send(JSON.stringify({ type:'hello', name: ensurePlayerName(), clientVersion: 'mp1' })); };
       ws.onmessage = handleMpMessage;
-      ws.onclose = ()=>{ MP.ws = null; MP.active = false; setTimeout(connectMP, 1500); };
-      ws.onerror = ()=>{ try{ ws.close(); }catch(_){} };
+      ws.onclose = ()=>{ dbg('ws-close'); MP.ws = null; MP.active = false; setTimeout(connectMP, 1500); };
+      ws.onerror = (e)=>{ dbg('ws-error', { e: String(e?.message||e) }); try{ ws.close(); }catch(_){} };
       MP.ws = ws;
     } catch(_){ /* ignore */ }
   }
@@ -1312,9 +1319,11 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   let focusReconcileTimer = 0;
   document.addEventListener('visibilitychange', ()=>{
     if (!document.hidden){
+      dbg('focus');
       focusReconcileTimer = 1.0; // seconds of gentle lerp toward server state
     } else {
       // Pause input sender while hidden
+      dbg('hidden');
       input.fire = false;
     }
   });
@@ -2228,6 +2237,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (focusReconcileTimer > 0){ reconcileSelf(dt, /*allowSnap*/ false); focusReconcileTimer = Math.max(0, focusReconcileTimer - dt); }
 
     renderer.render(scene, camera);
+    if ((frameCounter % 30) === 0){ dbg('tick', { pos: vecToArr(shipPosition), spd: Number(speedUnitsPerSec.toFixed(1)), active: !!MP.active, remotes: MP.remotes.size }); }
     requestAnimationFrame(animate);
     frameCounter++;
 
