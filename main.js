@@ -64,8 +64,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   const bots = [];
 
   // HUD and overlays
-  const hud = document.getElementById('hud') || (() => { const d = document.createElement('div'); d.id='hud'; d.style.position='absolute'; d.style.top='10px'; d.style.left='10px'; d.style.color='#0ff'; d.style.fontSize='1.1rem'; document.body.appendChild(d); return d; })();
-  const help = document.getElementById('help') || (() => { const d = document.createElement('div'); d.id='help'; d.style.position='absolute'; d.style.bottom='12px'; d.style.left='50%'; d.style.transform='translateX(-50%)'; d.style.fontSize='0.95rem'; d.style.color='#ccc'; d.style.opacity='0.85'; d.style.background='rgba(0,0,0,0.35)'; d.style.padding='6px 10px'; d.style.borderRadius='6px'; d.textContent='W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H target • N name • T dev 500 • R restart'; document.body.appendChild(d); return d; })();
+  const hud = document.getElementById('hud') || (() => { const d = document.createElement('div'); d.id='hud'; d.style.position='absolute'; d.style.top='10px'; d.style.left='10px'; d.style.color='#0ff'; d.style.fontSize='1.1rem'; d.style.display='none'; document.body.appendChild(d); return d; })();
+  const help = document.getElementById('help') || (() => { const d = document.createElement('div'); d.id='help'; d.style.position='absolute'; d.style.bottom='12px'; d.style.left='50%'; d.style.transform='translateX(-50%)'; d.style.fontSize='0.95rem'; d.style.color='#ccc'; d.style.opacity='0.85'; d.style.background='rgba(0,0,0,0.35)'; d.style.padding='6px 10px'; d.style.borderRadius='6px'; d.style.display='none'; d.textContent='W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H target • N name • T dev 500 • R restart'; document.body.appendChild(d); return d; })();
   function updateLaunchButton(){
     const isValid = playerName.trim().length > 0;
     if (launchBtn){
@@ -91,7 +91,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       canvas.focus();
     });
   }
-  function startGame(){ if (gameInitialized) return; gameInitialized=true; connectMP(); }
+  function startGame(){ if (gameInitialized) return; gameInitialized=true; hud.style.display='block'; help.style.display='block'; connectMP(); }
   // MP overlay (P to toggle)
   let mpOverlay = null; let mpOverlayOn = false; let latestRoomStats = [];
   function ensureMpOverlay(){ if (mpOverlay) return mpOverlay; const d=document.createElement('div'); d.id='mpOverlay'; Object.assign(d.style,{ position:'absolute', top:'10px', right:'10px', color:'#fff', background:'rgba(0,0,0,0.5)', padding:'8px 10px', borderRadius:'8px', fontSize:'12px', display:'none', zIndex:9999, whiteSpace:'pre' }); document.body.appendChild(d); mpOverlay=d; return d; }
@@ -1634,6 +1634,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   const clock = new THREE.Clock();
 
   function animate(){
+    // Do not run the game loop until the player launches
+    if (!gameInitialized){ requestAnimationFrame(animate); return; }
     const dt = Math.min(0.033, clock.getDelta());
 
     if (!gameOver){
