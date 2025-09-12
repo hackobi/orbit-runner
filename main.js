@@ -1308,8 +1308,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       shipPosition.copy(sp); ship.position.copy(sp); ship.quaternion.copy(sq);
       return;
     }
-    if (posErr > 2){ // gentle nudge toward server
-      const alpha = Math.min(0.5, dt*0.8);
+    if (posErr > 2){ // gentle nudge toward server (continuous, low gain)
+      const alpha = Math.min(0.2, dt*0.25);
       shipPosition.lerp(sp, alpha); ship.position.copy(shipPosition);
       ship.quaternion.slerp(sq, alpha);
     }
@@ -2233,7 +2233,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
     }
 
-    // After focus, gently reconcile for a short period to avoid abrupt snaps
+    // Continuous gentle reconciliation every frame to reduce drift (no hard snaps)
+    reconcileSelf(dt, /*allowSnap*/ false);
+    // After focus, gently reconcile with extra weight for a short period
     if (focusReconcileTimer > 0){ reconcileSelf(dt, /*allowSnap*/ false); focusReconcileTimer = Math.max(0, focusReconcileTimer - dt); }
 
     renderer.render(scene, camera);
