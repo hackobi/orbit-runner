@@ -1291,13 +1291,13 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   }, 1000);
 
   // Reconcile local player gently to server truth when drift is large
-  function reconcileSelf(dt){
+  function reconcileSelf(dt, allowSnap = true){
     if (!MP.active || !MP.selfServerState) return;
     const s = MP.selfServerState;
     const sp = vec3From(s.p);
     const sq = quatFrom(s.q);
     const posErr = shipPosition.distanceTo(sp);
-    if (posErr > 10){ // snap if way off
+    if (allowSnap && posErr > 10){ // snap if way off (disabled on focus)
       shipPosition.copy(sp); ship.position.copy(sp); ship.quaternion.copy(sq);
       return;
     }
@@ -1308,11 +1308,11 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
   }
 
-  // When tab visibility changes, resync to server state soon after focus to avoid pause drift
+  // When tab visibility changes, perform a short soft reconciliation after focus (no hard snap)
+  let focusReconcileTimer = 0;
   document.addEventListener('visibilitychange', ()=>{
     if (!document.hidden){
-      // On focus, hard snap to server snapshot if present to avoid drift
-      if (MP && MP.selfServerState){ const s=MP.selfServerState; const sp=vec3From(s.p), sq=quatFrom(s.q); shipPosition.copy(sp); ship.position.copy(sp); ship.quaternion.copy(sq); }
+      focusReconcileTimer = 1.0; // seconds of gentle lerp toward server state
     } else {
       // Pause input sender while hidden
       input.fire = false;
@@ -2224,8 +2224,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
     }
 
-    // Optional: continuous self reconciliation is disabled to avoid high-speed jitter
-    // reconcileSelf(dt);
+    // After focus, gently reconcile for a short period to avoid abrupt snaps
+    if (focusReconcileTimer > 0){ reconcileSelf(dt, /*allowSnap*/ false); focusReconcileTimer = Math.max(0, focusReconcileTimer - dt); }
 
     renderer.render(scene, camera);
     requestAnimationFrame(animate);
