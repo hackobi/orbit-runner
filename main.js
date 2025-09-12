@@ -985,11 +985,6 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         spawnCenteredTextLabel('DEV OFF', shipPosition, 0xff8888, 2.0, 1.2);
       }
     }
-    if (c==='KeyH') {
-      const o = ensureHomeOverlay();
-      o.style.display = 'flex';
-      const inp = document.getElementById('homeStartInput'); if (inp) inp.focus();
-    }
     if (c==='KeyL') { input.toggleLb = true; renderLb(); ensureLbOverlay().style.display = (ensureLbOverlay().style.display==='none'?'block':'none'); }
     if (c==='KeyP') { mpOverlayOn = !mpOverlayOn; ensureMpOverlay().style.display = mpOverlayOn ? 'block' : 'none'; renderMpOverlay(); }
     if (c==='KeyR' && gameOver) resetGame();
