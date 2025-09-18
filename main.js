@@ -1183,8 +1183,26 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         MP.idToNum.clear();
         for (const p of (msg.players||[])){
           if (p.id === msg.playerId){ MP.myNumId = p.numId; continue; }
-          if (p.numId!=null){ MP.idToNum.set(p.id, p.numId); createRemoteShip(p.numId); }
+          if (p.numId!=null){
+            MP.idToNum.set(p.id, p.numId);
+            createRemoteShip(p.numId);
+            const r = MP.remotes.get(p.numId);
+            if (r && p.state){
+              try{
+                const sp = vec3From(p.state.p||[0,0,0]);
+                const sq = quatFrom(p.state.q||[0,0,0,1]);
+                r.mesh.position.copy(sp);
+                r.mesh.quaternion.copy(sq);
+                r.samples.length = 0;
+                const t0 = (p.state.t!=null)? p.state.t : Date.now();
+                const v0 = p.state.v||[0,0,0];
+                r.samples.push({ t: t0, p: p.state.p||[0,0,0], q: p.state.q||[0,0,0,1], v: v0, flags: 0 });
+              }catch(_){ }
+            }
+          }
         }
+        // Seed overlay list with snapshot names so P shows something immediately
+        try{ latestRoomStats = (msg.players||[]).map(p=> ({ id:p.id, name:p.name||'Anon', score: 0 })); renderMpOverlay(); }catch(_){ }
         return;
       }
       if (msg.type === 'respawn'){
@@ -1206,7 +1224,23 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
       if (msg.type === 'player-add'){
         if (msg.id === MP.myId) return;
-        if (msg.numId!=null){ MP.idToNum.set(msg.id, msg.numId); createRemoteShip(msg.numId); }
+        if (msg.numId!=null){
+          MP.idToNum.set(msg.id, msg.numId);
+          createRemoteShip(msg.numId);
+          const r = MP.remotes.get(msg.numId);
+          if (r && msg.state){
+            try{
+              const sp = vec3From(msg.state.p||[0,0,0]);
+              const sq = quatFrom(msg.state.q||[0,0,0,1]);
+              r.mesh.position.copy(sp);
+              r.mesh.quaternion.copy(sq);
+              r.samples.length = 0;
+              const t0 = (msg.state.t!=null)? msg.state.t : Date.now();
+              const v0 = msg.state.v||[0,0,0];
+              r.samples.push({ t: t0, p: msg.state.p||[0,0,0], q: msg.state.q||[0,0,0,1], v: v0, flags: 0 });
+            }catch(_){ }
+          }
+        }
         return;
       }
       if (msg.type === 'player-remove'){
