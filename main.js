@@ -101,7 +101,19 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   // MP overlay (P to toggle)
   let mpOverlay = null; let mpOverlayOn = false; let latestRoomStats = [];
   function ensureMpOverlay(){ if (mpOverlay) return mpOverlay; const d=document.createElement('div'); d.id='mpOverlay'; Object.assign(d.style,{ position:'absolute', top:'10px', right:'10px', color:'#fff', background:'rgba(0,0,0,0.5)', padding:'8px 10px', borderRadius:'8px', fontSize:'12px', display:'none', zIndex:9999, whiteSpace:'pre' }); document.body.appendChild(d); mpOverlay=d; return d; }
-  function renderMpOverlay(){ if (!mpOverlayOn) return; ensureMpOverlay(); const rows = latestRoomStats.slice().sort((a,b)=> (b.score||0)-(a.score||0)).map(p=> `${(p.name||'Anon').slice(0,16).padEnd(16)}  ${String(p.score||0).padStart(6)}`); mpOverlay.innerText = ['Players (P to hide):', ...rows].join('\n'); }
+  function renderMpOverlay(){
+    if (!mpOverlayOn) return;
+    ensureMpOverlay();
+    const list = latestRoomStats ? latestRoomStats.slice() : [];
+    if (MP && MP.myId && !list.some(p=> p && p.id === MP.myId)){
+      list.push({ id: MP.myId, name: ensurePlayerName(), score: 0 });
+    }
+    const rows = list
+      .filter(Boolean)
+      .sort((a,b)=> (b.score||0)-(a.score||0))
+      .map(p=> `${(p.name||'Anon').slice(0,16).padEnd(16)}  ${String(p.score||0).padStart(6)}`);
+    mpOverlay.innerText = ['Players (P to hide):', ...rows].join('\n');
+  }
   const gameOverEl = document.getElementById('gameover') || (()=>{ const d=document.createElement('div'); d.id='gameover'; d.style.position='absolute'; d.style.top='45%'; d.style.left='50%'; d.style.transform='translate(-50%,-50%)'; d.style.fontSize='2rem'; d.style.color='#fff'; d.style.display='none'; d.style.textAlign='center'; d.style.textShadow='0 0 8px #000'; d.innerHTML='CRASHED<br/>Press R to Restart'; document.body.appendChild(d); return d; })();
 
   // Placeholder patch system to avoid reference errors
