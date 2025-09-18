@@ -1568,6 +1568,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   // Population/field maintenance
   function keepFieldPopulated() {
+    // In MP, the world is deterministic and should not be reshuffled dynamically
+    if (MP && MP.active) return;
     const maxDist = 16000;
     for (let i = asteroids.length - 1; i >= 0; i--) {
       const a = asteroids[i];
@@ -2254,7 +2256,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
 
     maintainPatches();
-    keepFieldPopulated();
+    if (!MP.active) keepFieldPopulated();
     updateHud();
 
     // Multiplayer: render remotes with 120ms interpolation buffer
