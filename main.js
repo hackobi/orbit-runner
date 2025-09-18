@@ -1243,12 +1243,14 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Send inputs at 30 Hz
   setInterval(()=>{
     if (!MP.ws || MP.ws.readyState !== 1) return;
+    // While hidden, send neutral input to avoid server-side drift/jumps
+    const hidden = (typeof tabHidden !== 'undefined') && tabHidden;
     const yawKeys = (input.yawRight?-1:0) + (input.yawLeft?1:0);
     const pitchKeys = (input.pitchUp?1:0) + (input.pitchDown?-1:0);
-    const yawInput = yawKeys + (mouseDown ? mouseX*0.6 : 0);
-    const pitchInput = pitchKeys + (mouseDown ? -mouseY*0.6 : 0);
-    const throttle = THREE.MathUtils.clamp((targetSpeedUnitsPerSec - minSpeed) / (baseMaxSpeed - minSpeed), 0, 1);
-    const msg = { type:'input', t: Date.now(), throttle, yaw: THREE.MathUtils.clamp(yawInput, -1, 1), pitch: THREE.MathUtils.clamp(pitchInput, -1, 1), roll: 0, boost: boostActive, fire: !!input.fire, fenix: !!fenixActive };
+    const yawInput = hidden ? 0 : (yawKeys + (mouseDown ? mouseX*0.6 : 0));
+    const pitchInput = hidden ? 0 : (pitchKeys + (mouseDown ? -mouseY*0.6 : 0));
+    const throttle = hidden ? ((targetSpeedUnitsPerSec - minSpeed) / (baseMaxSpeed - minSpeed)) : THREE.MathUtils.clamp((targetSpeedUnitsPerSec - minSpeed) / (baseMaxSpeed - minSpeed), 0, 1);
+    const msg = { type:'input', t: Date.now(), throttle, yaw: THREE.MathUtils.clamp(yawInput, -1, 1), pitch: THREE.MathUtils.clamp(pitchInput, -1, 1), roll: 0, boost: (!hidden && boostActive), fire: (!hidden && !!input.fire), fenix: !!fenixActive };
     try{ MP.ws.send(JSON.stringify(msg)); }catch(_){ }
     // Periodically send score to update room-stats overlay
     if ((Math.floor(Date.now()/1000) % 2) === 0){ try{ MP.ws.send(JSON.stringify({ type:'score', v: (score>>>0) })); }catch(_){ } }
@@ -1317,16 +1319,23 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   // When tab visibility changes, perform a short soft reconciliation after focus (no hard snap)
   let focusReconcileTimer = 0;
+  let tabHidden = false;
   document.addEventListener('visibilitychange', ()=>{
     if (!document.hidden){
       dbg('focus');
       // Consume the accumulated time to reset the clock's delta after backgrounding
       clock.getDelta();
+      tabHidden = false;
+      // Reset transient inputs on return
+      mouseDown = false; mouseX = 0; mouseY = 0;
       focusReconcileTimer = 1.0; // seconds of gentle lerp toward server state
     } else {
-      // Pause input sender while hidden
+      // Pause/neutralize inputs while hidden
       dbg('hidden');
+      tabHidden = true;
       input.fire = false;
+      input.yawLeft = input.yawRight = input.pitchUp = input.pitchDown = false;
+      input.speedUp = input.speedDown = false;
     }
   });
   function getSessionStats(){
