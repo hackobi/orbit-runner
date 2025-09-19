@@ -168,11 +168,16 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       e.preventDefault(); e.stopPropagation();
       // Restart timed round: reset score and timers; respawn to initial area (local)
       hideEndOverlay();
+      // Reset ship state, HP, shield, and score
       score = 0; killsCount = 0; asteroidsDestroyed = 0; beltTimeSec = 0;
-      roundActive = true; roundEndsAt = Date.now() + 3*60*1000;
-      // Local soft respawn: zero speed and place near origin plane to match server spawn intent
+      health = 100; shield = 0; gameOver = false; hideGameOver();
+      roundSubmitted = false; statsSaved = false;
+      // Local soft respawn near origin; reset movement
       speedUnitsPerSec = 20; targetSpeedUnitsPerSec = 20; velocity.set(0,0,0);
-      shipPosition.set(0,0,0); ship.position.copy(shipPosition); yaw = 0; pitch = 0; roll = 0; ship.quaternion.setFromEuler(new THREE.Euler(pitch,yaw,roll,'YXZ'));
+      shipPosition.set(0,0,0); ship.position.copy(shipPosition);
+      yaw = 0; pitch = 0; roll = 0; ship.quaternion.setFromEuler(new THREE.Euler(pitch,yaw,roll,'YXZ'));
+      // Start new timed round
+      roundActive = true; roundEndsAt = Date.now() + 3*60*1000;
       controlsUnlockAt = Date.now() + 2000; // brief lock to avoid immediate inputs
       try{ canvas.focus(); }catch(_){ }
     }
@@ -1124,6 +1129,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   let score = 0;
   let roundActive = false;
   let roundEndsAt = 0; // epoch ms when the 3-minute round ends
+  let roundSubmitted = false; // prevent duplicate submits per round
   let killsCount = 0;
   let asteroidsDestroyed = 0;
   let beltTimeSec = 0;
@@ -2339,7 +2345,10 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       roundActive = false;
       // Show end overlay with final score and submit to server
       if (endMsg){ endMsg.textContent = `Final score: ${score}. Choose an option`; }
-      try { if (!statsSaved){ saveLeaderboards(); statsSaved = true; } } catch(_){ }
+      if (!roundSubmitted){
+        try { if (!statsSaved){ saveLeaderboards(); statsSaved = true; } } catch(_){ }
+        roundSubmitted = true;
+      }
       showEndOverlay();
     }
 
