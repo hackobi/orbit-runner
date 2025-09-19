@@ -1378,12 +1378,12 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         const s = MP.selfServerState;
         const serverPos = vec3From(s.p);
         const serverQuat = quatFrom(s.q);
-        const serverVel = vec3From(s.v);
         ship.position.copy(serverPos);
         ship.quaternion.copy(serverQuat);
         shipPosition.copy(serverPos);
-        const spd = serverVel.length();
-        speedUnitsPerSec = spd; targetSpeedUnitsPerSec = spd;
+        // Preserve current speed; align velocity with snapped orientation
+        const fwd = new THREE.Vector3(0,0,1).applyQuaternion(serverQuat).normalize();
+        velocity.copy(fwd).multiplyScalar(speedUnitsPerSec);
         const euler = new THREE.Euler().setFromQuaternion(serverQuat, 'YXZ');
         pitch = euler.x; yaw = euler.y; // roll stays as-is
         dbg('snap-self-focus', { p: s.p });
