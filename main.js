@@ -1068,6 +1068,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   // HUD
   let score = 0;
+  let roundActive = false;
+  let roundEndsAt = 0; // epoch ms when the 3-minute round ends
   let killsCount = 0;
   let asteroidsDestroyed = 0;
   let beltTimeSec = 0;
@@ -1090,7 +1092,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       const status = st===1?`ON (${MP.remotes.size+1||1})`:(st===0? 'CONNECTING':'OFF');
       mp = ` | MP ${status}`;
     }
-    hud.textContent = `Speed ${speedTxt} | HP ${hp}% | Shield ${sh}% | Points ${score} | Kills ${killsCount} | Ast ${asteroidsDestroyed}${ax2}${kx2} | Dist ${distFromOrigin} | Target ${distToTarget}${mp}`;
+    const timeLeftSec = roundActive ? Math.max(0, Math.ceil((roundEndsAt - Date.now())/1000)) : 0;
+    const timeText = roundActive ? ` | Time ${Math.floor(timeLeftSec/60)}:${String(timeLeftSec%60).padStart(2,'0')}` : '';
+    hud.textContent = `Speed ${speedTxt}${timeText} | HP ${hp}% | Shield ${sh}% | Points ${score} | Kills ${killsCount} | Ast ${asteroidsDestroyed}${ax2}${kx2} | Dist ${distFromOrigin} | Target ${distToTarget}${mp}`;
   }
 
   function showGameOver(){ gameOverEl.style.display = 'block'; }
@@ -1365,6 +1369,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       dbg('focus');
       // Show reconnect overlay and require user action
       showReconnectOverlay();
+      // Start a new 3-minute round when reconnecting
+      roundActive = true;
+      roundEndsAt = Date.now() + 3*60*1000;
     } else {
       dbg('hidden');
       input.fire = false;
@@ -2276,8 +2283,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
     }
 
-    // After focus, gently reconcile for a short period to avoid abrupt snaps
-    if (focusReconcileTimer > 0){ reconcileSelf(dt, /*allowSnap*/ false); focusReconcileTimer = Math.max(0, focusReconcileTimer - dt); }
+    // Round timer end: stop round when time elapses
+    if (roundActive && Date.now() >= roundEndsAt){ roundActive = false; }
 
     renderer.render(scene, camera);
     if ((frameCounter % 30) === 0){ dbg('tick', { pos: vecToArr(shipPosition), spd: Number(speedUnitsPerSec.toFixed(1)), active: !!MP.active, remotes: MP.remotes.size }); }
