@@ -1804,7 +1804,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       beltPassiveAccu += rate * dt;
       if (beltPassiveAccu >= 1){
         const add = Math.floor(beltPassiveAccu);
-        score += add;
+        if (roundActive) score += add;
         beltPassiveAccu -= add;
       }
     }
@@ -1896,7 +1896,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
             scene.remove(b.mesh);
             if (b.kind==='player') releasePlayerBulletMesh(b.mesh); else if (b.kind==='fenix') releaseFenixBeamMesh(b.mesh);
             bullets.splice(j,1);
-            score += getAsteroidScore(a.inRing ? 160 : 110, a.mesh.position);
+            if (roundActive) score += getAsteroidScore(a.inRing ? 160 : 110, a.mesh.position);
             asteroidsDestroyed++;
             break outer;
           }
@@ -1925,7 +1925,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
             scene.remove(b.mesh);
             if (b.kind==='player') releasePlayerBulletMesh(b.mesh); else if (b.kind==='fenix') releaseFenixBeamMesh(b.mesh);
             bullets.splice(j,1);
-            score += getAsteroidScore(a.inRing ? 160 : 110, a.mesh.position);
+            if (roundActive) score += getAsteroidScore(a.inRing ? 160 : 110, a.mesh.position);
             asteroidsDestroyed++;
             break;
           }
@@ -2278,7 +2278,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
             spawnImpactBurst(bot.pos);
             scene.remove(bot.mesh); bots.splice(bi, 1);
             scene.remove(b.mesh); bullets.splice(i, 1);
-            score += getKillScore(300, bot.pos); // base 300; belt & multipliers apply
+            if (roundActive) score += getKillScore(300, bot.pos); // base 300; belt & multipliers apply
             killsCount++;
             break;
           }
@@ -2326,7 +2326,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     // Round timer end: stop round when time elapses
     if (roundActive && Date.now() >= roundEndsAt){
       roundActive = false;
-      // Show end overlay with options
+      // Show end overlay with final score
+      if (endMsg){ endMsg.textContent = `Final score: ${score}. Choose an option`; }
       showEndOverlay();
     }
 
