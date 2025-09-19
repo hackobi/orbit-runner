@@ -2326,8 +2326,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     // Round timer end: stop round when time elapses
     if (roundActive && Date.now() >= roundEndsAt){
       roundActive = false;
-      // Show end overlay with final score
+      // Show end overlay with final score and submit to server
       if (endMsg){ endMsg.textContent = `Final score: ${score}. Choose an option`; }
+      try { if (!statsSaved){ saveLeaderboards(); statsSaved = true; } } catch(_){ }
       showEndOverlay();
     }
 
