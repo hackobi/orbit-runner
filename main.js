@@ -116,12 +116,28 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       canvas.focus();
     });
   }
-  // Reconnect button behavior: on click, hide overlay, lock controls for 3s
+  // Reconnect button behavior: on click, start 3s countdown, keep overlay visible until done
   document.addEventListener('click', (e)=>{
     if (e.target === reconnectBtn){
       e.preventDefault(); e.stopPropagation();
-      hideReconnectOverlay();
-      controlsUnlockAt = Date.now() + 3000;
+      if (reconnectTimer) return; // already counting down
+      let remaining = 3;
+      controlsUnlockAt = Date.now() + remaining*1000;
+      if (reconnectBtn){ reconnectBtn.disabled = true; reconnectBtn.style.opacity = '0.8'; reconnectBtn.style.cursor = 'default'; reconnectBtn.textContent = 'Reconnecting...'; }
+      if (reconnectMsg){ reconnectMsg.textContent = `Reconnecting in ${remaining}...`; }
+      reconnectTimer = setInterval(()=>{
+        remaining--;
+        if (remaining <= 0){
+          clearInterval(reconnectTimer); reconnectTimer = null;
+          hideReconnectOverlay();
+          controlsUnlockAt = 0;
+          if (reconnectBtn){ reconnectBtn.disabled = false; reconnectBtn.style.opacity = '1'; reconnectBtn.style.cursor = 'pointer'; reconnectBtn.textContent = 'Reconnect'; }
+          if (reconnectMsg){ reconnectMsg.textContent = 'Click Reconnect to continue'; }
+          try{ canvas.focus(); }catch(_){ }
+        } else {
+          if (reconnectMsg){ reconnectMsg.textContent = `Reconnecting in ${remaining}...`; }
+        }
+      }, 1000);
     }
   }, { capture:true });
   function startGame(){ if (gameInitialized) return; gameInitialized=true; hud.style.display='block'; help.style.display='block'; connectMP(); }
