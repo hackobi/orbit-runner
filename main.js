@@ -144,6 +144,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       if (reconnectTimer) return; // already counting down
       let remaining = 3;
       controlsUnlockAt = Date.now() + remaining*1000;
+      // Start a fresh 3-minute round on reconnect
+      roundActive = true; roundEndsAt = Date.now() + 3*60*1000; dbg('round-start', { endsAt: roundEndsAt });
       if (reconnectBtn){ reconnectBtn.disabled = true; reconnectBtn.style.opacity = '0.8'; reconnectBtn.style.cursor = 'default'; reconnectBtn.textContent = 'Reconnecting...'; }
       if (reconnectMsg){ reconnectMsg.textContent = `Reconnecting in ${remaining}...`; }
       reconnectTimer = setInterval(()=>{
