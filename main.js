@@ -134,6 +134,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       if (canvas){ canvas.classList.remove('hidden'); canvas.style.display='block'; }
       // ensure HUD becomes visible when created dynamically later
       startGame();
+      // Start the 3-minute round at game launch
+      roundActive = true; roundEndsAt = Date.now() + 3*60*1000;
       canvas.focus();
     });
   }
@@ -144,8 +146,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       if (reconnectTimer) return; // already counting down
       let remaining = 3;
       controlsUnlockAt = Date.now() + remaining*1000;
-      // Start a fresh 3-minute round on reconnect
-      roundActive = true; roundEndsAt = Date.now() + 3*60*1000; dbg('round-start', { endsAt: roundEndsAt });
+      // Do not start a new timed round here; timer starts on Launch
       if (reconnectBtn){ reconnectBtn.disabled = true; reconnectBtn.style.opacity = '0.8'; reconnectBtn.style.cursor = 'default'; reconnectBtn.textContent = 'Reconnecting...'; }
       if (reconnectMsg){ reconnectMsg.textContent = `Reconnecting in ${remaining}...`; }
       reconnectTimer = setInterval(()=>{
@@ -1411,9 +1412,6 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       dbg('focus');
       // Show reconnect overlay and require user action
       showReconnectOverlay();
-      // Start a new 3-minute round when reconnecting
-      roundActive = true;
-      roundEndsAt = Date.now() + 3*60*1000;
     } else {
       dbg('hidden');
       input.fire = false;
@@ -1893,7 +1891,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
                 instTmp.position.set(0,0,0); instTmp.rotation.set(0,0,0); instTmp.scale.set(0,0,0); instTmp.updateMatrix();
                 im.setMatrixAt(a.instanceId, instTmp.matrix); im.instanceMatrix.needsUpdate = true;
               }catch(_){ } }, 0); }
-            }
+              }
             setTimeout(()=>{ try{ scene.remove(a.mesh); }catch(_){ } }, 0); asteroids.splice(i,1);
             scene.remove(b.mesh);
             if (b.kind==='player') releasePlayerBulletMesh(b.mesh); else if (b.kind==='fenix') releaseFenixBeamMesh(b.mesh);
@@ -1922,7 +1920,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
                  instTmp.position.set(0,0,0); instTmp.rotation.set(0,0,0); instTmp.scale.set(0,0,0); instTmp.updateMatrix();
                  im.setMatrixAt(a.instanceId, instTmp.matrix); im.instanceMatrix.needsUpdate = true;
                }catch(_){ } }, 0); }
-             }
+               }
              setTimeout(()=>{ try{ scene.remove(a.mesh); }catch(_){ } }, 0); asteroids.splice(i,1);
             scene.remove(b.mesh);
             if (b.kind==='player') releasePlayerBulletMesh(b.mesh); else if (b.kind==='fenix') releaseFenixBeamMesh(b.mesh);
