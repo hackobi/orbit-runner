@@ -91,6 +91,27 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   function showReconnectOverlay(){ ensureReconnectOverlay(); reconnectOverlay.style.display = 'flex'; }
   function hideReconnectOverlay(){ if (reconnectOverlay) reconnectOverlay.style.display = 'none'; }
   function isControlsLocked(){ return Date.now() < controlsUnlockAt; }
+
+  // End-of-round overlay (Restart or Free Flight)
+  let endOverlay = null; let endMsg = null; let endRestartBtn = null; let endFreeBtn = null; let endShown = false;
+  function ensureEndOverlay(){
+    if (endOverlay) return endOverlay;
+    const ov = document.createElement('div');
+    ov.id = 'endOverlay';
+    Object.assign(ov.style, { position:'absolute', top:'0', left:'0', width:'100%', height:'100%', display:'none', alignItems:'center', justifyContent:'center', backdropFilter:'blur(2px)', background:'rgba(0,0,0,0.55)', zIndex: 9998 });
+    const card = document.createElement('div');
+    Object.assign(card.style, { padding:'20px 24px', borderRadius:'12px', background:'rgba(10,20,30,0.85)', border:'1px solid rgba(71,230,255,0.3)', color:'#cfefff', textAlign:'center', minWidth:'280px', boxShadow:'0 0 30px rgba(71,230,255,0.25)' });
+    const title = document.createElement('div'); title.textContent = 'Round Over'; Object.assign(title.style, { fontSize:'20px', marginBottom:'8px', color:'#9feaff' });
+    endMsg = document.createElement('div'); endMsg.textContent = 'Choose an option'; Object.assign(endMsg.style, { fontSize:'13px', opacity:'0.85', marginBottom:'14px' });
+    const btnRow = document.createElement('div'); Object.assign(btnRow.style, { display:'flex', gap:'10px', justifyContent:'center' });
+    endRestartBtn = document.createElement('button'); endRestartBtn.textContent = 'Restart (3 min)'; Object.assign(endRestartBtn.style, { padding:'10px 14px', fontSize:'14px', fontWeight:'600', border:'none', borderRadius:'6px', background:'linear-gradient(45deg, #47e6ff, #66ff99)', color:'#001018', cursor:'pointer' });
+    endFreeBtn = document.createElement('button'); endFreeBtn.textContent = 'Free Flight'; Object.assign(endFreeBtn.style, { padding:'10px 14px', fontSize:'14px', fontWeight:'600', border:'1px solid rgba(255,255,255,0.25)', borderRadius:'6px', background:'rgba(0,0,0,0.3)', color:'#e8f8ff', cursor:'pointer' });
+    btnRow.appendChild(endRestartBtn); btnRow.appendChild(endFreeBtn);
+    card.appendChild(title); card.appendChild(endMsg); card.appendChild(btnRow); ov.appendChild(card); document.body.appendChild(ov);
+    endOverlay = ov; return ov;
+  }
+  function showEndOverlay(){ ensureEndOverlay(); endOverlay.style.display = 'flex'; endShown = true; }
+  function hideEndOverlay(){ if (endOverlay) endOverlay.style.display = 'none'; endShown = false; }
   function updateLaunchButton(){
     const isValid = playerName.trim().length > 0;
     if (launchBtn){
@@ -138,6 +159,25 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
           if (reconnectMsg){ reconnectMsg.textContent = `Reconnecting in ${remaining}...`; }
         }
       }, 1000);
+    }
+    if (e.target === endRestartBtn){
+      e.preventDefault(); e.stopPropagation();
+      // Restart timed round: reset score and timers; respawn to initial area (local)
+      hideEndOverlay();
+      score = 0; killsCount = 0; asteroidsDestroyed = 0; beltTimeSec = 0;
+      roundActive = true; roundEndsAt = Date.now() + 3*60*1000;
+      // Local soft respawn: zero speed and place near origin plane to match server spawn intent
+      speedUnitsPerSec = 20; targetSpeedUnitsPerSec = 20; velocity.set(0,0,0);
+      shipPosition.set(0,0,0); ship.position.copy(shipPosition); yaw = 0; pitch = 0; roll = 0; ship.quaternion.setFromEuler(new THREE.Euler(pitch,yaw,roll,'YXZ'));
+      controlsUnlockAt = Date.now() + 2000; // brief lock to avoid immediate inputs
+      try{ canvas.focus(); }catch(_){ }
+    }
+    if (e.target === endFreeBtn){
+      e.preventDefault(); e.stopPropagation();
+      hideEndOverlay();
+      // Free flight: stop round and prevent further score submissions
+      roundActive = false;
+      try{ canvas.focus(); }catch(_){ }
     }
   }, { capture:true });
   function startGame(){ if (gameInitialized) return; gameInitialized=true; hud.style.display='block'; help.style.display='block'; connectMP(); }
@@ -2284,7 +2324,11 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
 
     // Round timer end: stop round when time elapses
-    if (roundActive && Date.now() >= roundEndsAt){ roundActive = false; }
+    if (roundActive && Date.now() >= roundEndsAt){
+      roundActive = false;
+      // Show end overlay with options
+      showEndOverlay();
+    }
 
     renderer.render(scene, camera);
     if ((frameCounter % 30) === 0){ dbg('tick', { pos: vecToArr(shipPosition), spd: Number(speedUnitsPerSec.toFixed(1)), active: !!MP.active, remotes: MP.remotes.size }); }
