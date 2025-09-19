@@ -101,19 +101,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   // MP overlay (P to toggle)
   let mpOverlay = null; let mpOverlayOn = false; let latestRoomStats = [];
   function ensureMpOverlay(){ if (mpOverlay) return mpOverlay; const d=document.createElement('div'); d.id='mpOverlay'; Object.assign(d.style,{ position:'absolute', top:'10px', right:'10px', color:'#fff', background:'rgba(0,0,0,0.5)', padding:'8px 10px', borderRadius:'8px', fontSize:'12px', display:'none', zIndex:9999, whiteSpace:'pre' }); document.body.appendChild(d); mpOverlay=d; return d; }
-  function renderMpOverlay(){
-    if (!mpOverlayOn) return;
-    ensureMpOverlay();
-    const list = latestRoomStats ? latestRoomStats.slice() : [];
-    if (MP && MP.myId && !list.some(p=> p && p.id === MP.myId)){
-      list.push({ id: MP.myId, name: ensurePlayerName(), score: 0 });
-    }
-    const rows = list
-      .filter(Boolean)
-      .sort((a,b)=> (b.score||0)-(a.score||0))
-      .map(p=> `${(p.name||'Anon').slice(0,16).padEnd(16)}  ${String(p.score||0).padStart(6)}`);
-    mpOverlay.innerText = ['Players (P to hide):', ...rows].join('\n');
-  }
+  function renderMpOverlay(){ if (!mpOverlayOn) return; ensureMpOverlay(); const rows = latestRoomStats.slice().sort((a,b)=> (b.score||0)-(a.score||0)).map(p=> `${(p.name||'Anon').slice(0,16).padEnd(16)}  ${String(p.score||0).padStart(6)}`); mpOverlay.innerText = ['Players (P to hide):', ...rows].join('\n'); }
   const gameOverEl = document.getElementById('gameover') || (()=>{ const d=document.createElement('div'); d.id='gameover'; d.style.position='absolute'; d.style.top='45%'; d.style.left='50%'; d.style.transform='translate(-50%,-50%)'; d.style.fontSize='2rem'; d.style.color='#fff'; d.style.display='none'; d.style.textAlign='center'; d.style.textShadow='0 0 8px #000'; d.innerHTML='CRASHED<br/>Press R to Restart'; document.body.appendChild(d); return d; })();
 
   // Placeholder patch system to avoid reference errors
@@ -1183,26 +1171,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         MP.idToNum.clear();
         for (const p of (msg.players||[])){
           if (p.id === msg.playerId){ MP.myNumId = p.numId; continue; }
-          if (p.numId!=null){
-            MP.idToNum.set(p.id, p.numId);
-            createRemoteShip(p.numId);
-            const r = MP.remotes.get(p.numId);
-            if (r && p.state){
-              try{
-                const sp = vec3From(p.state.p||[0,0,0]);
-                const sq = quatFrom(p.state.q||[0,0,0,1]);
-                r.mesh.position.copy(sp);
-                r.mesh.quaternion.copy(sq);
-                r.samples.length = 0;
-                const t0 = (p.state.t!=null)? p.state.t : Date.now();
-                const v0 = p.state.v||[0,0,0];
-                r.samples.push({ t: t0, p: p.state.p||[0,0,0], q: p.state.q||[0,0,0,1], v: v0, flags: 0 });
-              }catch(_){ }
-            }
-          }
+          if (p.numId!=null){ MP.idToNum.set(p.id, p.numId); createRemoteShip(p.numId); }
         }
-        // Seed overlay list with snapshot names so P shows something immediately
-        try{ latestRoomStats = (msg.players||[]).map(p=> ({ id:p.id, name:p.name||'Anon', score: 0 })); renderMpOverlay(); }catch(_){ }
         return;
       }
       if (msg.type === 'respawn'){
@@ -1224,23 +1194,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
       if (msg.type === 'player-add'){
         if (msg.id === MP.myId) return;
-        if (msg.numId!=null){
-          MP.idToNum.set(msg.id, msg.numId);
-          createRemoteShip(msg.numId);
-          const r = MP.remotes.get(msg.numId);
-          if (r && msg.state){
-            try{
-              const sp = vec3From(msg.state.p||[0,0,0]);
-              const sq = quatFrom(msg.state.q||[0,0,0,1]);
-              r.mesh.position.copy(sp);
-              r.mesh.quaternion.copy(sq);
-              r.samples.length = 0;
-              const t0 = (msg.state.t!=null)? msg.state.t : Date.now();
-              const v0 = msg.state.v||[0,0,0];
-              r.samples.push({ t: t0, p: msg.state.p||[0,0,0], q: msg.state.q||[0,0,0,1], v: v0, flags: 0 });
-            }catch(_){ }
-          }
-        }
+        if (msg.numId!=null){ MP.idToNum.set(msg.id, msg.numId); createRemoteShip(msg.numId); }
         return;
       }
       if (msg.type === 'player-remove'){
@@ -1289,14 +1243,12 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Send inputs at 30 Hz
   setInterval(()=>{
     if (!MP.ws || MP.ws.readyState !== 1) return;
-    // While hidden, send neutral input to avoid server-side drift/jumps
-    const hidden = (typeof tabHidden !== 'undefined') && tabHidden;
     const yawKeys = (input.yawRight?-1:0) + (input.yawLeft?1:0);
     const pitchKeys = (input.pitchUp?1:0) + (input.pitchDown?-1:0);
-    const yawInput = hidden ? 0 : (yawKeys + (mouseDown ? mouseX*0.6 : 0));
-    const pitchInput = hidden ? 0 : (pitchKeys + (mouseDown ? -mouseY*0.6 : 0));
-    const throttle = hidden ? ((targetSpeedUnitsPerSec - minSpeed) / (baseMaxSpeed - minSpeed)) : THREE.MathUtils.clamp((targetSpeedUnitsPerSec - minSpeed) / (baseMaxSpeed - minSpeed), 0, 1);
-    const msg = { type:'input', t: Date.now(), throttle, yaw: THREE.MathUtils.clamp(yawInput, -1, 1), pitch: THREE.MathUtils.clamp(pitchInput, -1, 1), roll: 0, boost: (!hidden && boostActive), fire: (!hidden && !!input.fire), fenix: !!fenixActive };
+    const yawInput = yawKeys + (mouseDown ? mouseX*0.6 : 0);
+    const pitchInput = pitchKeys + (mouseDown ? -mouseY*0.6 : 0);
+    const throttle = THREE.MathUtils.clamp((targetSpeedUnitsPerSec - minSpeed) / (baseMaxSpeed - minSpeed), 0, 1);
+    const msg = { type:'input', t: Date.now(), throttle, yaw: THREE.MathUtils.clamp(yawInput, -1, 1), pitch: THREE.MathUtils.clamp(pitchInput, -1, 1), roll: 0, boost: boostActive, fire: !!input.fire, fenix: !!fenixActive };
     try{ MP.ws.send(JSON.stringify(msg)); }catch(_){ }
     // Periodically send score to update room-stats overlay
     if ((Math.floor(Date.now()/1000) % 2) === 0){ try{ MP.ws.send(JSON.stringify({ type:'score', v: (score>>>0) })); }catch(_){ } }
@@ -1363,38 +1315,16 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
   }
 
-  // When tab visibility changes, snap immediately to server state on focus
-  let tabHidden = false;
+  // When tab visibility changes, perform a short soft reconciliation after focus (no hard snap)
+  let focusReconcileTimer = 0;
   document.addEventListener('visibilitychange', ()=>{
     if (!document.hidden){
       dbg('focus');
-      // Consume the accumulated time to reset the clock's delta after backgrounding
-      clock.getDelta();
-      tabHidden = false;
-      // Reset transient inputs on return
-      mouseDown = false; mouseX = 0; mouseY = 0;
-      // Snap to authoritative server state
-      if (MP.active && MP.selfServerState){
-        const s = MP.selfServerState;
-        const serverPos = vec3From(s.p);
-        const serverQuat = quatFrom(s.q);
-        ship.position.copy(serverPos);
-        ship.quaternion.copy(serverQuat);
-        shipPosition.copy(serverPos);
-        // Preserve current speed; align velocity with snapped orientation
-        const fwd = new THREE.Vector3(0,0,1).applyQuaternion(serverQuat).normalize();
-        velocity.copy(fwd).multiplyScalar(speedUnitsPerSec);
-        const euler = new THREE.Euler().setFromQuaternion(serverQuat, 'YXZ');
-        pitch = euler.x; yaw = euler.y; // roll stays as-is
-        dbg('snap-self-focus', { p: s.p });
-      }
+      focusReconcileTimer = 1.0; // seconds of gentle lerp toward server state
     } else {
-      // Pause/neutralize inputs while hidden
+      // Pause input sender while hidden
       dbg('hidden');
-      tabHidden = true;
       input.fire = false;
-      input.yawLeft = input.yawRight = input.pitchUp = input.pitchDown = false;
-      input.speedUp = input.speedDown = false;
     }
   });
   function getSessionStats(){
@@ -1581,8 +1511,6 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   // Population/field maintenance
   function keepFieldPopulated() {
-    // In MP, the world is deterministic and should not be reshuffled dynamically
-    if (MP && MP.active) return;
     const maxDist = 16000;
     for (let i = asteroids.length - 1; i >= 0; i--) {
       const a = asteroids[i];
@@ -2269,7 +2197,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
 
     maintainPatches();
-    if (!MP.active) keepFieldPopulated();
+    keepFieldPopulated();
     updateHud();
 
     // Multiplayer: render remotes with 120ms interpolation buffer
@@ -2307,6 +2235,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
 
     // Continuous gentle reconciliation every frame to reduce drift (no hard snaps)
     reconcileSelf(dt, /*allowSnap*/ false);
+    // After focus, gently reconcile with extra weight for a short period
+    if (focusReconcileTimer > 0){ reconcileSelf(dt, /*allowSnap*/ false); focusReconcileTimer = Math.max(0, focusReconcileTimer - dt); }
 
     renderer.render(scene, camera);
     if ((frameCounter % 30) === 0){ dbg('tick', { pos: vecToArr(shipPosition), spd: Number(speedUnitsPerSec.toFixed(1)), active: !!MP.active, remotes: MP.remotes.size }); }
