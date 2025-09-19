@@ -72,6 +72,25 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   // HUD and overlays
   const hud = document.getElementById('hud') || (() => { const d = document.createElement('div'); d.id='hud'; d.style.position='absolute'; d.style.top='10px'; d.style.left='10px'; d.style.color='#0ff'; d.style.fontSize='1.1rem'; d.style.display='none'; document.body.appendChild(d); return d; })();
   const help = document.getElementById('help') || (() => { const d = document.createElement('div'); d.id='help'; d.style.position='absolute'; d.style.bottom='12px'; d.style.left='50%'; d.style.transform='translateX(-50%)'; d.style.fontSize='0.95rem'; d.style.color='#ccc'; d.style.opacity='0.85'; d.style.background='rgba(0,0,0,0.35)'; d.style.padding='6px 10px'; d.style.borderRadius='6px'; d.style.display='none'; d.textContent='W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H target • N name • T dev 500 • R restart'; document.body.appendChild(d); return d; })();
+
+  // Reconnect overlay (shown on tab refocus)
+  let reconnectOverlay = null; let reconnectBtn = null; let reconnectMsg = null; let reconnectTimer = null; let controlsUnlockAt = 0;
+  function ensureReconnectOverlay(){
+    if (reconnectOverlay) return reconnectOverlay;
+    const ov = document.createElement('div');
+    ov.id = 'reconnectOverlay';
+    Object.assign(ov.style, { position:'absolute', top:'0', left:'0', width:'100%', height:'100%', display:'none', alignItems:'center', justifyContent:'center', backdropFilter:'blur(2px)', background:'rgba(0,0,0,0.45)', zIndex: 9998 });
+    const card = document.createElement('div');
+    Object.assign(card.style, { padding:'18px 22px', borderRadius:'10px', background:'rgba(10,20,30,0.8)', border:'1px solid rgba(71,230,255,0.3)', color:'#cfefff', textAlign:'center', minWidth:'260px', boxShadow:'0 0 24px rgba(71,230,255,0.2)' });
+    const title = document.createElement('div'); title.textContent = 'Paused - Tab changed'; Object.assign(title.style, { fontSize:'18px', marginBottom:'8px', color:'#9feaff' });
+    reconnectMsg = document.createElement('div'); reconnectMsg.textContent = 'Click Reconnect to continue'; Object.assign(reconnectMsg.style, { fontSize:'13px', opacity:'0.8', marginBottom:'12px' });
+    reconnectBtn = document.createElement('button'); reconnectBtn.textContent = 'Reconnect'; Object.assign(reconnectBtn.style, { padding:'10px 16px', fontSize:'14px', fontWeight:'600', border:'none', borderRadius:'6px', background:'linear-gradient(45deg, #47e6ff, #66ff99)', color:'#001018', cursor:'pointer' });
+    card.appendChild(title); card.appendChild(reconnectMsg); card.appendChild(reconnectBtn); ov.appendChild(card); document.body.appendChild(ov);
+    reconnectOverlay = ov; return ov;
+  }
+  function showReconnectOverlay(){ ensureReconnectOverlay(); reconnectOverlay.style.display = 'flex'; }
+  function hideReconnectOverlay(){ if (reconnectOverlay) reconnectOverlay.style.display = 'none'; }
+  function isControlsLocked(){ return Date.now() < controlsUnlockAt; }
   function updateLaunchButton(){
     const isValid = playerName.trim().length > 0;
     if (launchBtn){
@@ -97,6 +116,14 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       canvas.focus();
     });
   }
+  // Reconnect button behavior: on click, hide overlay, lock controls for 3s
+  document.addEventListener('click', (e)=>{
+    if (e.target === reconnectBtn){
+      e.preventDefault(); e.stopPropagation();
+      hideReconnectOverlay();
+      controlsUnlockAt = Date.now() + 3000;
+    }
+  }, { capture:true });
   function startGame(){ if (gameInitialized) return; gameInitialized=true; hud.style.display='block'; help.style.display='block'; connectMP(); }
   // MP overlay (P to toggle)
   let mpOverlay = null; let mpOverlayOn = false; let latestRoomStats = [];
@@ -958,7 +985,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     const active = document.activeElement;
     const typing = active && ((active.tagName==='INPUT') || (active.tagName==='TEXTAREA') || active.isContentEditable);
     const welcomeVisible = !!(welcomeScreen && !welcomeScreen.classList.contains('hidden'));
-    if (welcomeVisible || typing){ return; }
+    if (welcomeVisible || typing || (typeof isControlsLocked==='function' && isControlsLocked())){ return; }
     const c = e.code;
     const handled = ['ArrowLeft','ArrowRight','KeyA','KeyD','ArrowUp','ArrowDown','KeyW','KeyS','Space','KeyI','KeyK','KeyH','KeyR','KeyT','KeyL','KeyP','KeyN'].includes(c);
     if (handled) { e.preventDefault(); e.stopImmediatePropagation(); }
@@ -999,7 +1026,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     const active = document.activeElement;
     const typing = active && ((active.tagName==='INPUT') || (active.tagName==='TEXTAREA') || active.isContentEditable);
     const welcomeVisible = !!(welcomeScreen && !welcomeScreen.classList.contains('hidden'));
-    if (welcomeVisible || typing){ return; }
+    if (welcomeVisible || typing || (typeof isControlsLocked==='function' && isControlsLocked())){ return; }
     const c = e.code;
     const handled = ['ArrowLeft','ArrowRight','KeyA','KeyD','ArrowUp','ArrowDown','KeyW','KeyS','Space','KeyI','KeyK','KeyH','KeyR','KeyT','KeyL','KeyN'].includes(c);
     if (handled) { e.preventDefault(); e.stopImmediatePropagation(); }
@@ -1320,9 +1347,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   document.addEventListener('visibilitychange', ()=>{
     if (!document.hidden){
       dbg('focus');
-      focusReconcileTimer = 1.0; // seconds of gentle lerp toward server state
+      // Show reconnect overlay and require user action
+      showReconnectOverlay();
     } else {
-      // Pause input sender while hidden
       dbg('hidden');
       input.fire = false;
     }
