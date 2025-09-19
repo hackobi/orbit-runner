@@ -1363,8 +1363,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
   }
 
-  // When tab visibility changes, perform a short soft reconciliation after focus (no hard snap)
-  let focusReconcileTimer = 0;
+  // When tab visibility changes, snap immediately to server state on focus
   let tabHidden = false;
   document.addEventListener('visibilitychange', ()=>{
     if (!document.hidden){
@@ -1374,7 +1373,21 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       tabHidden = false;
       // Reset transient inputs on return
       mouseDown = false; mouseX = 0; mouseY = 0;
-      focusReconcileTimer = 1.0; // seconds of gentle lerp toward server state
+      // Snap to authoritative server state
+      if (MP.active && MP.selfServerState){
+        const s = MP.selfServerState;
+        const serverPos = vec3From(s.p);
+        const serverQuat = quatFrom(s.q);
+        const serverVel = vec3From(s.v);
+        ship.position.copy(serverPos);
+        ship.quaternion.copy(serverQuat);
+        shipPosition.copy(serverPos);
+        const spd = serverVel.length();
+        speedUnitsPerSec = spd; targetSpeedUnitsPerSec = spd;
+        const euler = new THREE.Euler().setFromQuaternion(serverQuat, 'YXZ');
+        pitch = euler.x; yaw = euler.y; // roll stays as-is
+        dbg('snap-self-focus', { p: s.p });
+      }
     } else {
       // Pause/neutralize inputs while hidden
       dbg('hidden');
@@ -2294,8 +2307,6 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
 
     // Continuous gentle reconciliation every frame to reduce drift (no hard snaps)
     reconcileSelf(dt, /*allowSnap*/ false);
-    // After focus, gently reconcile with extra weight for a short period
-    if (focusReconcileTimer > 0){ reconcileSelf(dt, /*allowSnap*/ false); focusReconcileTimer = Math.max(0, focusReconcileTimer - dt); }
 
     renderer.render(scene, camera);
     if ((frameCounter % 30) === 0){ dbg('tick', { pos: vecToArr(shipPosition), spd: Number(speedUnitsPerSec.toFixed(1)), active: !!MP.active, remotes: MP.remotes.size }); }
