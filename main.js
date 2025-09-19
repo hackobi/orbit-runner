@@ -93,7 +93,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   function isControlsLocked(){ return Date.now() < controlsUnlockAt; }
 
   // End-of-round overlay (Restart or Free Flight)
-  let endOverlay = null; let endMsg = null; let endRestartBtn = null; let endFreeBtn = null; let endShown = false;
+  let endOverlay = null; let endMsg = null; let endRestartBtn = null; let endFreeBtn = null; let endDemosBtn = null; let endShown = false;
   function ensureEndOverlay(){
     if (endOverlay) return endOverlay;
     const ov = document.createElement('div');
@@ -103,10 +103,11 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     Object.assign(card.style, { padding:'20px 24px', borderRadius:'12px', background:'rgba(10,20,30,0.85)', border:'1px solid rgba(71,230,255,0.3)', color:'#cfefff', textAlign:'center', minWidth:'280px', boxShadow:'0 0 30px rgba(71,230,255,0.25)' });
     const title = document.createElement('div'); title.textContent = 'Round Over'; Object.assign(title.style, { fontSize:'20px', marginBottom:'8px', color:'#9feaff' });
     endMsg = document.createElement('div'); endMsg.textContent = 'Choose an option'; Object.assign(endMsg.style, { fontSize:'13px', opacity:'0.85', marginBottom:'14px' });
-    const btnRow = document.createElement('div'); Object.assign(btnRow.style, { display:'flex', gap:'10px', justifyContent:'center' });
+    const btnRow = document.createElement('div'); Object.assign(btnRow.style, { display:'flex', gap:'10px', justifyContent:'center', flexWrap:'wrap' });
     endRestartBtn = document.createElement('button'); endRestartBtn.textContent = 'Restart (3 min)'; Object.assign(endRestartBtn.style, { padding:'10px 14px', fontSize:'14px', fontWeight:'600', border:'none', borderRadius:'6px', background:'linear-gradient(45deg, #47e6ff, #66ff99)', color:'#001018', cursor:'pointer' });
     endFreeBtn = document.createElement('button'); endFreeBtn.textContent = 'Free Flight'; Object.assign(endFreeBtn.style, { padding:'10px 14px', fontSize:'14px', fontWeight:'600', border:'1px solid rgba(255,255,255,0.25)', borderRadius:'6px', background:'rgba(0,0,0,0.3)', color:'#e8f8ff', cursor:'pointer' });
-    btnRow.appendChild(endRestartBtn); btnRow.appendChild(endFreeBtn);
+    endDemosBtn = document.createElement('button'); endDemosBtn.textContent = 'Submit to Demos'; Object.assign(endDemosBtn.style, { padding:'10px 14px', fontSize:'14px', fontWeight:'600', border:'1px solid rgba(255,255,255,0.25)', borderRadius:'6px', background:'rgba(0,0,0,0.3)', color:'#e8f8ff', cursor:'pointer' });
+    btnRow.appendChild(endRestartBtn); btnRow.appendChild(endFreeBtn); btnRow.appendChild(endDemosBtn);
     card.appendChild(title); card.appendChild(endMsg); card.appendChild(btnRow); ov.appendChild(card); document.body.appendChild(ov);
     endOverlay = ov; return ov;
   }
@@ -181,6 +182,16 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       // Free flight: stop round and prevent further score submissions
       roundActive = false;
       try{ canvas.focus(); }catch(_){ }
+    }
+    if (e.target === endDemosBtn){
+      e.preventDefault(); e.stopPropagation();
+      // Fire-and-forget call to your Demos gateway when provided
+      try{
+        const payload = getSessionStats();
+        const demosUrl = window.DEMOS_API || ''; // set later when you have it
+        if (demosUrl){ fetch(`${demosUrl}/submit`, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(payload) }).catch(()=>{}); }
+      }catch(_){ }
+      // keep overlay visible so user can choose Restart/Free
     }
   }, { capture:true });
   function startGame(){ if (gameInitialized) return; gameInitialized=true; hud.style.display='block'; help.style.display='block'; connectMP(); }
