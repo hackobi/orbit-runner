@@ -2356,7 +2356,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       roundActive = false;
       // Ensure overlay exists, then set message and submit
       ensureEndOverlay();
-      if (endMsg){ endMsg.textContent = `Final score: ${score} | Kills: ${killsCount} | Asteroids: ${asteroidsDestroyed}. Choose an option`; }
+      if (endMsg){
+        endMsg.innerHTML = `<div>Final score: ${score} | Enemies killed: ${killsCount} | Asteroids: ${asteroidsDestroyed}</div><div style="opacity:0.85;margin-top:6px">Choose an option</div>`;
+      }
       if (!roundSubmitted){
         try { if (!statsSaved){ saveLeaderboards(); statsSaved = true; } } catch(_){ }
         roundSubmitted = true;
