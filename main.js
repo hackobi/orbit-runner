@@ -199,7 +199,18 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       // keep overlay visible so user can choose Restart/Free
     }
   }, { capture:true });
-  function startGame(){ if (gameInitialized) return; gameInitialized=true; hud.style.display='block'; help.style.display='block'; connectMP(); }
+  let lbRefreshTimer = null;
+  function startGame(){
+    if (gameInitialized) return;
+    gameInitialized=true;
+    hud.style.display='block';
+    help.style.display='block';
+    connectMP();
+    // Show leaderboard overlay at top-right by default
+    ensureLbOverlay().style.display = 'block';
+    renderLb();
+    if (!lbRefreshTimer){ lbRefreshTimer = setInterval(()=>{ if (lbOverlay && lbOverlay.style.display!=='none') renderLb(); }, 5000); }
+  }
   // MP overlay (P to toggle)
   let mpOverlay = null; let mpOverlayOn = false; let latestRoomStats = [];
   function ensureMpOverlay(){ if (mpOverlay) return mpOverlay; const d=document.createElement('div'); d.id='mpOverlay'; Object.assign(d.style,{ position:'absolute', top:'10px', right:'10px', color:'#fff', background:'rgba(0,0,0,0.5)', padding:'8px 10px', borderRadius:'8px', fontSize:'12px', display:'none', zIndex:9999, whiteSpace:'pre' }); document.body.appendChild(d); mpOverlay=d; return d; }
