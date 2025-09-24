@@ -1248,6 +1248,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   async function handleMpMessage(ev){
     if (!ev || !ev.data) return;
     if (typeof ev.data !== 'string'){
+      // Ignore early binary frames until we've received 'welcome'
+      if (!MP.active) return;
       // Binary state buffer
       const buf = ev.data instanceof ArrayBuffer ? ev.data : await ev.data.arrayBuffer();
       const dv = new DataView(buf);
@@ -1287,6 +1289,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         MP.worldSeed = msg.worldSeed;
         // Build id->num and remote meshes
         MP.idToNum.clear();
+        // Remove any prior remote meshes (fresh session)
+        for (const [nid, r] of MP.remotes){ try{ scene.remove(r.mesh); }catch(_){} }
+        MP.remotes.clear();
         for (const p of (msg.players||[])){
           if (p.id === msg.playerId){ MP.myNumId = p.numId; continue; }
           if (p.numId!=null){ MP.idToNum.set(p.id, p.numId); createRemoteShip(p.numId); }
