@@ -248,10 +248,10 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
 
   async function tryRequest(prov, method, params){
-    // EIP-1193 style
+    // Prefer object form for safety (injectproviderv3 may require it)
     try { return await prov.request({ id: Date.now(), jsonrpc: '2.0', method, params: params||[] }); } catch(_){ }
-    // Some providers accept (method, params)
-    try { return await prov.request(method, params||[]); } catch(_){ }
+    // Only attempt (method, params) if it's NOT injectproviderv3
+    try { if (prov !== window.injectproviderv3) { return await prov.request(method, params||[]); } } catch(_){ }
     // Legacy send/sendAsync
     try { return await prov.send({ id: Date.now(), jsonrpc: '2.0', method, params: params||[] }); } catch(_){ }
     try {
@@ -293,6 +293,11 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       let accounts = await tryRequest(prov, 'demos_requestAccounts', []);
       if (!accounts) accounts = await tryRequest(prov, 'eth_requestAccounts', []);
       if (!accounts) accounts = await tryRequest(prov, 'eth_accounts', []);
+      // Some providers use personal_sign for auth handshake. If no accounts, try a benign sign to prompt unlock
+      if (!accounts){
+        try { await tryRequest(prov, 'personal_sign', ['OrbitRunner login', '0x0000000000000000000000000000000000000000']); } catch(_){ }
+        accounts = await tryRequest(prov, 'eth_accounts', []);
+      }
 
       // Normalize common response shapes
       let addr = '';
