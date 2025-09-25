@@ -180,15 +180,20 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       // Check if Demos extension detector is available
       if (typeof window.detectDemosExtension === 'function') {
         const providers = await window.detectDemosExtension();
-        
         console.log('📋 Detection results:', providers);
-        
-        if (providers && providers.length > 0) {
-          console.log('✅ Demos extension detected:', providers.length, 'providers');
-          
-          // Auto-connect to the first provider
-          const success = await connectWithProvider(providers[0]);
-          
+        // Filter to request-capable providers and exclude self artifacts
+        const normalized = (providers||[])
+          .map(p=>({ info: p?.info||{ name:'Demos Provider' }, provider: p?.provider||p }))
+          .filter(p=> p && p.provider && typeof p.provider.request === 'function' && String(p.info?.name||'').indexOf('demosProviders')===-1);
+        // Also consider direct globals
+        if (window.demos && typeof window.demos.request === 'function') normalized.unshift({ info:{ name:'Demos Extension' }, provider: window.demos });
+        if (window.ethereum && typeof window.ethereum.request === 'function' && (window.ethereum.isDemos||window.ethereum.isDemosWallet||(window.ethereum.providers?.some?.(pp=>pp.isDemos)))) normalized.unshift({ info:{ name:'Demos Extension (Ethereum)' }, provider: window.ethereum });
+
+        if (normalized.length > 0) {
+          console.log('✅ Request-capable Demos providers:', normalized.length);
+          // Try first request-capable provider
+          const success = await connectWithProvider(normalized[0]);
+
           if (success) {
             if (extensionIndicator) {
               extensionIndicator.className = 'status-indicator available';
@@ -206,22 +211,14 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
               extensionWarning.style.display = 'none';
             }
           } else {
-            // Connection failed but extension detected
-            if (extensionIndicator) {
-              extensionIndicator.className = 'status-indicator available';
-            }
-            if (extensionStatusText) {
-              extensionStatusText.textContent = 'Demos extension detected';
-            }
-            if (connectExtensionBtn) {
-              connectExtensionBtn.disabled = false;
-              connectExtensionBtn.classList.add('enabled');
-              console.log('✅ Connect button enabled (detection only)');
-            }
+            // Detection only; enable connect
+            if (extensionIndicator) extensionIndicator.className = 'status-indicator available';
+            if (extensionStatusText) extensionStatusText.textContent = 'Demos extension detected';
+            if (connectExtensionBtn) { connectExtensionBtn.disabled = false; connectExtensionBtn.classList.add('enabled'); }
           }
           
-          // Store first provider for connection
-          window.demosProviders = providers;
+          // Store filtered providers for manual connect
+          window.demosProviders = normalized;
           console.log('✅ Providers stored:', window.demosProviders);
           
         } else {
@@ -302,11 +299,12 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   if (connectExtensionBtn) {
     connectExtensionBtn.addEventListener('click', async () => {
       console.log('🔗 Extension connect button clicked');
-      if (window.demosProviders && window.demosProviders.length > 0) {
-        await connectWithProvider(window.demosProviders[0]);
-      } else {
-        await detectAndConnectExtension();
-      }
+      // Prefer direct globals if available
+      const direct = (window.demos && typeof window.demos.request==='function') ? { info:{ name:'Demos Extension' }, provider: window.demos }
+        : (window.ethereum && typeof window.ethereum.request==='function' ? { info:{ name:'Demos Extension (Ethereum)' }, provider: window.ethereum } : null);
+      if (direct){ await connectWithProvider(direct); return; }
+      if (window.demosProviders && window.demosProviders.length > 0) { await connectWithProvider(window.demosProviders[0]); return; }
+      await detectAndConnectExtension();
     });
   }
 
