@@ -313,8 +313,14 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
 
     try {
-      // Request accounts using known method variants/signatures
-      let accounts = await tryRequest(prov, 'demos_requestAccounts', []);
+      // Request accounts using provider-specific variants/signatures
+      let accounts = null;
+      // Prefer direct accounts() if available (per Demos Wallet provider)
+      try { if (typeof prov.accounts === 'function') accounts = await prov.accounts(); } catch(_){ }
+      // Demos-style request API
+      if (!accounts) try { accounts = await prov.request({ method: 'accounts', params: [] }); } catch(_){ }
+      // Common EIP-1193 variants
+      if (!accounts) accounts = await tryRequest(prov, 'demos_requestAccounts', []);
       if (!accounts) accounts = await tryRequest(prov, 'eth_requestAccounts', []);
       if (!accounts) accounts = await tryRequest(prov, 'eth_accounts', []);
       // Some providers use personal_sign for auth handshake. If no accounts, try a benign sign to prompt unlock
