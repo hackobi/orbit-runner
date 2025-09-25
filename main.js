@@ -248,10 +248,25 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
 
   async function tryRequest(prov, method, params){
-    // Prefer object form for safety (injectproviderv3 may require it)
+    // Special handling for injectproviderv3 which expects { type, params }
+    if (prov === window.injectproviderv3){
+      try { return await prov.request({ type: method, params: params||[] }); } catch(_){ }
+      // Common aliases
+      if (method === 'eth_requestAccounts' || method === 'demos_requestAccounts'){
+        try { return await prov.request({ type: 'connect', params: [] }); } catch(_){ }
+        try { return await prov.request({ type: 'accounts', params: [] }); } catch(_){ }
+      }
+      if (method === 'eth_accounts'){
+        try { return await prov.request({ type: 'accounts', params: [] }); } catch(_){ }
+      }
+      if (method === 'personal_sign'){
+        try { return await prov.request({ type: 'personal_sign', params: params||[] }); } catch(_){ }
+      }
+    }
+    // EIP-1193 object form
     try { return await prov.request({ id: Date.now(), jsonrpc: '2.0', method, params: params||[] }); } catch(_){ }
-    // Only attempt (method, params) if it's NOT injectproviderv3
-    try { if (prov !== window.injectproviderv3) { return await prov.request(method, params||[]); } } catch(_){ }
+    // Some providers accept (method, params)
+    try { return await prov.request(method, params||[]); } catch(_){ }
     // Legacy send/sendAsync
     try { return await prov.send({ id: Date.now(), jsonrpc: '2.0', method, params: params||[] }); } catch(_){ }
     try {
