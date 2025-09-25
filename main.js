@@ -240,6 +240,15 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (!detail) return null;
     // event-based detail may be { info, provider }, or just the provider
     const cand = detail.provider || detail;
+    // If provider is a function, wrap it to a request-capable interface using {type,params}
+    if (typeof cand === 'function'){
+      return {
+        request: (arg1, arg2)=>{
+          if (typeof arg1 === 'string'){ return cand({ type: arg1, params: arg2||[] }); }
+          const o = arg1 || {}; return cand({ type: o.method, params: o.params||[] });
+        }
+      };
+    }
     if (cand && typeof cand.request === 'function') return cand;
     if (window.demos && typeof window.demos.request === 'function') return window.demos;
     if (window.ethereum && (window.ethereum.isDemos || window.ethereum.isDemosWallet || (window.ethereum.providers?.some?.(p=>p.isDemos))) && typeof window.ethereum.request === 'function') return window.ethereum;
