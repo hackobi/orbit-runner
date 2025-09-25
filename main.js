@@ -249,9 +249,19 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   async function tryRequest(prov, method, params){
     // EIP-1193 style
-    try { return await prov.request({ method, params: params||[] }); } catch(_){ }
+    try { return await prov.request({ id: Date.now(), jsonrpc: '2.0', method, params: params||[] }); } catch(_){ }
     // Some providers accept (method, params)
     try { return await prov.request(method, params||[]); } catch(_){ }
+    // Legacy send/sendAsync
+    try { return await prov.send({ id: Date.now(), jsonrpc: '2.0', method, params: params||[] }); } catch(_){ }
+    try {
+      return await new Promise((resolve, reject)=>{
+        if (typeof prov.sendAsync !== 'function') return reject(new Error('no sendAsync'));
+        prov.sendAsync({ id: Date.now(), jsonrpc: '2.0', method, params: params||[] }, (err, res)=>{
+          if (err) reject(err); else resolve(res && res.result ? res.result : res);
+        });
+      });
+    } catch(_){ }
     // Legacy enable/connect fallbacks
     if (method === 'eth_requestAccounts'){
       if (typeof prov.enable === 'function'){
