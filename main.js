@@ -243,6 +243,26 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (cand && typeof cand.request === 'function') return cand;
     if (window.demos && typeof window.demos.request === 'function') return window.demos;
     if (window.ethereum && (window.ethereum.isDemos || window.ethereum.isDemosWallet || (window.ethereum.providers?.some?.(p=>p.isDemos))) && typeof window.ethereum.request === 'function') return window.ethereum;
+    if (window.injectproviderv3 && typeof window.injectproviderv3.request === 'function') return window.injectproviderv3;
+    return null;
+  }
+
+  async function tryRequest(prov, method, params){
+    // EIP-1193 style
+    try { return await prov.request({ method, params: params||[] }); } catch(_){ }
+    // Some providers accept (method, params)
+    try { return await prov.request(method, params||[]); } catch(_){ }
+    // Legacy enable/connect fallbacks
+    if (method === 'eth_requestAccounts'){
+      if (typeof prov.enable === 'function'){
+        try { const res = await prov.enable(); return Array.isArray(res)? res : (res?.data||res); } catch(_){ }
+      }
+      if (typeof prov.connect === 'function'){
+        try { await prov.connect(); } catch(_){ }
+        // try get accounts after connect
+        try { return await prov.request({ method: 'eth_accounts', params: [] }); } catch(_){ }
+      }
+    }
     return null;
   }
 
@@ -259,17 +279,10 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
 
     try {
-      // Request accounts using known method variants
-      let accounts;
-      try {
-        accounts = await prov.request({ method: 'demos_requestAccounts', params: [] });
-      } catch(_){}
-      if (!accounts){
-        try { accounts = await prov.request({ method: 'eth_requestAccounts', params: [] }); } catch(_){ }
-      }
-      if (!accounts){
-        try { accounts = await prov.request({ method: 'eth_accounts', params: [] }); } catch(_){ }
-      }
+      // Request accounts using known method variants/signatures
+      let accounts = await tryRequest(prov, 'demos_requestAccounts', []);
+      if (!accounts) accounts = await tryRequest(prov, 'eth_requestAccounts', []);
+      if (!accounts) accounts = await tryRequest(prov, 'eth_accounts', []);
 
       // Normalize common response shapes
       let addr = '';
@@ -282,6 +295,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         updateConnectedWallet(walletAddress, 1000);
         updateLaunchButton();
         console.log('✅ Connected to real Demos provider:', walletAddress);
+        // Listen to account changes if supported
+        try{ prov.on && prov.on('accountsChanged', (accs)=>{ if (Array.isArray(accs) && accs[0]){ walletAddress = accs[0]; updateConnectedWallet(walletAddress, 1000); updateLaunchButton(); } }); }catch(_){ }
         return true;
       }
 
