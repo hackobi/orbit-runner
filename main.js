@@ -238,73 +238,63 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
   }
 
-  // Connect with a specific provider
+  // Resolve a request-capable provider from various shapes
+  function resolveRequestProvider(detail){
+    if (!detail) return null;
+    // event-based detail may be { info, provider }, or just the provider
+    const cand = detail.provider || detail;
+    if (cand && typeof cand.request === 'function') return cand;
+    if (window.demos && typeof window.demos.request === 'function') return window.demos;
+    if (window.ethereum && (window.ethereum.isDemos || window.ethereum.isDemosWallet || (window.ethereum.providers?.some?.(p=>p.isDemos))) && typeof window.ethereum.request === 'function') return window.ethereum;
+    return null;
+  }
+
+  // Connect with a specific provider (robust to provider shapes and methods)
   async function connectWithProvider(providerDetail) {
-    console.log('🔌 Connecting with provider:', providerDetail.info.name);
-    
+    const name = providerDetail?.info?.name || 'Unknown Provider';
+    console.log('🔌 Connecting with provider:', name);
+
+    const prov = resolveRequestProvider(providerDetail);
+    if (!prov){
+      console.warn('⚠️ No request-capable provider found in detail; aborting real connect');
+      if (extensionWarning) extensionWarning.style.display = 'block';
+      return false;
+    }
+
     try {
-      // Try to connect
-      const connectResponse = await providerDetail.provider.request({
-        method: 'connect',
-        params: []
-      });
-      
-      console.log('🔗 Connect response:', connectResponse);
-      
-      if (connectResponse && connectResponse.success) {
-        // Try to get accounts
-        const accountsResponse = await providerDetail.provider.request({
-          method: 'demos_requestAccounts',
-          params: []
-        });
-        
-        console.log('👤 Accounts response:', accountsResponse);
-        
-        if (accountsResponse && accountsResponse.success && accountsResponse.data && accountsResponse.data.length > 0) {
-          walletAddress = accountsResponse.data[0];
-          currentProvider = providerDetail;
-          
-          updateConnectedWallet(walletAddress, 1000);
-          updateLaunchButton();
-          console.log('✅ Connected with Demos extension:', walletAddress);
-          return true;
-        } else {
-          console.log('⚠️ Account response issue, using fallback address');
-          // Use fallback address generation
-          const fallbackAddress = '0x' + Array.from({length: 40}, () => Math.floor(Math.random() * 16).toString(16)).join('');
-          walletAddress = fallbackAddress;
-          currentProvider = providerDetail;
-          
-          updateConnectedWallet(walletAddress, 1000);
-          updateLaunchButton();
-          console.log('✅ Connected with fallback address:', walletAddress);
-          return true;
-        }
-      } else {
-        console.log('⚠️ Connect response issue, using fallback');
-        // Use fallback address generation
-        const fallbackAddress = '0x' + Array.from({length: 40}, () => Math.floor(Math.random() * 16).toString(16)).join('');
-        walletAddress = fallbackAddress;
+      // Request accounts using known method variants
+      let accounts;
+      try {
+        accounts = await prov.request({ method: 'demos_requestAccounts', params: [] });
+      } catch(_){}
+      if (!accounts){
+        try { accounts = await prov.request({ method: 'eth_requestAccounts', params: [] }); } catch(_){ }
+      }
+      if (!accounts){
+        try { accounts = await prov.request({ method: 'eth_accounts', params: [] }); } catch(_){ }
+      }
+
+      // Normalize common response shapes
+      let addr = '';
+      if (Array.isArray(accounts) && accounts.length>0) addr = accounts[0];
+      else if (accounts && accounts.success && Array.isArray(accounts.data) && accounts.data.length>0) addr = accounts.data[0];
+
+      if (addr){
+        walletAddress = String(addr);
         currentProvider = providerDetail;
-        
         updateConnectedWallet(walletAddress, 1000);
         updateLaunchButton();
-        console.log('✅ Connected with fallback address:', walletAddress);
+        console.log('✅ Connected to real Demos provider:', walletAddress);
         return true;
       }
-      
+
+      console.warn('⚠️ Provider responded without accounts; show warning');
+      if (extensionWarning){ extensionWarning.style.display = 'block'; extensionWarning.textContent = 'Could not retrieve accounts. Please unlock and approve in the Demos extension, then click Connect again.'; }
+      return false;
     } catch (error) {
       console.error('❌ Extension connection failed:', error);
-      
-      // Even if connection fails, use fallback
-      const fallbackAddress = '0x' + Array.from({length: 40}, () => Math.floor(Math.random() * 16).toString(16)).join('');
-      walletAddress = fallbackAddress;
-      currentProvider = providerDetail;
-      
-      updateConnectedWallet(walletAddress, 1000);
-      updateLaunchButton();
-      console.log('✅ Connected with fallback address:', walletAddress);
-      return true;
+      if (extensionWarning){ extensionWarning.style.display = 'block'; extensionWarning.textContent = 'Connection failed. Please approve in the Demos extension and retry.'; }
+      return false;
     }
   }
 
