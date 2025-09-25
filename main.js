@@ -346,8 +346,28 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         return true;
       }
 
+      // Try explicit connect then short polling for accounts (some wallets need this)
+      try { await prov.request({ method:'connect', params: [] }); } catch(_){ }
+      for (let i=0;i<10 && !addr;i++){
+        await new Promise(r=>setTimeout(r, 300));
+        try { if (typeof prov.accounts === 'function') accounts = await prov.accounts(); } catch(_){ }
+        if (!accounts) try { accounts = await prov.request({ method:'accounts', params: [] }); } catch(_){ }
+        if (!accounts) try { accounts = await tryRequest(prov, 'eth_accounts', []); } catch(_){ }
+        if (Array.isArray(accounts) && accounts.length>0) addr = accounts[0];
+        else if (accounts && accounts.success && Array.isArray(accounts.data) && accounts.data.length>0) addr = accounts.data[0];
+      }
+
+      if (addr){
+        walletAddress = String(addr);
+        currentProvider = providerDetail;
+        updateConnectedWallet(walletAddress, 1000);
+        updateLaunchButton();
+        console.log('✅ Connected after connect/poll:', walletAddress);
+        return true;
+      }
+
       console.warn('⚠️ Provider responded without accounts; show warning');
-      if (extensionWarning){ extensionWarning.style.display = 'block'; extensionWarning.textContent = 'Could not retrieve accounts. Please unlock and approve in the Demos extension, then click Connect again.'; }
+      if (extensionWarning){ extensionWarning.style.display = 'block'; extensionWarning.textContent = 'Open the Demos wallet, unlock it, and approve access for this site, then press Connect again.'; }
       return false;
     } catch (error) {
       console.error('❌ Extension connection failed:', error);
