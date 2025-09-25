@@ -11,9 +11,43 @@
       <div class="welcome-emoji">🚀</div>
       <h1 class="welcome-title">Orbit Runner<br/>3D</h1>
       <h2 class="welcome-sub">Multiplayer Space Combat</h2>
-      <input id="pilot-name-input" class="welcome-input" type="text" maxlength="24" placeholder="Enter your pilot name..." />
-      <button id="launch-btn" class="welcome-btn" disabled>Launch Into Space</button>
-      <p class="welcome-desc">Join other pilots in real-time 3D space combat! Fly, fight, and explore together in the asteroid belt.</p>
+      <!-- Wallet Connection UI -->
+      <div class="wallet-connect-container">
+        <div class="connection-status" id="extension-status">
+          <div class="status-indicator checking" id="extension-indicator"></div>
+          <span id="extension-status-text">Checking for Demos extension...</span>
+        </div>
+        
+        <button id="connect-extension-btn" class="wallet-btn" disabled>
+          Connect Demos Extension
+        </button>
+        
+        <div class="wallet-warning" id="extension-warning" style="display: none;">
+          Demos extension not detected. Please install the extension or use another connection method.
+        </div>
+        
+        <div class="extension-help">
+          <p><strong>Don't have the Demos extension?</strong></p>
+          <p>Install the Demos browser extension for seamless wallet connectivity.</p>
+          <a href="https://demoswallet.com" target="_blank">Download Demos Extension</a>
+        </div>
+        
+        <div class="manual-detection">
+          <button id="manual-detect-btn" class="manual-detect-btn">Manual Detection</button>
+          <div id="detection-results" class="detection-results"></div>
+        </div>
+      </div>
+      
+      <div id="connected-wallet" class="connected-wallet" style="display: none;">
+        <div class="wallet-info">
+          <div class="wallet-address" id="connected-address">Not connected</div>
+          <div class="wallet-balance" id="connected-balance">Balance: 0 DEMOS</div>
+        </div>
+        <button id="disconnect-btn" class="wallet-btn disconnect-btn">Disconnect</button>
+      </div>
+      
+      <button id="launch-btn" class="wallet-btn launch-btn" disabled>Launch Into Space</button>
+      <p class="welcome-desc">Connect your Demos wallet to join other pilots in real-time 3D space combat! Your wallet address will be your unique pilot identifier.</p>
     </div>
   </div>
 
@@ -38,5 +72,8 @@
     // Cache-bust main.js so changes always load on refresh during development
     await import(`./main.js?cb=${Date.now()}`);
   </script>
+  
+  <!-- Demos Extension Detector -->
+  <script src="demos-extension-detector.js"></script>
 </body>
 </html>
