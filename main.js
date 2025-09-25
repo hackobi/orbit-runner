@@ -239,7 +239,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   function resolveRequestProvider(detail){
     if (!detail) return null;
     // event-based detail may be { info, provider }, or just the provider
-    const cand = detail.provider || detail;
+    let cand = detail.provider || detail;
+    if (Array.isArray(cand) && cand.length>0) cand = cand[0];
     // If provider is a function, wrap it to a request-capable interface using {type,params}
     if (typeof cand === 'function'){
       return {
