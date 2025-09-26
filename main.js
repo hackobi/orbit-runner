@@ -24,6 +24,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   let providersDetected = false;
   let connecting = false;
   let detectionRetryTimer = null;
+  let detectionInProgress = false;
+  let lastStatus = 'init'; // 'checking' | 'available' | 'unavailable'
   let gameInitialized = false;
   if (!canvas) { console.error('Canvas not found'); return; }
   canvas.tabIndex = 0; canvas.style.outline = 'none'; canvas.focus();
@@ -169,7 +171,25 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
 
   // Detect and connect to Demos extension
+  function setStatus(state){
+    if (state === lastStatus) return;
+    lastStatus = state;
+    if (!extensionIndicator || !extensionStatusText) return;
+    if (state === 'checking'){
+      extensionIndicator.className = 'status-indicator checking';
+      extensionStatusText.textContent = 'Checking for Demos extension...';
+    } else if (state === 'available'){
+      extensionIndicator.className = 'status-indicator available';
+      extensionStatusText.textContent = 'Demos extension detected';
+    } else if (state === 'unavailable'){
+      extensionIndicator.className = 'status-indicator unavailable';
+      extensionStatusText.textContent = 'Demos extension not found';
+    }
+  }
+
   async function detectAndConnectExtension() {
+    if (detectionInProgress) return;
+    detectionInProgress = true;
     console.log('🔍 Detecting Demos extension...');
     
     if (extensionStatus) {
@@ -195,8 +215,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         if (normalized.length > 0) {
           console.log('✅ Request-capable Demos providers:', normalized.length);
           // Detection only; enable connect (no auto-connect to avoid popup loops)
-          if (extensionIndicator) extensionIndicator.className = 'status-indicator available';
-          if (extensionStatusText) extensionStatusText.textContent = 'Demos extension detected';
+          setStatus('available');
           if (connectExtensionBtn) { connectExtensionBtn.disabled = false; connectExtensionBtn.classList.add('enabled'); connectExtensionBtn.textContent = 'Connect Demos Extension'; }
           if (extensionWarning) extensionWarning.style.display = 'none';
           // Store filtered providers
@@ -204,6 +223,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
           console.log('✅ Providers stored:', window.demosProviders);
         } else {
           console.log('⚠️ No Demos extension providers found');
+          setStatus('unavailable');
           showExtensionNotDetected();
         }
       } else {
@@ -212,8 +232,10 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
     } catch (error) {
       console.error('❌ Extension detection failed:', error);
+      setStatus('unavailable');
       showExtensionNotDetected();
     }
+    detectionInProgress = false;
   }
 
   // Retry detection a few times to catch post-login injection
@@ -401,16 +423,20 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       // Prefer direct globals if available
       const direct = (window.demos && typeof window.demos.request==='function') ? { info:{ name:'Demos Extension' }, provider: window.demos }
         : (window.ethereum && typeof window.ethereum.request==='function' ? { info:{ name:'Demos Extension (Ethereum)' }, provider: window.ethereum } : null);
-      if (direct){ await connectWithProvider(direct); updateLaunchButton(); connecting=false; return; }
-      if (window.demosProviders && window.demosProviders.length > 0) { await connectWithProvider(window.demosProviders[0]); updateLaunchButton(); connecting=false; return; }
-      await detectAndConnectExtension();
-      scheduleDetectionRetry(5);
-      connecting = false;
+      try{
+        if (direct){ await connectWithProvider(direct); updateLaunchButton(); return; }
+        if (window.demosProviders && window.demosProviders.length > 0) { await connectWithProvider(window.demosProviders[0]); updateLaunchButton(); return; }
+        setStatus('checking');
+        await detectAndConnectExtension();
+        scheduleDetectionRetry(5);
+      } finally {
+        connecting = false;
+      }
     });
   }
 
   // When the provider announces itself, auto-detect and update UI (no auto-connect)
-  window.addEventListener('demosAnnounceProvider', ()=>{ providersDetected=false; detectAndConnectExtension(); });
+  window.addEventListener('demosAnnounceProvider', ()=>{ if (!providersDetected) detectAndConnectExtension(); });
 
   if (disconnectBtn) {
     disconnectBtn.addEventListener('click', () => {
