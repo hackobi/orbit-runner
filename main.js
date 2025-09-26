@@ -314,12 +314,25 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
 
     try {
+      // Helper to normalize various account response shapes
+      const normalizeAccounts = (acc)=>{
+        if (!acc) return [];
+        if (Array.isArray(acc)) return acc;
+        if (Array.isArray(acc.result)) return acc.result;
+        if (Array.isArray(acc.data)) return acc.data;
+        if (Array.isArray(acc.accounts)) return acc.accounts;
+        if (typeof acc.address === 'string') return [acc.address];
+        if (typeof acc.defaultAccount === 'string') return [acc.defaultAccount];
+        return [];
+      };
+
       // Request accounts using provider-specific variants/signatures
       let accounts = null;
       // Prefer direct accounts() if available (per Demos Wallet provider)
       try { if (typeof prov.accounts === 'function') accounts = await prov.accounts(); } catch(_){ }
-      // Demos-style request API
+      // Demos-style request API (support both {method:'accounts'} and {method:'demos_accounts'})
       if (!accounts) try { accounts = await prov.request({ method: 'accounts', params: [] }); } catch(_){ }
+      if (!accounts) try { accounts = await prov.request({ method: 'demos_accounts', params: [] }); } catch(_){ }
       // Common EIP-1193 variants
       if (!accounts) accounts = await tryRequest(prov, 'demos_requestAccounts', []);
       if (!accounts) accounts = await tryRequest(prov, 'eth_requestAccounts', []);
@@ -331,9 +344,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
 
       // Normalize common response shapes
-      let addr = '';
-      if (Array.isArray(accounts) && accounts.length>0) addr = accounts[0];
-      else if (accounts && accounts.success && Array.isArray(accounts.data) && accounts.data.length>0) addr = accounts.data[0];
+      const list = normalizeAccounts(accounts);
+      let addr = list[0] || '';
 
       if (addr){
         walletAddress = String(addr);
@@ -353,8 +365,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         try { if (typeof prov.accounts === 'function') accounts = await prov.accounts(); } catch(_){ }
         if (!accounts) try { accounts = await prov.request({ method:'accounts', params: [] }); } catch(_){ }
         if (!accounts) try { accounts = await tryRequest(prov, 'eth_accounts', []); } catch(_){ }
-        if (Array.isArray(accounts) && accounts.length>0) addr = accounts[0];
-        else if (accounts && accounts.success && Array.isArray(accounts.data) && accounts.data.length>0) addr = accounts.data[0];
+        const pl = normalizeAccounts(accounts); addr = pl[0] || addr;
       }
 
       if (addr){
@@ -383,7 +394,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       // Prefer direct globals if available
       const direct = (window.demos && typeof window.demos.request==='function') ? { info:{ name:'Demos Extension' }, provider: window.demos }
         : (window.ethereum && typeof window.ethereum.request==='function' ? { info:{ name:'Demos Extension (Ethereum)' }, provider: window.ethereum } : null);
-      if (direct){ await connectWithProvider(direct); return; }
+      if (direct){ await connectWithProvider(direct); updateLaunchButton(); return; }
       if (window.demosProviders && window.demosProviders.length > 0) { await connectWithProvider(window.demosProviders[0]); return; }
       await detectAndConnectExtension();
     });
