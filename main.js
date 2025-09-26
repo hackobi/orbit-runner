@@ -358,8 +358,18 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
         return true;
       }
 
-      // Try explicit connect then short polling for accounts (some wallets need this)
-      try { await prov.request({ method:'connect', params: [] }); } catch(_){ }
+      // Try explicit connect via various provider-specific methods
+      try { await prov.request({ method:'connect', params: [{ origin: location.origin }] }); } catch(_){ }
+      // Demos-specific alternative connect with providerId/uuid if available
+      try {
+        const pid = providerDetail?.provider?.providerId || providerDetail?.info?.uuid || prov?.providerId;
+        if (pid) await prov.request({ method:'demos_connect', params: [{ origin: location.origin, providerId: pid }] });
+      } catch(_){ }
+      // EIP-2255 style permissions
+      try { await prov.request({ method:'wallet_requestPermissions', params: [ { eth_accounts: {} } ] }); } catch(_){ }
+      try { await prov.request({ method:'requestPermissions', params: [ { eth_accounts: {} } ] }); } catch(_){ }
+
+      // Short polling for accounts (some wallets populate after connect)
       for (let i=0;i<10 && !addr;i++){
         await new Promise(r=>setTimeout(r, 300));
         try { if (typeof prov.accounts === 'function') accounts = await prov.accounts(); } catch(_){ }
