@@ -26,6 +26,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   let detectionRetryTimer = null;
   let detectionInProgress = false;
   let lastStatus = 'init'; // 'checking' | 'available' | 'unavailable'
+  let lastConnectClickAt = 0;
   let gameInitialized = false;
   if (!canvas) { console.error('Canvas not found'); return; }
   canvas.tabIndex = 0; canvas.style.outline = 'none'; canvas.focus();
@@ -420,6 +421,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     connectExtensionBtn.addEventListener('click', async () => {
       console.log('🔗 Extension connect button clicked');
       if (connecting) return; connecting = true;
+      lastConnectClickAt = Date.now();
       // Prefer direct globals if available
       const direct = (window.demos && typeof window.demos.request==='function') ? { info:{ name:'Demos Extension' }, provider: window.demos }
         : (window.ethereum && typeof window.ethereum.request==='function' ? { info:{ name:'Demos Extension (Ethereum)' }, provider: window.ethereum } : null);
@@ -437,6 +439,14 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   // When the provider announces itself, auto-detect and update UI (no auto-connect)
   window.addEventListener('demosAnnounceProvider', ()=>{ if (!providersDetected) detectAndConnectExtension(); });
+
+  // When focus returns (after extension popup), auto-run detection like Manual Detection would
+  window.addEventListener('focus', ()=>{
+    if (Date.now() - lastConnectClickAt < 10000){
+      detectAndConnectExtension();
+      scheduleDetectionRetry(5);
+    }
+  });
 
   if (disconnectBtn) {
     disconnectBtn.addEventListener('click', () => {
