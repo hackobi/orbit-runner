@@ -235,6 +235,20 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
   }
 
+  // Retry detection a few times to catch post-login injection
+  function scheduleDetectionRetry(tries=5){
+    if (tries <= 0) return;
+    setTimeout(async ()=>{
+      try{
+        await detectAndConnectExtension();
+      }finally{
+        if (!window.demosProviders || window.demosProviders.length===0){
+          scheduleDetectionRetry(tries-1);
+        }
+      }
+    }, 1000);
+  }
+
   // Resolve a request-capable provider from various shapes
   function resolveRequestProvider(detail){
     if (!detail) return null;
@@ -405,10 +419,14 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       const direct = (window.demos && typeof window.demos.request==='function') ? { info:{ name:'Demos Extension' }, provider: window.demos }
         : (window.ethereum && typeof window.ethereum.request==='function' ? { info:{ name:'Demos Extension (Ethereum)' }, provider: window.ethereum } : null);
       if (direct){ await connectWithProvider(direct); updateLaunchButton(); return; }
-      if (window.demosProviders && window.demosProviders.length > 0) { await connectWithProvider(window.demosProviders[0]); return; }
+      if (window.demosProviders && window.demosProviders.length > 0) { await connectWithProvider(window.demosProviders[0]); updateLaunchButton(); return; }
       await detectAndConnectExtension();
+      scheduleDetectionRetry(5);
     });
   }
+
+  // When the provider announces itself, auto-detect and update UI
+  window.addEventListener('demosAnnounceProvider', ()=>{ detectAndConnectExtension(); });
 
   if (disconnectBtn) {
     disconnectBtn.addEventListener('click', () => {
