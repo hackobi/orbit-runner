@@ -448,20 +448,53 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     connectExtensionBtn.addEventListener('click', async () => {
       console.log('🔗 Extension connect button clicked');
       if (connecting) return; connecting = true;
-      lastConnectClickAt = Date.now();
-      // Proactively request provider announcement (mimic Manual Detection)
-      try { window.dispatchEvent(new Event('demosRequestProvider')); } catch(_){ }
-      // Prefer direct globals if available
-      const direct = (window.demos && typeof window.demos.request==='function') ? { info:{ name:'Demos Extension' }, provider: window.demos }
-        : (window.ethereum && typeof window.ethereum.request==='function' ? { info:{ name:'Demos Extension (Ethereum)' }, provider: window.ethereum } : null);
-      try{
-        if (direct){ await connectWithProvider(direct); updateLaunchButton(); return; }
-        if (window.demosProviders && window.demosProviders.length > 0) { await connectWithProvider(window.demosProviders[0]); updateLaunchButton(); return; }
-        setStatus('checking');
-        await detectAndConnectExtension();
-        scheduleDetectionRetry(5);
-      } finally {
-        connecting = false;
+      // lastConnectClickAt = Date.now();
+      // // Proactively request provider announcement (mimic Manual Detection)
+      // try { window.dispatchEvent(new Event('demosRequestProvider')); } catch(_){ }
+      // // Prefer direct globals if available
+      // const direct = (window.demos && typeof window.demos.request==='function') ? { info:{ name:'Demos Extension' }, provider: window.demos }
+      //   : (window.ethereum && typeof window.ethereum.request==='function' ? { info:{ name:'Demos Extension (Ethereum)' }, provider: window.ethereum } : null);
+      // try{
+      //   if (direct){ await connectWithProvider(direct); updateLaunchButton(); return; }
+      //   if (window.demosProviders && window.demosProviders.length > 0) { await connectWithProvider(window.demosProviders[0]); updateLaunchButton(); return; }
+      //   setStatus('checking');
+      //   await detectAndConnectExtension();
+      //   scheduleDetectionRetry(5);
+      // } finally {
+      //   connecting = false;
+      // }
+      if (window.demosProviders.length > 0) {
+        const demosProviderDetail = window.demosProviders.find(
+          (p) =>
+            p.provider?.isDemos ||
+            p.provider?.isDemosWallet ||
+            p.info?.name?.toLowerCase().includes("demos")
+        );
+
+        if (!demosProviderDetail) {
+          alert("No Demos Wallet provider found (MetaMask is not supported).");
+          return;
+        }
+
+        try {
+          const provider = demosProviderDetail.provider;
+          const response = await provider.request({ method: "connect" });
+          console.log("response", response);
+
+          if (response.success) {
+            updateConnectedWallet(response.data.address, 1000);
+            return;
+          } else {
+            console.error("Failed to connect with Demos Extension");
+          }
+        } catch (err) {
+          console.error("Error during Demos connection:", err);
+        }
+        finally {
+            connecting = false;
+          }
+      } else {
+        alert("No Demos Wallet provider found");
       }
     });
   }
