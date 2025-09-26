@@ -422,6 +422,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       console.log('🔗 Extension connect button clicked');
       if (connecting) return; connecting = true;
       lastConnectClickAt = Date.now();
+      // Proactively request provider announcement (mimic Manual Detection)
+      try { window.dispatchEvent(new Event('demosRequestProvider')); } catch(_){ }
       // Prefer direct globals if available
       const direct = (window.demos && typeof window.demos.request==='function') ? { info:{ name:'Demos Extension' }, provider: window.demos }
         : (window.ethereum && typeof window.ethereum.request==='function' ? { info:{ name:'Demos Extension (Ethereum)' }, provider: window.ethereum } : null);
@@ -443,6 +445,8 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   // When focus returns (after extension popup), auto-run detection like Manual Detection would
   window.addEventListener('focus', ()=>{
     if (Date.now() - lastConnectClickAt < 10000){
+      // Proactively trigger provider announcement like the Manual Detection button
+      try { window.dispatchEvent(new Event('demosRequestProvider')); } catch(_){ }
       detectAndConnectExtension();
       scheduleDetectionRetry(5);
     }
