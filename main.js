@@ -18,15 +18,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   const connectedAddress = document.getElementById('connected-address');
   const connectedBalance = document.getElementById('connected-balance');
   const disconnectBtn = document.getElementById('disconnect-btn');
-  // Extra login methods
-  const useMnemonicBtn = document.getElementById('use-mnemonic-btn');
-  const guestBtn = document.getElementById('guest-btn');
-  const mnemonicModal = document.getElementById('mnemonic-modal');
-  const mnemonicInput = document.getElementById('mnemonic-input');
-  const mnemonicPassword = document.getElementById('mnemonic-password');
-  const mnemonicError = document.getElementById('mnemonic-error');
-  const mnemonicCancel = document.getElementById('mnemonic-cancel');
-  const mnemonicConnect = document.getElementById('mnemonic-connect');
+  // Extra login methods (removed: SDK mnemonic + guest)
   
   let walletAddress = '';
   let currentProvider = null;
@@ -487,66 +479,7 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
   });
 
-  // Guest and Mnemonic login flows
-  function openMnemonicModal(){ if (mnemonicModal) mnemonicModal.classList.remove('hidden'); }
-  function closeMnemonicModal(){ if (mnemonicModal) mnemonicModal.classList.add('hidden'); if (mnemonicError) mnemonicError.style.display='none'; }
-  if (useMnemonicBtn){ useMnemonicBtn.addEventListener('click', openMnemonicModal); }
-  if (mnemonicCancel){ mnemonicCancel.addEventListener('click', closeMnemonicModal); }
-  if (guestBtn){
-    guestBtn.addEventListener('click', ()=>{
-      walletAddress = 'guest-' + Math.random().toString(36).slice(2,10);
-      updateConnectedWallet(walletAddress, 0);
-      updateLaunchButton();
-    });
-  }
-
-  async function loadDemosWebSDK(){
-    const cdnSources = [
-      'https://cdn.jsdelivr.net/npm/@kynesyslabs/demosdk@latest/websdk/index.js',
-      'https://cdn.jsdelivr.net/npm/@kynesyslabs/demosdk/websdk/index.js',
-      'https://unpkg.com/@kynesyslabs/demosdk@latest/websdk/index.js',
-      'https://esm.sh/@kynesyslabs/demosdk/websdk'
-    ];
-    let lastErr = null;
-    for (const url of cdnSources){
-      try {
-        console.log('🔄 Loading Demos WebSDK from', url);
-        const mod = await import(/* @vite-ignore */ url);
-        const Demos = mod?.default || mod?.Demos || mod;
-        if (Demos && typeof Demos.connect === 'function') return Demos;
-      } catch (e){ lastErr = e; console.warn('CDN load failed', url, e); }
-    }
-    throw lastErr || new Error('Failed to load Demos WebSDK');
-  }
-
-  async function connectWithMnemonicSDK(mnemonic, password){
-    try{
-      if (!mnemonic || mnemonic.trim().split(/\s+/).length < 12){ throw new Error('Invalid mnemonic'); }
-      if (!password || password.length < 6){ throw new Error('Password too short (min 6 chars)'); }
-      // Lazy-load Demos SDK from CDN with fallbacks
-      const Demos = await loadDemosWebSDK();
-      const nodeUrl = 'https://node2.demos.sh';
-      await Demos.connect(nodeUrl);
-      await Demos.connectWallet(mnemonic.trim(), { password });
-      const addr = await Demos.getAddress();
-      walletAddress = String(addr||'');
-      updateConnectedWallet(walletAddress, 1000);
-      updateLaunchButton();
-      closeMnemonicModal();
-      return true;
-    }catch(err){
-      console.error('Mnemonic SDK connect failed', err);
-      if (mnemonicError){ mnemonicError.textContent = String(err?.message||err||'Failed to connect'); mnemonicError.style.display='block'; }
-      return false;
-    }
-  }
-  if (mnemonicConnect){
-    mnemonicConnect.addEventListener('click', async()=>{
-      const m = mnemonicInput && mnemonicInput.value || '';
-      const p = mnemonicPassword && mnemonicPassword.value || '';
-      await connectWithMnemonicSDK(m, p);
-    });
-  }
+  // Removed: Guest and Mnemonic login flows
 
   if (disconnectBtn) {
     disconnectBtn.addEventListener('click', () => {
