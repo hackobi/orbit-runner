@@ -279,6 +279,32 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
       };
     }
     if (cand && typeof cand.request === 'function') return cand;
+    // Shim providers that expose connect/accounts but no request()
+    if (cand && (typeof cand.accounts === 'function' || typeof cand.connect === 'function' || typeof cand.enable === 'function' || typeof cand.personal_sign === 'function')){
+      return {
+        request: async (arg1, arg2)=>{
+          const method = typeof arg1 === 'string' ? arg1 : (arg1?.method);
+          const params = typeof arg1 === 'string' ? (arg2||[]) : (arg1?.params||[]);
+          if (method === 'accounts' || method === 'eth_accounts' || method === 'demos_accounts'){
+            if (typeof cand.accounts === 'function') return await cand.accounts();
+            return [];
+          }
+          if (method === 'connect' || method === 'eth_requestAccounts' || method === 'demos_requestAccounts'){
+            if (typeof cand.connect === 'function') return await cand.connect(...params);
+            if (typeof cand.enable === 'function') return await cand.enable();
+            return [];
+          }
+          if (method === 'wallet_requestPermissions' || method === 'requestPermissions'){
+            if (typeof cand.requestPermissions === 'function') return await cand.requestPermissions(...params);
+            return [];
+          }
+          if (method === 'personal_sign' && typeof cand.personal_sign === 'function'){
+            return await cand.personal_sign(...params);
+          }
+          throw new Error('Unsupported method for this provider');
+        }
+      };
+    }
     if (window.demos && typeof window.demos.request === 'function') return window.demos;
     if (window.ethereum && (window.ethereum.isDemos || window.ethereum.isDemosWallet || (window.ethereum.providers?.some?.(p=>p.isDemos))) && typeof window.ethereum.request === 'function') return window.ethereum;
     if (window.injectproviderv3 && typeof window.injectproviderv3.request === 'function') return window.injectproviderv3;
@@ -474,12 +500,31 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
     });
   }
 
+  async function loadDemosWebSDK(){
+    const cdnSources = [
+      'https://cdn.jsdelivr.net/npm/@kynesyslabs/demosdk@latest/websdk/index.js',
+      'https://cdn.jsdelivr.net/npm/@kynesyslabs/demosdk/websdk/index.js',
+      'https://unpkg.com/@kynesyslabs/demosdk@latest/websdk/index.js',
+      'https://esm.sh/@kynesyslabs/demosdk/websdk'
+    ];
+    let lastErr = null;
+    for (const url of cdnSources){
+      try {
+        console.log('🔄 Loading Demos WebSDK from', url);
+        const mod = await import(/* @vite-ignore */ url);
+        const Demos = mod?.default || mod?.Demos || mod;
+        if (Demos && typeof Demos.connect === 'function') return Demos;
+      } catch (e){ lastErr = e; console.warn('CDN load failed', url, e); }
+    }
+    throw lastErr || new Error('Failed to load Demos WebSDK');
+  }
+
   async function connectWithMnemonicSDK(mnemonic, password){
     try{
       if (!mnemonic || mnemonic.trim().split(/\s+/).length < 12){ throw new Error('Invalid mnemonic'); }
       if (!password || password.length < 6){ throw new Error('Password too short (min 6 chars)'); }
-      // Lazy-load Demos SDK from CDN
-      const { default: Demos } = await import('https://unpkg.com/@kynesyslabs/demosdk/websdk/index.js');
+      // Lazy-load Demos SDK from CDN with fallbacks
+      const Demos = await loadDemosWebSDK();
       const nodeUrl = 'https://node2.demos.sh';
       await Demos.connect(nodeUrl);
       await Demos.connectWallet(mnemonic.trim(), { password });
