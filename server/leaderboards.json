@@ -29,6 +29,16 @@
       "asteroids": 0,
       "beltTimeSec": 20,
       "survivalSec": 1949
+    },
+    {
+      "ts": 1758832550816,
+      "uid": "d0rr3olhuyhmfzvhlsi",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 194
     }
   ],
   "kills": [
@@ -61,6 +71,16 @@
       "asteroids": 5,
       "beltTimeSec": 148,
       "survivalSec": 259
+    },
+    {
+      "ts": 1758832550816,
+      "uid": "d0rr3olhuyhmfzvhlsi",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 194
     }
   ],
   "asteroids": [
@@ -93,6 +113,16 @@
       "asteroids": 0,
       "beltTimeSec": 183,
       "survivalSec": 185
+    },
+    {
+      "ts": 1758832550816,
+      "uid": "d0rr3olhuyhmfzvhlsi",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 194
     }
   ],
   "belt": [
@@ -125,6 +155,16 @@
       "asteroids": 0,
       "beltTimeSec": 20,
       "survivalSec": 1949
+    },
+    {
+      "ts": 1758832550816,
+      "uid": "d0rr3olhuyhmfzvhlsi",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 194
     }
   ],
   "survival": [
@@ -149,6 +189,16 @@
       "survivalSec": 259
     },
     {
+      "ts": 1758832550816,
+      "uid": "d0rr3olhuyhmfzvhlsi",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 194
+    },
+    {
       "ts": 1757492837317,
       "uid": "tshliuqoswbmfdpuw8y",
       "name": "Tony",
@@ -160,6 +210,16 @@
     }
   ],
   "sessions": [
+    {
+      "ts": 1758832550816,
+      "uid": "d0rr3olhuyhmfzvhlsi",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 194
+    },
     {
       "ts": 1757493238326,
       "uid": "tshliuqoswbmfdpuw8y",

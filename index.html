@@ -21,6 +21,10 @@
         <button id="connect-extension-btn" class="wallet-btn" disabled>
           Connect Demos Extension
         </button>
+
+        <!-- Alternative login methods -->
+        <button id="use-mnemonic-btn" class="wallet-btn">Use Mnemonic (SDK)</button>
+        <button id="guest-btn" class="wallet-btn">Play as Guest</button>
         
         <div class="wallet-warning" id="extension-warning" style="display: none;">
           Demos extension not detected. Please install the extension or use another connection method.
@@ -52,6 +56,22 @@
   </div>
 
   <canvas id="gameCanvas"></canvas>
+
+  <!-- Mnemonic Modal -->
+  <div id="mnemonic-modal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-title">Use Mnemonic (SDK)</div>
+      <div class="modal-body">
+        <textarea id="mnemonic-input" class="modal-textarea" placeholder="Enter 12 or 24-word mnemonic..."></textarea>
+        <input id="mnemonic-password" type="password" class="modal-input" placeholder="Create a password to protect your wallet" />
+        <div id="mnemonic-error" class="modal-error" style="display:none;"></div>
+      </div>
+      <div class="modal-actions">
+        <button id="mnemonic-cancel" class="wallet-btn">Cancel</button>
+        <button id="mnemonic-connect" class="wallet-btn enabled">Connect</button>
+      </div>
+    </div>
+  </div>
 
   <script type="importmap">
   {
