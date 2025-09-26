@@ -21,6 +21,9 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   
   let walletAddress = '';
   let currentProvider = null;
+  let providersDetected = false;
+  let connecting = false;
+  let detectionRetryTimer = null;
   let gameInitialized = false;
   if (!canvas) { console.error('Canvas not found'); return; }
   canvas.tabIndex = 0; canvas.style.outline = 'none'; canvas.focus();
@@ -191,36 +194,14 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
 
         if (normalized.length > 0) {
           console.log('✅ Request-capable Demos providers:', normalized.length);
-          // Try first request-capable provider
-          const success = await connectWithProvider(normalized[0]);
-
-          if (success) {
-            if (extensionIndicator) {
-              extensionIndicator.className = 'status-indicator available';
-            }
-            if (extensionStatusText) {
-              extensionStatusText.textContent = 'Demos extension connected';
-            }
-            if (connectExtensionBtn) {
-              connectExtensionBtn.disabled = false;
-              connectExtensionBtn.classList.add('enabled');
-              connectExtensionBtn.textContent = 'Reconnect Extension';
-              console.log('✅ Connect button enabled');
-            }
-            if (extensionWarning) {
-              extensionWarning.style.display = 'none';
-            }
-          } else {
-            // Detection only; enable connect
-            if (extensionIndicator) extensionIndicator.className = 'status-indicator available';
-            if (extensionStatusText) extensionStatusText.textContent = 'Demos extension detected';
-            if (connectExtensionBtn) { connectExtensionBtn.disabled = false; connectExtensionBtn.classList.add('enabled'); }
-          }
-          
-          // Store filtered providers for manual connect
-          window.demosProviders = normalized;
+          // Detection only; enable connect (no auto-connect to avoid popup loops)
+          if (extensionIndicator) extensionIndicator.className = 'status-indicator available';
+          if (extensionStatusText) extensionStatusText.textContent = 'Demos extension detected';
+          if (connectExtensionBtn) { connectExtensionBtn.disabled = false; connectExtensionBtn.classList.add('enabled'); connectExtensionBtn.textContent = 'Connect Demos Extension'; }
+          if (extensionWarning) extensionWarning.style.display = 'none';
+          // Store filtered providers
+          window.demosProviders = normalized; providersDetected = true;
           console.log('✅ Providers stored:', window.demosProviders);
-          
         } else {
           console.log('⚠️ No Demos extension providers found');
           showExtensionNotDetected();
@@ -237,12 +218,13 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   // Retry detection a few times to catch post-login injection
   function scheduleDetectionRetry(tries=5){
-    if (tries <= 0) return;
-    setTimeout(async ()=>{
+    if (tries <= 0 || providersDetected) return;
+    clearTimeout(detectionRetryTimer);
+    detectionRetryTimer = setTimeout(async ()=>{
       try{
         await detectAndConnectExtension();
       }finally{
-        if (!window.demosProviders || window.demosProviders.length===0){
+        if (!providersDetected){
           scheduleDetectionRetry(tries-1);
         }
       }
@@ -415,18 +397,20 @@ import { TextGeometry } from 'https://unpkg.com/three@0.164.0/examples/jsm/geome
   if (connectExtensionBtn) {
     connectExtensionBtn.addEventListener('click', async () => {
       console.log('🔗 Extension connect button clicked');
+      if (connecting) return; connecting = true;
       // Prefer direct globals if available
       const direct = (window.demos && typeof window.demos.request==='function') ? { info:{ name:'Demos Extension' }, provider: window.demos }
         : (window.ethereum && typeof window.ethereum.request==='function' ? { info:{ name:'Demos Extension (Ethereum)' }, provider: window.ethereum } : null);
-      if (direct){ await connectWithProvider(direct); updateLaunchButton(); return; }
-      if (window.demosProviders && window.demosProviders.length > 0) { await connectWithProvider(window.demosProviders[0]); updateLaunchButton(); return; }
+      if (direct){ await connectWithProvider(direct); updateLaunchButton(); connecting=false; return; }
+      if (window.demosProviders && window.demosProviders.length > 0) { await connectWithProvider(window.demosProviders[0]); updateLaunchButton(); connecting=false; return; }
       await detectAndConnectExtension();
       scheduleDetectionRetry(5);
+      connecting = false;
     });
   }
 
-  // When the provider announces itself, auto-detect and update UI
-  window.addEventListener('demosAnnounceProvider', ()=>{ detectAndConnectExtension(); });
+  // When the provider announces itself, auto-detect and update UI (no auto-connect)
+  window.addEventListener('demosAnnounceProvider', ()=>{ providersDetected=false; detectAndConnectExtension(); });
 
   if (disconnectBtn) {
     disconnectBtn.addEventListener('click', () => {
