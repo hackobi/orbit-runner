@@ -11,7 +11,7 @@ window.detectDemosExtension = async function() {
   if (window.demos) {
     console.log('✅ Found window.demos:', window.demos);
     providers.push({
-      info: { name: 'Demos Extension', url: 'https://demoswallet.com' },
+      info: { name: 'Demos Extension', url: 'https://chromewebstore.google.com/detail/demos-wallet/nefongcpmdahjaijjkihgieiamoahcoo?pli=1' },
       provider: window.demos
     });
   }
@@ -24,7 +24,7 @@ window.detectDemosExtension = async function() {
     if (window.ethereum.isDemos || window.ethereum.isDemosWallet || 
         window.ethereum.providers?.some(p => p.isDemos)) {
       providers.push({
-        info: { name: 'Demos Extension (Ethereum)', url: 'https://demoswallet.com' },
+        info: { name: 'Demos Extension (Ethereum)', url: 'https://chromewebstore.google.com/detail/demos-wallet/nefongcpmdahjaijjkihgieiamoahcoo?pli=1' },
         provider: window.ethereum
       });
     } else {
@@ -37,7 +37,7 @@ window.detectDemosExtension = async function() {
     if (key.toLowerCase().includes('demos') && typeof window[key] === 'object') {
       console.log(`✅ Found Demos-related object: window.${key}`, window[key]);
       providers.push({
-        info: { name: `Demos Extension (${key})`, url: 'https://demoswallet.com' },
+        info: { name: `Demos Extension (${key})`, url: 'https://chromewebstore.google.com/detail/demos-wallet/nefongcpmdahjaijjkihgieiamoahcoo?pli=1' },
         provider: window[key]
       });
     }
@@ -47,7 +47,7 @@ window.detectDemosExtension = async function() {
   if (window.web3 && window.web3.currentProvider) {
     console.log('✅ Found web3 provider:', window.web3.currentProvider);
     providers.push({
-      info: { name: 'Demos Extension (Web3)', url: 'https://demoswallet.com' },
+      info: { name: 'Demos Extension (Web3)', url: 'https://chromewebstore.google.com/detail/demos-wallet/nefongcpmdahjaijjkihgieiamoahcoo?pli=1' },
       provider: window.web3.currentProvider
     });
   }
