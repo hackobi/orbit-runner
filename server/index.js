@@ -4,11 +4,14 @@ const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 const { randomUUID } = require('crypto');
+const { Demos } = require('@kynesyslabs/demosdk/websdk');
+const demos = new Demos();
 const app = express();
 const PORT = process.env.PORT || 8787;
 
 app.use(cors());
 app.use(express.json());
+app.use(express.static('.'));
 
 // In-memory store (persisted to disk)
 const DATA_PATH = path.join(__dirname, 'leaderboards.json');
@@ -72,6 +75,284 @@ app.post('/submit', (req, res)=>{
     }});
     res.json({ ok:true });
   } catch (e){ res.status(400).json({ ok:false, error:String(e) }); }
+});
+
+// Blockchain API endpoints
+let demosConnected = false;
+let walletConnected = false;
+
+// Connect to Demos network
+async function connectToDemos() {
+  if (demosConnected) return true;
+  
+  try {
+    console.log('🔗 Connecting to Demos network...');
+    await demos.connect('https://node2.demos.sh');
+    demosConnected = true;
+    console.log('✅ Connected to Demos network');
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to connect to Demos network:', error);
+    return false;
+  }
+}
+
+// Connect wallet for transactions (server wallet for coordination)
+async function connectWallet() {
+  if (walletConnected) return true;
+  
+  try {
+    console.log('👛 Connecting server wallet for coordination...');
+    
+    // Generate a new mnemonic for server-side wallet
+    const mnemonic = demos.newMnemonic();
+    console.log('📝 Generated server mnemonic:', mnemonic);
+    
+    // Connect wallet using mnemonic
+    await demos.connectWallet(mnemonic, { isSeed: true });
+    walletConnected = true;
+    
+    // Get wallet address
+    const address = demos.getAddress();
+    console.log('✅ Server wallet connected. Address:', address);
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Failed to connect server wallet:', error);
+    return false;
+  }
+}
+
+// Test blockchain connection (with server wallet for coordination)
+app.post('/blockchain/test', async (req, res) => {
+  try {
+    console.log('🧪 Testing blockchain connection...');
+    
+    // Test 1: Connect to network
+    const connected = await connectToDemos();
+    if (!connected) {
+      return res.status(500).json({ 
+        ok: false, 
+        error: 'Failed to connect to Demos network',
+        stage: 'network_connection'
+      });
+    }
+    
+    // Test 2: Connect server wallet for coordination
+    const walletOk = await connectWallet();
+    if (!walletOk) {
+      return res.status(500).json({ 
+        ok: false, 
+        error: 'Failed to connect server wallet',
+        stage: 'wallet_connection'
+      });
+    }
+    
+    // Test 3: Try a minimal storage transaction
+    let storageSuccess = false;
+    let storageError = null;
+    try {
+      const testData = new Uint8Array([1, 2, 3, 4, 5]);
+      const storageTx = await demos.store(testData);
+      console.log('✅ Storage transaction prepared:', storageTx);
+      storageSuccess = true;
+    } catch (error) {
+      console.error('❌ Storage transaction test failed:', error);
+      storageError = String(error);
+    }
+    
+    res.json({
+      ok: true,
+      network: connected,
+      wallet: walletOk,
+      storageTransaction: storageSuccess,
+      storageError: storageError,
+      message: 'Blockchain connection test completed - ready for player submissions'
+    });
+    
+  } catch (error) {
+    console.error('❌ Blockchain test failed:', error);
+    res.status(500).json({ 
+      ok: false, 
+      error: String(error),
+      stage: 'general_test'
+    });
+  }
+});
+
+// Validate signed stats before blockchain submission
+app.post('/blockchain/validate', async (req, res) => {
+  try {
+    const { stats, signature, playerAddress, nonce } = req.body;
+    
+    if (!stats || !signature || !playerAddress || !nonce) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'Missing required fields: stats, signature, playerAddress, nonce' 
+      });
+    }
+    
+    console.log('🔍 Validating signed stats from:', playerAddress);
+    
+    // Connect to network if not already connected
+    const connected = await connectToDemos();
+    if (!connected) {
+      return res.status(500).json({ 
+        ok: false, 
+        error: 'Failed to connect to Demos network' 
+      });
+    }
+    
+    // Create message to verify
+    const message = JSON.stringify({
+      game: 'Orbit Runner',
+      version: '1.0.0',
+      timestamp: stats.ts,
+      playerAddress: playerAddress,
+      stats: stats,
+      nonce: nonce
+    });
+    
+    // Verify the signature
+    const isValid = await demos.verifyMessage(message, signature, playerAddress);
+    
+    if (!isValid) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'Invalid signature' 
+      });
+    }
+    
+    // Additional server-side validation
+    const validationErrors = [];
+    
+    // Validate score ranges
+    if (stats.points > 10_000_000) validationErrors.push('Points too high');
+    if (stats.kills > stats.points / 100) validationErrors.push('Kill ratio inconsistent');
+    
+    // Validate time consistency
+    const gameTime = stats.survivalSec;
+    if (gameTime < 10 || gameTime > 3600) validationErrors.push('Game time unrealistic');
+    
+    // Validate achievement consistency
+    if (stats.asteroids > 0 && stats.survivalSec < 30) validationErrors.push('Asteroid achievement too fast');
+    
+    if (validationErrors.length > 0) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'Validation failed',
+        validationErrors: validationErrors
+      });
+    }
+    
+    console.log('✅ Stats validation passed for:', playerAddress);
+    
+    res.json({
+      ok: true,
+      valid: true,
+      message: 'Stats validated successfully',
+      nonce: nonce
+    });
+    
+  } catch (error) {
+    console.error('❌ Stats validation failed:', error);
+    res.status(500).json({ 
+      ok: false, 
+      error: String(error)
+    });
+  }
+});
+
+// Submit game stats to blockchain (player pays via client signature)
+app.post('/blockchain/submit', async (req, res) => {
+  try {
+    const { stats, signature, playerAddress, nonce, gameData, dataBytes } = req.body;
+    
+    if (!stats || !signature || !playerAddress || !nonce || !gameData) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'Missing required fields: stats, signature, playerAddress, nonce, gameData' 
+      });
+    }
+    
+    console.log('📊 Preparing blockchain submission for:', playerAddress);
+    
+    // Connect to network if not already connected
+    const connected = await connectToDemos();
+    if (!connected) {
+      return res.status(500).json({ 
+        ok: false, 
+        error: 'Failed to connect to Demos network' 
+      });
+    }
+    
+    // Connect server wallet for coordination
+    const walletOk = await connectWallet();
+    if (!walletOk) {
+      return res.status(500).json({ 
+        ok: false, 
+        error: 'Failed to connect server wallet for coordination' 
+      });
+    }
+    
+    // Verify the signature again for security
+    const message = JSON.stringify({
+      game: 'Orbit Runner',
+      version: '1.0.0',
+      timestamp: stats.ts,
+      playerAddress: playerAddress,
+      stats: stats,
+      nonce: nonce
+    });
+    
+    const isValid = await demos.verifyMessage(message, signature, playerAddress);
+    if (!isValid) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'Invalid signature' 
+      });
+    }
+    
+    console.log('✅ Signature verified, preparing data for blockchain...');
+    
+    // Convert data bytes back to Uint8Array for storage
+    const dataUint8Array = new Uint8Array(dataBytes);
+    
+    // Store the validated stats and prepare transaction data
+    const validatedStats = {
+      playerAddress: playerAddress,
+      gameData: gameData,
+      dataBytes: dataUint8Array,
+      signature: signature,
+      nonce: nonce,
+      timestamp: Date.now(),
+      status: 'pending_player_submission'
+    };
+    
+    console.log('✅ Stats validated and ready for player submission...');
+    
+    // Return the prepared transaction data for the player to sign and submit
+    res.json({
+      ok: true,
+      readyForSubmission: true,
+      message: 'Stats validated and ready for blockchain submission',
+      transactionData: {
+        data: Array.from(dataUint8Array), // Convert to regular array for JSON
+        message: message,
+        signature: signature,
+        playerAddress: playerAddress,
+        nonce: nonce
+      },
+      instructions: 'Player should now submit this data via their browser extension'
+    });
+    
+  } catch (error) {
+    console.error('❌ Blockchain submission preparation failed:', error);
+    res.status(500).json({ 
+      ok: false, 
+      error: String(error)
+    });
+  }
 });
 
 const server = app.listen(PORT, ()=> console.log(`Leaderboard API listening on :${PORT}`));

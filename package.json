@@ -13,9 +13,11 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "three": "^0.164.0",
-    "express": "^4.19.2",
+    "@kynesyslabs/demosdk": "^2.4.15",
     "cors": "^2.8.5",
-    "ws": "^8.18.0"
+    "express": "^4.19.2",
+    "three": "^0.164.0",
+    "ws": "^8.18.0",
+    "zustand": "^5.0.8"
   }
 }
