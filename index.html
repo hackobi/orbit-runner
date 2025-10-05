@@ -68,7 +68,8 @@
     }
   }
   </script>
-
+  
+  
   <!-- Load Three.js ESM directly from node_modules, then start the game -->
   <script type="module">
     // Point client to Railway API in production; keep localhost auto-detect for local dev
@@ -77,11 +78,15 @@
     }
     import * as THREE from 'https://unpkg.com/three@0.164.0/build/three.module.min.js';
     window.THREE = THREE;
+  </script>
+  
+  <!-- Demos Extension Detector (must load before main.js) -->
+  <script src="demos-extension-detector-v2.js"></script>
+  
+  <script type="module">
     // Cache-bust main.js so changes always load on refresh during development
     await import(`./main.js?cb=${Date.now()}`);
   </script>
   
-  <!-- Demos Extension Detector -->
-  <script src="demos-extension-detector-v2.js"></script>
-</body>
+  </body>
 </html>

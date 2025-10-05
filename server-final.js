@@ -12,6 +12,7 @@ const PORT = process.env.PORT || 8787;
 app.use(cors());
 app.use(express.json());
 app.use(express.static('.'));
+app.use('/node_modules', express.static('node_modules'));
 
 // Load Demos SDK after server starts to avoid blocking startup
 let demos = null;

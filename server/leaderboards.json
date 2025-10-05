@@ -1,6 +1,23 @@
 {
   "points": [
     {
+      "uid": "demos1player12345",
+      "name": "Orbit Runner",
+      "points": 2500,
+      "kills": 8,
+      "asteroids": 15,
+      "survivalSec": 240,
+      "beltTimeSec": 60,
+      "ts": 1759236482691,
+      "metadata": {
+        "difficulty": "hard",
+        "gameMode": "endless",
+        "submissionMethod": "DAHR",
+        "version": "1.0.0",
+        "gameId": "orbit-runner"
+      }
+    },
+    {
       "ts": 1759094799967,
       "uid": "7it3qq6dld6mg47mijg",
       "name": "Anon",
@@ -41,6 +58,30 @@
       "survivalSec": 436
     },
     {
+      "uid": "test123",
+      "name": "DAHR Test",
+      "points": 1000,
+      "kills": 0,
+      "asteroids": 0,
+      "survivalSec": 0,
+      "beltTimeSec": 0,
+      "ts": 1759236482691,
+      "metadata": {
+        "submissionMethod": "DAHR",
+        "gameId": "orbit-runner"
+      }
+    },
+    {
+      "ts": 1759178437191,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 220,
+      "kills": 0,
+      "asteroids": 2,
+      "beltTimeSec": 0,
+      "survivalSec": 85
+    },
+    {
       "ts": 1757492837317,
       "uid": "tshliuqoswbmfdpuw8y",
       "name": "Tony",
@@ -61,48 +102,35 @@
       "survivalSec": 240
     },
     {
-      "ts": 1757492521392,
-      "uid": "0z0txhjt0d6pmfdpo4gy",
-      "name": "lapupu",
-      "points": 29,
-      "kills": 0,
-      "asteroids": 0,
-      "beltTimeSec": 20,
-      "survivalSec": 1949
-    },
-    {
-      "ts": 1758832550816,
-      "uid": "d0rr3olhuyhmfzvhlsi",
-      "name": "Anon",
-      "points": 0,
-      "kills": 0,
-      "asteroids": 0,
-      "beltTimeSec": 0,
-      "survivalSec": 194
-    },
-    {
-      "ts": 1759050890923,
+      "ts": 1759269016236,
       "uid": "0gdntfke72h7mg3hhe3h",
       "name": "Anon",
-      "points": 0,
+      "points": 110,
       "kills": 0,
-      "asteroids": 0,
+      "asteroids": 1,
       "beltTimeSec": 0,
-      "survivalSec": 202
-    },
-    {
-      "ts": 1759096975128,
-      "uid": "7it3qq6dld6mg47mijg",
-      "name": "Anon",
-      "points": 0,
-      "kills": 0,
-      "asteroids": 0,
-      "beltTimeSec": 0,
-      "survivalSec": 47
+      "survivalSec": 133
     }
   ],
   "kills": [
     {
+      "uid": "demos1player12345",
+      "name": "Orbit Runner",
+      "points": 2500,
+      "kills": 8,
+      "asteroids": 15,
+      "survivalSec": 240,
+      "beltTimeSec": 60,
+      "ts": 1759236482691,
+      "metadata": {
+        "difficulty": "hard",
+        "gameMode": "endless",
+        "submissionMethod": "DAHR",
+        "version": "1.0.0",
+        "gameId": "orbit-runner"
+      }
+    },
+    {
       "ts": 1757492521392,
       "uid": "0z0txhjt0d6pmfdpo4gy",
       "name": "lapupu",
@@ -191,16 +219,6 @@
       "asteroids": 19,
       "beltTimeSec": 0,
       "survivalSec": 207
-    },
-    {
-      "ts": 1759132109785,
-      "uid": "0gdntfke72h7mg3hhe3h",
-      "name": "Anon",
-      "points": 110,
-      "kills": 0,
-      "asteroids": 1,
-      "beltTimeSec": 0,
-      "survivalSec": 240
     }
   ],
   "asteroids": [
@@ -235,6 +253,23 @@
       "survivalSec": 207
     },
     {
+      "uid": "demos1player12345",
+      "name": "Orbit Runner",
+      "points": 2500,
+      "kills": 8,
+      "asteroids": 15,
+      "survivalSec": 240,
+      "beltTimeSec": 60,
+      "ts": 1759236482691,
+      "metadata": {
+        "difficulty": "hard",
+        "gameMode": "endless",
+        "submissionMethod": "DAHR",
+        "version": "1.0.0",
+        "gameId": "orbit-runner"
+      }
+    },
+    {
       "ts": 1757493238326,
       "uid": "tshliuqoswbmfdpuw8y",
       "name": "Tony",
@@ -243,6 +278,16 @@
       "asteroids": 5,
       "beltTimeSec": 148,
       "survivalSec": 259
+    },
+    {
+      "ts": 1759178437191,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 220,
+      "kills": 0,
+      "asteroids": 2,
+      "beltTimeSec": 0,
+      "survivalSec": 85
     },
     {
       "ts": 1759132109785,
@@ -255,54 +300,34 @@
       "survivalSec": 240
     },
     {
-      "ts": 1757492521392,
-      "uid": "0z0txhjt0d6pmfdpo4gy",
-      "name": "lapupu",
-      "points": 29,
-      "kills": 0,
-      "asteroids": 0,
-      "beltTimeSec": 20,
-      "survivalSec": 1949
-    },
-    {
-      "ts": 1757492837317,
-      "uid": "tshliuqoswbmfdpuw8y",
-      "name": "Tony",
-      "points": 191,
-      "kills": 0,
-      "asteroids": 0,
-      "beltTimeSec": 183,
-      "survivalSec": 185
-    },
-    {
-      "ts": 1758832550816,
-      "uid": "d0rr3olhuyhmfzvhlsi",
-      "name": "Anon",
-      "points": 0,
-      "kills": 0,
-      "asteroids": 0,
-      "beltTimeSec": 0,
-      "survivalSec": 194
-    },
-    {
-      "ts": 1759050890923,
+      "ts": 1759269016236,
       "uid": "0gdntfke72h7mg3hhe3h",
       "name": "Anon",
-      "points": 0,
+      "points": 110,
       "kills": 0,
-      "asteroids": 0,
+      "asteroids": 1,
       "beltTimeSec": 0,
-      "survivalSec": 202
+      "survivalSec": 133
     },
     {
-      "ts": 1759096975128,
-      "uid": "7it3qq6dld6mg47mijg",
+      "ts": 1759269951417,
+      "uid": "0gdntfke72h7mg3hhe3h",
       "name": "Anon",
-      "points": 0,
+      "points": 110,
       "kills": 0,
-      "asteroids": 0,
+      "asteroids": 1,
       "beltTimeSec": 0,
-      "survivalSec": 47
+      "survivalSec": 204
+    },
+    {
+      "ts": 1759313302529,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 110,
+      "kills": 0,
+      "asteroids": 1,
+      "beltTimeSec": 0,
+      "survivalSec": 93
     }
   ],
   "belt": [
@@ -327,6 +352,23 @@
       "survivalSec": 259
     },
     {
+      "uid": "demos1player12345",
+      "name": "Orbit Runner",
+      "points": 2500,
+      "kills": 8,
+      "asteroids": 15,
+      "survivalSec": 240,
+      "beltTimeSec": 60,
+      "ts": 1759236482691,
+      "metadata": {
+        "difficulty": "hard",
+        "gameMode": "endless",
+        "submissionMethod": "DAHR",
+        "version": "1.0.0",
+        "gameId": "orbit-runner"
+      }
+    },
+    {
       "ts": 1757492521392,
       "uid": "0z0txhjt0d6pmfdpo4gy",
       "name": "lapupu",
@@ -395,16 +437,6 @@
       "asteroids": 19,
       "beltTimeSec": 0,
       "survivalSec": 207
-    },
-    {
-      "ts": 1759132109785,
-      "uid": "0gdntfke72h7mg3hhe3h",
-      "name": "Anon",
-      "points": 110,
-      "kills": 0,
-      "asteroids": 1,
-      "beltTimeSec": 0,
-      "survivalSec": 240
     }
   ],
   "survival": [
@@ -429,6 +461,16 @@
       "survivalSec": 436
     },
     {
+      "ts": 1759173194039,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 361
+    },
+    {
       "ts": 1759094799967,
       "uid": "7it3qq6dld6mg47mijg",
       "name": "Anon",
@@ -449,6 +491,33 @@
       "survivalSec": 259
     },
     {
+      "uid": "0xc7cc633eb31b8a055f8bf9160ade04184df47f5a1c690294dd50e74999dbd5a4",
+      "name": "DAHR Player",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "survivalSec": 257,
+      "beltTimeSec": 0,
+      "ts": 1759252334039,
+      "metadata": {
+        "version": "1.0.0",
+        "game": "Demos Orbit Runner 3D",
+        "roundDuration": 180,
+        "submissionMethod": "DAHR",
+        "gameId": "orbit-runner"
+      }
+    },
+    {
+      "ts": 1759252332527,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 256
+    },
+    {
       "ts": 1759132109785,
       "uid": "0gdntfke72h7mg3hhe3h",
       "name": "Anon",
@@ -459,6 +528,23 @@
       "survivalSec": 240
     },
     {
+      "uid": "demos1player12345",
+      "name": "Orbit Runner",
+      "points": 2500,
+      "kills": 8,
+      "asteroids": 15,
+      "survivalSec": 240,
+      "beltTimeSec": 60,
+      "ts": 1759236482691,
+      "metadata": {
+        "difficulty": "hard",
+        "gameMode": "endless",
+        "submissionMethod": "DAHR",
+        "version": "1.0.0",
+        "gameId": "orbit-runner"
+      }
+    },
+    {
       "ts": 1759098017806,
       "uid": "7it3qq6dld6mg47mijg",
       "name": "Anon",
@@ -467,49 +553,271 @@
       "asteroids": 19,
       "beltTimeSec": 0,
       "survivalSec": 207
+    }
+  ],
+  "sessions": [
+    {
+      "ts": 1759313302529,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 110,
+      "kills": 0,
+      "asteroids": 1,
+      "beltTimeSec": 0,
+      "survivalSec": 93
     },
     {
-      "ts": 1759050890923,
+      "ts": 1759310552454,
       "uid": "0gdntfke72h7mg3hhe3h",
       "name": "Anon",
       "points": 0,
       "kills": 0,
       "asteroids": 0,
       "beltTimeSec": 0,
-      "survivalSec": 202
+      "survivalSec": 28
     },
     {
-      "ts": 1758832550816,
-      "uid": "d0rr3olhuyhmfzvhlsi",
+      "ts": 1759308074055,
+      "uid": "0gdntfke72h7mg3hhe3h",
       "name": "Anon",
       "points": 0,
       "kills": 0,
       "asteroids": 0,
       "beltTimeSec": 0,
-      "survivalSec": 194
+      "survivalSec": 64
     },
     {
-      "ts": 1757492837317,
-      "uid": "tshliuqoswbmfdpuw8y",
-      "name": "Tony",
-      "points": 191,
-      "kills": 0,
-      "asteroids": 0,
-      "beltTimeSec": 183,
-      "survivalSec": 185
-    },
-    {
-      "ts": 1759096975128,
-      "uid": "7it3qq6dld6mg47mijg",
+      "ts": 1759270570298,
+      "uid": "0gdntfke72h7mg3hhe3h",
       "name": "Anon",
       "points": 0,
       "kills": 0,
       "asteroids": 0,
       "beltTimeSec": 0,
-      "survivalSec": 47
-    }
-  ],
-  "sessions": [
+      "survivalSec": 37
+    },
+    {
+      "ts": 1759269951417,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 110,
+      "kills": 0,
+      "asteroids": 1,
+      "beltTimeSec": 0,
+      "survivalSec": 204
+    },
+    {
+      "uid": "0xc7cc633eb31b8a055f8bf9160ade04184df47f5a1c690294dd50e74999dbd5a4",
+      "name": "DAHR Player",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "survivalSec": 141,
+      "beltTimeSec": 0,
+      "ts": 1759269628675,
+      "metadata": {
+        "version": "1.0.0",
+        "game": "Demos Orbit Runner 3D",
+        "roundDuration": 180,
+        "submissionMethod": "DAHR",
+        "gameId": "orbit-runner"
+      }
+    },
+    {
+      "ts": 1759269624305,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 136
+    },
+    {
+      "ts": 1759269016236,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 110,
+      "kills": 0,
+      "asteroids": 1,
+      "beltTimeSec": 0,
+      "survivalSec": 133
+    },
+    {
+      "uid": "0xc7cc633eb31b8a055f8bf9160ade04184df47f5a1c690294dd50e74999dbd5a4",
+      "name": "DAHR Player",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "survivalSec": 53,
+      "beltTimeSec": 0,
+      "ts": 1759268401834,
+      "metadata": {
+        "version": "1.0.0",
+        "game": "Demos Orbit Runner 3D",
+        "roundDuration": 180,
+        "submissionMethod": "DAHR",
+        "gameId": "orbit-runner"
+      }
+    },
+    {
+      "ts": 1759268400486,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 52
+    },
+    {
+      "uid": "0xc7cc633eb31b8a055f8bf9160ade04184df47f5a1c690294dd50e74999dbd5a4",
+      "name": "DAHR Player",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "survivalSec": 257,
+      "beltTimeSec": 0,
+      "ts": 1759252334039,
+      "metadata": {
+        "version": "1.0.0",
+        "game": "Demos Orbit Runner 3D",
+        "roundDuration": 180,
+        "submissionMethod": "DAHR",
+        "gameId": "orbit-runner"
+      }
+    },
+    {
+      "ts": 1759252332527,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 256
+    },
+    {
+      "ts": 1759243468372,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 33
+    },
+    {
+      "ts": 1759239663525,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 48
+    },
+    {
+      "ts": 1759236942323,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 62
+    },
+    {
+      "uid": "demos1player12345",
+      "name": "Orbit Runner",
+      "points": 2500,
+      "kills": 8,
+      "asteroids": 15,
+      "survivalSec": 240,
+      "beltTimeSec": 60,
+      "ts": 1759236482691,
+      "metadata": {
+        "difficulty": "hard",
+        "gameMode": "endless",
+        "submissionMethod": "DAHR",
+        "version": "1.0.0",
+        "gameId": "orbit-runner"
+      }
+    },
+    {
+      "uid": "test123",
+      "name": "DAHR Test",
+      "points": 1000,
+      "kills": 0,
+      "asteroids": 0,
+      "survivalSec": 0,
+      "beltTimeSec": 0,
+      "ts": 1759236482691,
+      "metadata": {
+        "submissionMethod": "DAHR",
+        "gameId": "orbit-runner"
+      }
+    },
+    {
+      "ts": 1759180743856,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 36
+    },
+    {
+      "ts": 1759179621344,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 26
+    },
+    {
+      "ts": 1759179220718,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 49
+    },
+    {
+      "ts": 1759178437191,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 220,
+      "kills": 0,
+      "asteroids": 2,
+      "beltTimeSec": 0,
+      "survivalSec": 85
+    },
+    {
+      "ts": 1759176873972,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 195
+    },
+    {
+      "ts": 1759173194039,
+      "uid": "0gdntfke72h7mg3hhe3h",
+      "name": "Anon",
+      "points": 0,
+      "kills": 0,
+      "asteroids": 0,
+      "beltTimeSec": 0,
+      "survivalSec": 361
+    },
     {
       "ts": 1759132109785,
       "uid": "0gdntfke72h7mg3hhe3h",

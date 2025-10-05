@@ -12,6 +12,7 @@ const PORT = process.env.PORT || 8787;
 app.use(cors());
 app.use(express.json());
 app.use(express.static('.'));
+app.use('/node_modules', express.static('../node_modules'));
 
 // In-memory store (persisted to disk)
 const DATA_PATH = path.join(__dirname, 'leaderboards.json');
@@ -43,6 +44,110 @@ app.get('/health', (_req, res)=> res.json({ ok:true }));
 app.get('/leaderboards', (_req, res)=> res.json({
   points: top.points, kills: top.kills, asteroids: top.asteroids, belt: top.belt, survival: top.survival
 }));
+
+// DAHR Score Submission Endpoint
+app.post('/api/scores/submit', async (req, res) => {
+  try {
+    const { gameId, playerAddress, playerName, timestamp, stats, metadata } = req.body;
+    
+    console.log('📊 DAHR score submission received:', {
+      gameId,
+      playerAddress,
+      playerName,
+      timestamp,
+      stats,
+      metadata
+    });
+    
+    // Validate required fields
+    if (!playerAddress || !stats || !gameId) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Missing required fields: playerAddress, stats, or gameId'
+      });
+    }
+    
+    // Validate score data
+    const validatedStats = {
+      points: Math.max(0, Math.min(10_000_000, Number(stats.points || 0))),
+      kills: Math.max(0, Math.min(1000, Number(stats.kills || 0))),
+      asteroidsDestroyed: Math.max(0, Math.min(1000, Number(stats.asteroidsDestroyed || 0))),
+      survivalTime: Math.max(0, Number(stats.survivalTime || 0)),
+      beltTime: Math.max(0, Number(stats.beltTime || 0))
+    };
+    
+    // Create submission record
+    const submission = {
+      uid: playerAddress,
+      name: playerName || 'DAHR Player',
+      points: validatedStats.points,
+      kills: validatedStats.kills,
+      asteroids: validatedStats.asteroidsDestroyed,
+      survivalSec: validatedStats.survivalTime,
+      beltTimeSec: validatedStats.beltTime,
+      ts: timestamp || Date.now(),
+      metadata: {
+        ...metadata,
+        submissionMethod: 'DAHR',
+        gameId: gameId
+      }
+    };
+    
+    // Add to leaderboards
+    Object.keys(top).forEach(category => {
+      const arr = top[category];
+      const score = submission[category === 'survival' ? 'survivalSec' : 
+                       category === 'belt' ? 'beltTimeSec' : 
+                       category === 'asteroids' ? 'asteroids' : category];
+      if (typeof score === 'number' && score > 0) {
+        arr.push(submission);
+        arr.sort((a, b) => b[category === 'survival' ? 'survivalSec' : 
+                            category === 'belt' ? 'beltTimeSec' : 
+                            category === 'asteroids' ? 'asteroids' : category] - 
+                        a[category === 'survival' ? 'survivalSec' : 
+                            category === 'belt' ? 'beltTimeSec' : 
+                            category === 'asteroids' ? 'asteroids' : category]);
+        if (arr.length > 100) arr.length = 100; // Keep top 100
+      }
+    });
+    
+    // Also add to sessions
+    top.sessions.unshift(submission);
+    if (top.sessions.length > 100) top.sessions.length = 100;
+    
+    console.log('✅ DAHR score submission processed successfully:', {
+      playerAddress: submission.uid,
+      name: submission.name,
+      points: submission.points,
+      kills: submission.kills,
+      asteroids: submission.asteroids
+    });
+    
+    // Return success response with DAHR-specific data
+    res.json({
+      ok: true,
+      message: 'Score submitted successfully via DAHR',
+      submission: {
+        playerAddress: submission.uid,
+        playerName: submission.name,
+        score: submission.points,
+        timestamp: submission.ts,
+        ranking: top.points.findIndex(s => s.uid === playerAddress) + 1
+      },
+      leaderboardUpdate: {
+        totalSubmissions: top.sessions.length,
+        yourRanking: top.points.findIndex(s => s.uid === playerAddress) + 1
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ DAHR score submission error:', error);
+    res.status(500).json({
+      ok: false,
+      error: `DAHR submission failed: ${error.message}`
+    });
+  }
+});
 
 app.post('/submit', (req, res)=>{
   const s = req.body||{};
@@ -176,6 +281,59 @@ app.post('/blockchain/test', async (req, res) => {
       ok: false, 
       error: String(error),
       stage: 'general_test'
+    });
+  }
+});
+
+// DAHR - Data Access Handling Request endpoint
+app.post('/blockchain/dahr', async (req, res) => {
+  try {
+    const { playerAddress, gameData } = req.body;
+    
+    if (!playerAddress || !gameData) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: 'Missing playerAddress or gameData' 
+      });
+    }
+    
+    console.log('🔐 Generating DAHR for:', playerAddress);
+    
+    // Generate secure transaction token
+    const token = require('crypto').randomUUID();
+    
+    // Create DAHR response
+    const dahrResponse = {
+      ok: true,
+      token: token,
+      playerAddress: playerAddress,
+      expiresAt: Date.now() + (15 * 60 * 1000), // 15 minutes
+      instructions: {
+        title: 'Blockchain Transaction Approval',
+        message: 'Approve the transaction in your Demos browser extension to submit your game stats to the blockchain.',
+        steps: [
+          '1. Open your Demos browser extension',
+          '2. Review the transaction details',
+          '3. Approve the transaction',
+          '4. Return to the game to see confirmation'
+        ]
+      },
+      transactionData: {
+        game: 'Orbit Runner',
+        version: '1.0.0',
+        timestamp: gameData.ts || Date.now(),
+        stats: gameData.stats || {},
+        dataType: 'game-stats'
+      }
+    };
+    
+    res.json(dahrResponse);
+    
+  } catch (error) {
+    console.error('❌ DAHR generation failed:', error);
+    res.status(500).json({ 
+      ok: false, 
+      error: String(error) 
     });
   }
 });
