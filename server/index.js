@@ -560,29 +560,24 @@ app.post("/blockchain/submit", async (req, res) => {
     // Ensure server wallet has funds before attempting a tx
     try {
       const address = demos.getAddress();
-      const balance = await demos.getBalance(address);
-      let numericBalance = 0;
-      if (typeof balance === "number") numericBalance = balance;
-      else if (typeof balance === "string")
-        numericBalance = parseFloat(balance);
-      else if (balance && typeof balance.toNumber === "function")
-        numericBalance = balance.toNumber();
-      else numericBalance = Number(balance || 0);
-      // Require at least 1 DEM to cover network fee
-      if (!Number.isFinite(numericBalance) || numericBalance < 1) {
+      const info = await demos.getAddressInfo(address);
+      const balanceBig = info?.balance ?? 0n;
+      if (typeof balanceBig !== "bigint" || balanceBig <= 0n) {
         return res.status(402).json({
           ok: false,
           error: "Insufficient server wallet funds",
           address,
-          balance: balance ?? 0,
+          balance: balanceBig.toString(),
         });
       }
     } catch (e) {
-      console.warn(
-        "⚠️ Could not fetch server wallet balance:",
+      console.error(
+        "❌ Failed to fetch server wallet balance:",
         e?.message || e
       );
-      // Continue; node will reject on broadcast if actually unfunded
+      return res
+        .status(500)
+        .json({ ok: false, error: "Failed to fetch server wallet balance" });
     }
 
     // Build and broadcast the storage transaction server-side (DAHR)
@@ -600,15 +595,22 @@ app.post("/blockchain/submit", async (req, res) => {
     // Confirm and broadcast using server wallet; extract tx hash
     try {
       const validity = await demos.confirm(tx);
+      // Normalize possible hash formats
+      const normalizeHash = (h) => {
+        if (!h || typeof h !== "string") return null;
+        const m = h.match(/^(0x)?([0-9a-fA-F]{64})$/);
+        return m ? (m[1] ? h : "0x" + m[2]) : null;
+      };
       // Prefer the transaction hash from confirmation payload or the signed tx
-      let hash =
+      let hash = normalizeHash(
         (validity &&
           validity.response &&
           validity.response.data &&
           validity.response.data.transaction &&
           validity.response.data.transaction.hash) ||
-        tx?.hash ||
-        null;
+          tx?.hash ||
+          null
+      );
       const sendRes = await demos.broadcast(validity);
       const r = sendRes && sendRes.response ? sendRes.response : null;
       if (r && typeof r === "object") {
@@ -646,6 +648,20 @@ app.post("/blockchain/submit", async (req, res) => {
 const server = app.listen(PORT, () =>
   console.log(`Leaderboard API listening on :${PORT}`)
 );
+
+// Eagerly connect on boot to print the server wallet address
+(async () => {
+  try {
+    await connectToDemos();
+    const ok = await connectWallet();
+    if (ok) {
+      const addr = demos.getAddress();
+      console.log("💳 Server wallet ready. Address:", addr);
+    }
+  } catch (e) {
+    console.warn("⚠️ Server wallet not connected at boot:", e?.message || e);
+  }
+})();
 
 // Leaderboards WS on root path; Multiplayer WS on /mp
 const lbWss = new WebSocketServer({ noServer: true });

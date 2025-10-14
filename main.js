@@ -986,16 +986,18 @@ async function initializeDemosSDK() {
         const response = await submitResponse.json();
         console.log("✅ [STAGE 5] DAHR submission response:", response);
 
-        // If server prepared a transaction for broadcast, submit it via the wallet
         if (response && response.ok && response.txHash) {
+          const txHash = response.txHash || "";
+          const txId = txHash.replace(/^0x/, "");
+
           try {
             if (endMsg) {
               endMsg.innerHTML = `
                 <div style="color: #4ade80;">✅ Stats submitted to Demos Blockchain!</div>
                 <div style="font-size: 10px; opacity: 0.6; margin-top: 2px;">Status: ✅ Confirmed</div>
-                <div style="font-size: 10px; opacity: 0.6; margin-top: 2px;">Transaction Hash: ${response.txHash}</div>
+                <div style="font-size: 10px; opacity: 0.6; margin-top: 2px;">Transaction Hash: ${txHash}</div>
                 <div style="font-size: 9px; opacity: 0.5; margin-top: 1px;">
-                  <a href="https://explorer.demos.sh/transactions/${response.txHash}" target="_blank" style="color: #a78bfa;">View on Demos Explorer</a>
+                  <a href="https://explorer.demos.sh/transactions/${txId}" target="_blank" style="color: #a78bfa;">View on Demos Explorer</a>
                 </div>
               `;
             }
