@@ -995,7 +995,7 @@ async function initializeDemosSDK() {
               endMsg.innerHTML = `
                 <div style="color: #4ade80;">✅ Stats submitted to Demos Blockchain!</div>
                 <div style="font-size: 10px; opacity: 0.6; margin-top: 2px;">Status: ✅ Confirmed</div>
-                <div style="font-size: 10px; opacity: 0.6; margin-top: 2px;">Transaction Hash: ${txHash}</div>
+                <div style="font-size: 10px; opacity: 0.6; margin-top: 2px;">Transaction Hash: ${txId}</div>
                 <div style="font-size: 9px; opacity: 0.5; margin-top: 1px;">
                   <a href="https://explorer.demos.sh/transactions/${txId}" target="_blank" style="color: #a78bfa;">View on Demos Explorer</a>
                 </div>
