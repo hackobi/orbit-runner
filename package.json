@@ -13,7 +13,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@kynesyslabs/demosdk": "^2.4.15",
+    "@kynesyslabs/demosdk": "^2.4.16",
     "cors": "^2.8.5",
     "express": "^4.19.2",
     "three": "^0.164.0",

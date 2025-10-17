@@ -1,38 +1,152 @@
-html, body {
-  margin: 0; overflow: hidden; background: linear-gradient(160deg,#030a1a,#0a1a30);
-  width: 100%; height: 100%;
+html,
+body {
+  margin: 0;
+  overflow: hidden;
+  background: linear-gradient(160deg, #030a1a, #0a1a30);
+  width: 100%;
+  height: 100%;
   font-family: Arial, Helvetica, sans-serif;
   color: #fff;
 }
-#welcome-screen.hidden, .hidden { display: none; }
-.welcome-container { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
-.welcome-card { max-width: 400px; width: calc(100% - 40px); padding: 40px; text-align: center; background: rgba(0,0,0,0.8); border: 2px solid #47e6ff; border-radius: 15px; box-shadow: 0 0 30px rgba(71,230,255,0.3); backdrop-filter: blur(6px); }
-.welcome-emoji { font-size: 3rem; margin-bottom: 14px; filter: drop-shadow(0 0 6px rgba(71,230,255,0.6)); }
-.welcome-title { font-size: 2.5rem; color:#47e6ff; margin: 0 0 6px 0; line-height: 1.1; }
-.welcome-sub { font-size: 1.2rem; color:#888; margin:0 0 24px 0; font-weight: 600; }
-.welcome-input { width: 100%; padding: 15px; background: rgba(0,0,0,0.6); border: 2px solid #47e6ff; color:#fff; border-radius:8px; font-size:16px; margin-bottom: 16px; outline: none; transition: box-shadow .2s ease, border-color .2s ease; box-sizing: border-box; display: block; }
-.welcome-input::placeholder { color:#666; }
-.welcome-input:focus { box-shadow: 0 0 0 6px rgba(71,230,255,0.15), 0 0 20px rgba(71,230,255,0.25); border-color:#7ff0ff; }
-.welcome-btn { width: 100%; padding: 15px; border: none; border-radius:8px; font-size:16px; font-weight:700; background:#666; color:#fff; transition: background-color .25s ease, transform .06s ease; cursor: not-allowed; box-sizing: border-box; display: block; }
-.welcome-btn.enabled { background:#47e6ff; cursor: pointer; }
-.welcome-btn.enabled:hover { background:#6feeff; }
-.welcome-btn.enabled:active { transform: translateY(1px); }
-.welcome-desc { font-size:14px; color:#aaa; line-height:1.5; margin-top:20px; }
+#welcome-screen.hidden,
+.hidden {
+  display: none;
+}
+.welcome-container {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.welcome-card {
+  max-width: 400px;
+  width: calc(100% - 40px);
+  padding: 40px;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.8);
+  border: 2px solid #47e6ff;
+  border-radius: 15px;
+  box-shadow: 0 0 30px rgba(71, 230, 255, 0.3);
+  backdrop-filter: blur(6px);
+}
+.welcome-emoji {
+  font-size: 3rem;
+  margin-bottom: 14px;
+  filter: drop-shadow(0 0 6px rgba(71, 230, 255, 0.6));
+}
+.welcome-title {
+  font-size: 2.5rem;
+  color: #47e6ff;
+  margin: 0 0 6px 0;
+  line-height: 1.1;
+}
+.welcome-sub {
+  font-size: 1.2rem;
+  color: #888;
+  margin: 0 0 24px 0;
+  font-weight: 600;
+}
+.welcome-input {
+  width: 100%;
+  padding: 15px;
+  background: rgba(0, 0, 0, 0.6);
+  border: 2px solid #47e6ff;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 16px;
+  margin-bottom: 16px;
+  outline: none;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  box-sizing: border-box;
+  display: block;
+}
+.welcome-input::placeholder {
+  color: #666;
+}
+.welcome-input:focus {
+  box-shadow: 0 0 0 6px rgba(71, 230, 255, 0.15),
+    0 0 20px rgba(71, 230, 255, 0.25);
+  border-color: #7ff0ff;
+}
+.welcome-btn {
+  width: 100%;
+  padding: 15px;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  background: #666;
+  color: #fff;
+  transition: background-color 0.25s ease, transform 0.06s ease;
+  cursor: not-allowed;
+  box-sizing: border-box;
+  display: block;
+}
+.welcome-btn.enabled {
+  background: #47e6ff;
+  cursor: pointer;
+}
+.welcome-btn.enabled:hover {
+  background: #6feeff;
+}
+.welcome-btn.enabled:active {
+  transform: translateY(1px);
+}
+.welcome-desc {
+  font-size: 14px;
+  color: #aaa;
+  line-height: 1.5;
+  margin-top: 20px;
+}
 /* mnemonic modal styles removed */
 #gameCanvas {
   display: none;
-  width: 100%; height: 100%;
+  width: 100%;
+  height: 100%;
 }
-#hud { position: absolute; top: 10px; left: 10px; font-size: 1.2rem; color: #0ff; display: none; }
-#help { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); font-size: 0.95rem; color: #ccc; opacity: 0.85; background: rgba(0,0,0,0.35); padding: 6px 10px; border-radius: 6px; user-select: none; display: none; }
+#hud {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  font-size: 1.2rem;
+  color: #0ff;
+  display: none;
+}
+#help {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.95rem;
+  color: #ccc;
+  opacity: 0.85;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 6px 10px;
+  border-radius: 6px;
+  user-select: none;
+  display: none;
+}
 #compass {
-  position: absolute; top: 10px; right: 12px; width: 70px; height: 70px;
-  border: 2px solid rgba(255,255,255,0.5); border-radius: 50%;
-  box-shadow: 0 0 8px rgba(0,255,255,0.3) inset; opacity: 0.9;
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 70px;
+  height: 70px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(0, 255, 255, 0.3) inset;
+  opacity: 0.9;
 }
 #compass .needle {
-  position: absolute; top: 50%; left: 50%; width: 2px; height: 28px;
-  background: #ff6666; transform-origin: bottom center; transform: rotate(0deg) translate(-50%, -100%);
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 28px;
+  background: #ff6666;
+  transform-origin: bottom center;
+  transform: rotate(0deg) translate(-50%, -100%);
 }
 
 /* Wallet Connection Styles */
@@ -46,7 +160,7 @@ html, body {
   align-items: center;
   margin-bottom: 15px;
   padding: 10px;
-  background: rgba(0,0,0,0.4);
+  background: rgba(0, 0, 0, 0.4);
   border-radius: 6px;
 }
 
@@ -72,9 +186,15 @@ html, body {
 }
 
 @keyframes pulse {
-  0% { opacity: 1; }
-  50% { opacity: 0.5; }
-  100% { opacity: 1; }
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 .wallet-btn {
@@ -164,27 +284,6 @@ html, body {
   color: #888;
 }
 
-.manual-detection {
-  margin-top: 15px;
-}
-
-.manual-detect-btn {
-  width: 100%;
-  padding: 8px;
-  margin: 5px 0;
-  border: 1px solid #666;
-  border-radius: 4px;
-  font-size: 12px;
-  background: rgba(255, 153, 0, 0.2);
-  color: #ff9900;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.manual-detect-btn:hover {
-  background: rgba(255, 153, 0, 0.3);
-}
-
 .detection-results {
   margin-top: 10px;
   padding: 10px;
@@ -245,7 +344,8 @@ html, body {
   margin: 20px 0;
 }
 
-.wallet-disconnected, .wallet-connected {
+.wallet-disconnected,
+.wallet-connected {
   width: 100%;
   text-align: left;
 }
@@ -255,7 +355,7 @@ html, body {
   align-items: center;
   margin-bottom: 15px;
   padding: 10px;
-  background: rgba(0,0,0,0.4);
+  background: rgba(0, 0, 0, 0.4);
   border-radius: 6px;
 }
 
@@ -278,26 +378,29 @@ html, body {
 }
 
 .wallet-info {
-  background: rgba(0,0,0,0.3);
+  background: rgba(0, 0, 0, 0.3);
   padding: 15px;
   border-radius: 8px;
   margin-bottom: 15px;
   border: 1px solid rgba(71, 230, 255, 0.3);
 }
 
-.wallet-address, .wallet-balance {
+.wallet-address,
+.wallet-balance {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
 }
 
-.address-label, .balance-label {
+.address-label,
+.balance-label {
   color: #888;
   font-size: 12px;
 }
 
-.address-value, .balance-value {
+.address-value,
+.balance-value {
   color: #47e6ff;
   font-weight: 600;
   font-size: 14px;
@@ -426,7 +529,11 @@ html, body {
 }
 
 .modal-content {
-  background: linear-gradient(135deg, rgba(10, 20, 30, 0.95), rgba(20, 30, 40, 0.95));
+  background: linear-gradient(
+    135deg,
+    rgba(10, 20, 30, 0.95),
+    rgba(20, 30, 40, 0.95)
+  );
   border: 2px solid rgba(71, 230, 255, 0.3);
   border-radius: 12px;
   min-width: 400px;

@@ -1,92 +1,122 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Orbit‑Runner</title>
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <div id="welcome-screen" class="welcome-container">
-    <div class="welcome-card">
-      <div class="welcome-emoji">🚀</div>
-      <h1 class="welcome-title">Orbit Runner<br/>3D</h1>
-      <h2 class="welcome-sub">Multiplayer Space Combat</h2>
-      <!-- Wallet Connection UI -->
-      <div class="wallet-connect-container">
-        <div class="connection-status" id="extension-status">
-          <div class="status-indicator checking" id="extension-indicator"></div>
-          <span id="extension-status-text">Checking for Demos extension...</span>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Orbit‑Runner</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="welcome-screen" class="welcome-container">
+      <div class="welcome-card">
+        <div class="welcome-emoji">🚀</div>
+        <h1 class="welcome-title">Orbit Runner<br />3D</h1>
+        <h2 class="welcome-sub">Multiplayer Space Combat</h2>
+        <!-- Wallet Connection UI -->
+        <div class="wallet-connect-container">
+          <div class="connection-status" id="extension-status">
+            <div
+              class="status-indicator checking"
+              id="extension-indicator"
+            ></div>
+            <span id="extension-status-text"
+              >Checking for Demos extension...</span
+            >
+          </div>
+
+          <button id="connect-extension-btn" class="wallet-btn" disabled>
+            Connect Demos Extension
+          </button>
+
+          <div
+            class="wallet-warning"
+            id="extension-warning"
+            style="display: none"
+          >
+            Demos extension not detected. Please install the extension or use
+            another connection method.
+          </div>
+
+          <div class="extension-help">
+            <p><strong>Don't have the Demos extension?</strong></p>
+            <p>
+              Install the Demos browser extension for seamless wallet
+              connectivity.
+            </p>
+            <a
+              href="https://chromewebstore.google.com/detail/demos-wallet/nefongcpmdahjaijjkihgieiamoahcoo?pli=1"
+              target="_blank"
+              >Download Demos Extension</a
+            >
+          </div>
         </div>
-        
-        <button id="connect-extension-btn" class="wallet-btn" disabled>
-          Connect Demos Extension
+
+        <div
+          id="connected-wallet"
+          class="connected-wallet"
+          style="display: none"
+        >
+          <div class="wallet-info">
+            <div class="wallet-address" id="connected-address">
+              Not connected
+            </div>
+            <div class="wallet-balance" id="connected-balance">
+              Balance: 0 DEMOS
+            </div>
+          </div>
+          <button id="disconnect-btn" class="wallet-btn disconnect-btn">
+            Disconnect
+          </button>
+        </div>
+
+        <button id="launch-btn" class="wallet-btn launch-btn" disabled>
+          Launch Into Space
         </button>
 
-        <div class="wallet-warning" id="extension-warning" style="display: none;">
-          Demos extension not detected. Please install the extension or use another connection method.
+        <div class="blockchain-test-section" style="margin-top: 20px">
+          <button id="test-blockchain-btn" class="wallet-btn" disabled>
+            Test Blockchain Connection
+          </button>
+          <div
+            id="blockchain-test-results"
+            class="blockchain-test-results"
+            style="display: none"
+          ></div>
         </div>
-        
-        <div class="extension-help">
-          <p><strong>Don't have the Demos extension?</strong></p>
-          <p>Install the Demos browser extension for seamless wallet connectivity.</p>
-          <a href="https://chromewebstore.google.com/detail/demos-wallet/nefongcpmdahjaijjkihgieiamoahcoo?pli=1" target="_blank">Download Demos Extension</a>
-        </div>
-        
-        <div class="manual-detection">
-          <button id="manual-detect-btn" class="manual-detect-btn">Manual Detection</button>
-          <div id="detection-results" class="detection-results"></div>
-        </div>
+
+        <p class="welcome-desc">
+          Connect your Demos wallet to join other pilots in real-time 3D space
+          combat! Your wallet address will be your unique pilot identifier.
+        </p>
       </div>
-      
-      <div id="connected-wallet" class="connected-wallet" style="display: none;">
-        <div class="wallet-info">
-          <div class="wallet-address" id="connected-address">Not connected</div>
-          <div class="wallet-balance" id="connected-balance">Balance: 0 DEMOS</div>
-        </div>
-        <button id="disconnect-btn" class="wallet-btn disconnect-btn">Disconnect</button>
-      </div>
-      
-      <button id="launch-btn" class="wallet-btn launch-btn" disabled>Launch Into Space</button>
-      
-      <div class="blockchain-test-section" style="margin-top: 20px;">
-        <button id="test-blockchain-btn" class="wallet-btn" disabled>Test Blockchain Connection</button>
-        <div id="blockchain-test-results" class="blockchain-test-results" style="display: none;"></div>
-      </div>
-      
-      <p class="welcome-desc">Connect your Demos wallet to join other pilots in real-time 3D space combat! Your wallet address will be your unique pilot identifier.</p>
     </div>
-  </div>
 
-  <canvas id="gameCanvas"></canvas>
+    <canvas id="gameCanvas"></canvas>
 
-  
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.164.0/build/three.module.min.js"
+        }
+      }
+    </script>
 
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://unpkg.com/three@0.164.0/build/three.module.min.js"
-    }
-  }
-  </script>
-  
-  
-  <!-- Load Three.js ESM directly from node_modules, then start the game -->
-  <script type="module">
-    // Point client to Railway API in production; keep localhost auto-detect for local dev
-    if (!location.hostname.match(/^(localhost|127\.0\.0\.1)/)) {
-      window.ORBIT_RUNNER_API = 'https://orbit-runner-production.up.railway.app';
-    }
-    import * as THREE from 'https://unpkg.com/three@0.164.0/build/three.module.min.js';
-    window.THREE = THREE;
-  </script>
-  
-  <!-- Demos Extension Detector (must load before main.js) -->
-  <script src="demos-extension-detector-v2.js"></script>
-  
-  <script type="module">
-    // Cache-bust main.js so changes always load on refresh during development
-    await import(`./main.js?cb=${Date.now()}`);
-  </script>
-  
+    <!-- Load Three.js ESM directly from node_modules, then start the game -->
+    <script type="module">
+      // Point client to Railway API in production; keep localhost auto-detect for local dev
+      if (!location.hostname.match(/^(localhost|127\.0\.0\.1)/)) {
+        window.ORBIT_RUNNER_API =
+          "https://orbit-runner-production.up.railway.app";
+      }
+      import * as THREE from "https://unpkg.com/three@0.164.0/build/three.module.min.js";
+      window.THREE = THREE;
+    </script>
+
+    <!-- Demos Extension Detector (must load before main.js) -->
+    <script src="demos-extension-detector.js"></script>
+
+    <script type="module">
+      // Cache-bust main.js so changes always load on refresh during development
+      await import(`./main.js?cb=${Date.now()}`);
+    </script>
   </body>
 </html>
