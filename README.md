@@ -51,7 +51,7 @@ npm run server
 Server wallet (required):
 
 - The server requires an env mnemonic.
-- Set in `.env` before starting the server:
+- Create/update `.env` in the `orbit-runner/` folder (the server's working directory when you run `npm run server`):
 
 ```
 DEMOS_SERVER_MNEMONIC="twelve or twenty-four words"
@@ -67,6 +67,38 @@ Notes
 
 - Uses ES modules via importmap in `index.html` (Three loaded from `node_modules`).
 - `index.html` cache‑busts `main.js` for easier local development.
+
+## Telegram high‑score announcements (optional)
+
+The server can announce new all‑time points records to a Telegram group or channel.
+
+Environment variables (set in `orbit-runner/.env`):
+
+```
+TELEGRAM_BOT_TOKEN=123456789:AA...   # bot token from @BotFather
+TELEGRAM_CHAT_ID=-1001234567890      # group/channel id (negative for groups/channels)
+```
+
+How to obtain values:
+
+- Create (or reuse) a bot with @BotFather to get `TELEGRAM_BOT_TOKEN`.
+- Add the bot to your target group, or (for channels) add it as an Administrator with “Post Messages”.
+- Get `TELEGRAM_CHAT_ID`:
+  - Public channel/group: `getChat?chat_id=@your_name`
+  - Private: send a message in the chat, then call `getUpdates` and read `chat.id` (will look like `-100…`).
+
+Quick test (should return `ok: true`):
+
+```
+curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+  -H "Content-Type: application/json" \
+  -d '{"chat_id":"'$TELEGRAM_CHAT_ID'","text":"Orbit Runner announcer test"}'
+```
+
+Notes:
+
+- Quote the negative `TELEGRAM_CHAT_ID` in YAML/Docker to preserve the minus sign.
+- Ensure the bot has permission to post in the chat.
 
 ## Multiplayer
 

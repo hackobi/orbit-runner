@@ -53,6 +53,36 @@ function persist() {
 }
 // simple rate-limit per IP
 const lastSubmitByIp = new Map();
+
+// --- Security helpers/state ---
+// Short-lived DAHR tokens: token -> { address, expiresAt, used }
+const issuedDahrTokens = new Map();
+// Nonce replay protection: key (address:nonce) -> expiresAt
+const seenNonces = new Map();
+// Per-address simple rate limit: address -> { windowStart, count }
+const addressRate = new Map();
+
+function pruneExpirations() {
+  const nowMs = Date.now();
+  // Nonces
+  for (const [k, exp] of seenNonces) if (exp <= nowMs) seenNonces.delete(k);
+  // DAHR tokens
+  for (const [tok, v] of issuedDahrTokens)
+    if (!v || v.expiresAt <= nowMs || v.used) issuedDahrTokens.delete(tok);
+}
+
+function rateLimitAddress(address, limitPerMinute = 10) {
+  const nowMs = Date.now();
+  const winMs = 60 * 1000;
+  const entry = addressRate.get(address) || { windowStart: nowMs, count: 0 };
+  if (nowMs - entry.windowStart >= winMs) {
+    entry.windowStart = nowMs;
+    entry.count = 0;
+  }
+  entry.count++;
+  addressRate.set(address, entry);
+  return entry.count <= limitPerMinute;
+}
 function pushTop(list, rec, key, maxLen = 10) {
   list.push(rec);
   list.sort((a, b) => (b[key] || 0) - (a[key] || 0));
@@ -82,22 +112,29 @@ async function getTelegramUsernameForAddress(address) {
     const ok = await ensureDemosConnected();
     if (!ok) return null;
 
-    const request = {
+    // Try web2-only identities first
+    const reqWeb2 = {
       method: "gcr_routine",
-      params: [
-        {
-          method: "getWeb2Identities",
-          params: [address],
-        },
-      ],
+      params: [{ method: "getWeb2Identities", params: [address] }],
     };
-    const resp = await demos.rpcCall(request, true);
-    const payload = resp?.response || resp?.data || resp || null;
-    if (!payload) return null;
+    let resp = await demos.rpcCall(reqWeb2, true);
+    console.log("📣 Web2 identities raw:", JSON.stringify(resp));
+    let payload = resp?.response || resp?.data || resp || null;
+    let web2 =
+      payload?.web2 || payload?.identities?.web2 || payload?.data?.web2;
 
-    const identities =
-      payload.identities || payload.web2 || payload?.data || payload;
-    const web2 = identities?.web2 || identities;
+    // Fallback to full identities if needed
+    if (!web2) {
+      const reqAll = {
+        method: "gcr_routine",
+        params: [{ method: "getIdentities", params: [address] }],
+      };
+      resp = await demos.rpcCall(reqAll, true);
+      console.log("📣 All identities raw:", JSON.stringify(resp));
+      payload = resp?.response || resp?.data || resp || null;
+      web2 = payload?.web2 || payload?.identities?.web2 || payload?.data?.web2;
+    }
+
     const telegram = web2?.telegram;
     if (Array.isArray(telegram) && telegram.length > 0) {
       const first = telegram[0];
@@ -177,7 +214,19 @@ async function announcePointsRecordIfBeaten({
       });
       return;
     }
-    const who = playerName || "Player";
+    let who = playerName || "Player";
+    if (isLikelyDemosAddress(playerAddress)) {
+      const uname = await getTelegramUsernameForAddress(playerAddress);
+      if (uname && typeof uname === "string") {
+        who = uname.startsWith("@") ? uname : `@${uname}`;
+        console.log("📣 Username lookup: success", {
+          address: playerAddress,
+          username: who,
+        });
+      } else {
+        console.log("📣 Username lookup: none", { address: playerAddress });
+      }
+    }
     const text = `🚀 New Orbit Runner high score! ${who} set ${points.toLocaleString()} points.`;
     const ok = await sendTelegramMessage(text);
     if (ok) {
@@ -318,15 +367,21 @@ app.post("/blockchain/dahr", async (req, res) => {
 
     console.log("🔐 Generating DAHR for:", playerAddress);
 
-    // Generate secure transaction token
-    const token = require("crypto").randomUUID();
-
     // Create DAHR response
+    const token = require("crypto").randomUUID();
+    const ttlMs = 15 * 60 * 1000;
+    const expiresAt = Date.now() + ttlMs;
+    issuedDahrTokens.set(token, {
+      address: playerAddress,
+      expiresAt,
+      used: false,
+    });
+
     const dahrResponse = {
       ok: true,
       token: token,
       playerAddress: playerAddress,
-      expiresAt: Date.now() + 15 * 60 * 1000, // 15 minutes
+      expiresAt,
       instructions: {
         title: "Blockchain Transaction Approval",
         message:
@@ -409,17 +464,18 @@ app.post("/blockchain/validate", async (req, res) => {
     const validationErrors = [];
 
     // Validate score ranges
-    if (stats.points > 10_000_000) validationErrors.push("Points too high");
-    if (stats.kills > stats.points / 100)
-      validationErrors.push("Kill ratio inconsistent");
+    if (Number(stats.points || 0) > 10_000_000)
+      validationErrors.push("Points too high");
+    if (Number(stats.kills || 0) > Math.max(0, Number(stats.points || 0)) / 50)
+      validationErrors.push("Kill to points ratio inconsistent");
 
     // Validate time consistency
-    const gameTime = stats.survivalSec;
-    if (gameTime < 10 || gameTime > 3600)
+    const gameTime = Number(stats.survivalSec || 0);
+    if (gameTime < 20 || gameTime > 3600)
       validationErrors.push("Game time unrealistic");
 
     // Validate achievement consistency
-    if (stats.asteroids > 0 && stats.survivalSec < 30)
+    if (Number(stats.asteroids || 0) > 0 && gameTime < 30)
       validationErrors.push("Asteroid achievement too fast");
 
     if (validationErrors.length > 0) {
@@ -449,8 +505,15 @@ app.post("/blockchain/validate", async (req, res) => {
 
 app.post("/blockchain/submit", async (req, res) => {
   try {
-    const { stats, signature, playerAddress, nonce, gameData, dataBytes } =
-      req.body;
+    const {
+      stats,
+      signature,
+      playerAddress,
+      nonce,
+      gameData,
+      dataBytes,
+      dahrToken,
+    } = req.body;
 
     if (!stats || !signature || !playerAddress || !nonce || !gameData) {
       return res.status(400).json({
@@ -458,6 +521,36 @@ app.post("/blockchain/submit", async (req, res) => {
         error:
           "Missing required fields: stats, signature, playerAddress, nonce, gameData",
       });
+    }
+
+    // Enforce DAHR token
+    pruneExpirations();
+    const tokenInfo = issuedDahrTokens.get(dahrToken);
+    if (
+      !tokenInfo ||
+      tokenInfo.used ||
+      tokenInfo.address !== playerAddress ||
+      tokenInfo.expiresAt < Date.now()
+    ) {
+      return res
+        .status(401)
+        .json({ ok: false, error: "Invalid or expired DAHR token" });
+    }
+    tokenInfo.used = true;
+    issuedDahrTokens.set(dahrToken, tokenInfo);
+
+    // Per-address nonce replay protection
+    const nonceKey = `${playerAddress}:${nonce}`;
+    if (seenNonces.has(nonceKey)) {
+      return res
+        .status(409)
+        .json({ ok: false, error: "Replay detected (nonce already used)" });
+    }
+    seenNonces.set(nonceKey, Date.now() + 30 * 60 * 1000);
+
+    // Per-address rate limit 10/min
+    if (!rateLimitAddress(playerAddress, 10)) {
+      return res.status(429).json({ ok: false, error: "Rate limited" });
     }
 
     console.log("📊 Preparing blockchain submission for:", playerAddress);

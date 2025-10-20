@@ -812,6 +812,7 @@ async function initializeDemosSDK() {
 
       const dahrData = await dahrResponse.json();
       console.log("🔐 DAHR token received:", dahrData);
+      const dahrToken = dahrData && dahrData.token ? dahrData.token : undefined;
 
       // Submit to blockchain using proper Demos extension patterns
       console.log("🔗 Submitting to blockchain using Demos extension...");
@@ -976,6 +977,7 @@ async function initializeDemosSDK() {
             nonce: stats.ts,
             gameData: signedMessage,
             dataBytes,
+            dahrToken,
           }),
         });
 
