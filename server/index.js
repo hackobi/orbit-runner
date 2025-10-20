@@ -3,6 +3,7 @@ const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
 const { WebSocketServer } = require("ws");
+const https = require("https");
 const { randomUUID } = require("crypto");
 const { Demos } = require("@kynesyslabs/demosdk/websdk");
 const demos = new Demos();
@@ -11,7 +12,10 @@ const app = express();
 try {
   require("dotenv").config();
 } catch (_) {}
+
 const PORT = process.env.PORT || 8787;
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
 app.use(cors());
 app.use(express.json());
@@ -56,6 +60,132 @@ function pushTop(list, rec, key, maxLen = 10) {
   return list;
 }
 
+// --- Telegram announcer helpers ---
+async function ensureDemosConnected() {
+  try {
+    if (!(await connectToDemos())) return false;
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function isLikelyDemosAddress(addr) {
+  if (typeof addr !== "string") return false;
+  const s = addr.trim();
+  return /^0x[0-9a-fA-F]{64}$/.test(s);
+}
+
+async function getTelegramUsernameForAddress(address) {
+  try {
+    if (!isLikelyDemosAddress(address)) return null;
+    const ok = await ensureDemosConnected();
+    if (!ok) return null;
+
+    const request = {
+      method: "gcr_routine",
+      params: [
+        {
+          method: "getWeb2Identities",
+          params: [address],
+        },
+      ],
+    };
+    const resp = await demos.rpcCall(request, true);
+    const payload = resp?.response || resp?.data || resp || null;
+    if (!payload) return null;
+
+    const identities =
+      payload.identities || payload.web2 || payload?.data || payload;
+    const web2 = identities?.web2 || identities;
+    const telegram = web2?.telegram;
+    if (Array.isArray(telegram) && telegram.length > 0) {
+      const first = telegram[0];
+      const uname = first?.username || first?.user || null;
+      if (uname && typeof uname === "string") return uname;
+    }
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function sendTelegramMessage(text) {
+  try {
+    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+      console.log("📣 Skipping Telegram send (env not set)");
+      return false;
+    }
+    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+    const haveFetch = typeof fetch === "function";
+    if (haveFetch) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!j?.ok) console.warn("📣 Telegram send failed:", j);
+      return !!j?.ok;
+    }
+    const payload = JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text });
+    const u = new URL(url);
+    const options = {
+      method: "POST",
+      hostname: u.hostname,
+      path: u.pathname + u.search,
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(payload),
+      },
+    };
+    const result = await new Promise((resolve) => {
+      const req = https.request(options, (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          try {
+            const j = JSON.parse(data || "{}");
+            if (!j?.ok) console.warn("📣 Telegram send failed (https):", j);
+            resolve(!!j?.ok);
+          } catch (_) {
+            resolve(false);
+          }
+        });
+      });
+      req.on("error", () => resolve(false));
+      req.write(payload);
+      req.end();
+    });
+    return result;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function announcePointsRecordIfBeaten({
+  playerAddress,
+  playerName,
+  points,
+  previousRecord,
+}) {
+  try {
+    if (!(points > previousRecord)) {
+      console.log("📣 No announce: not a new record", {
+        previousRecord,
+        points,
+      });
+      return;
+    }
+    const who = playerName || "Player";
+    const text = `🚀 New Orbit Runner high score! ${who} set ${points.toLocaleString()} points.`;
+    const ok = await sendTelegramMessage(text);
+    if (ok) {
+      console.log("📣 Telegram announcement sent.");
+    }
+  } catch (_) {}
+}
+
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
 app.get("/leaderboards", (_req, res) =>
@@ -67,185 +197,6 @@ app.get("/leaderboards", (_req, res) =>
     survival: top.survival,
   })
 );
-
-// DAHR Score Submission Endpoint
-app.post("/api/scores/submit", async (req, res) => {
-  try {
-    const { gameId, playerAddress, playerName, timestamp, stats, metadata } =
-      req.body;
-
-    console.log("📊 DAHR score submission received:", {
-      gameId,
-      playerAddress,
-      playerName,
-      timestamp,
-      stats,
-      metadata,
-    });
-
-    // Validate required fields
-    if (!playerAddress || !stats || !gameId) {
-      return res.status(400).json({
-        ok: false,
-        error: "Missing required fields: playerAddress, stats, or gameId",
-      });
-    }
-
-    // Validate score data
-    const validatedStats = {
-      points: Math.max(0, Math.min(10_000_000, Number(stats.points || 0))),
-      kills: Math.max(0, Math.min(1000, Number(stats.kills || 0))),
-      asteroidsDestroyed: Math.max(
-        0,
-        Math.min(1000, Number(stats.asteroidsDestroyed || 0))
-      ),
-      survivalTime: Math.max(0, Number(stats.survivalTime || 0)),
-      beltTime: Math.max(0, Number(stats.beltTime || 0)),
-    };
-
-    // Create submission record
-    const submission = {
-      uid: playerAddress,
-      name: playerName || "DAHR Player",
-      points: validatedStats.points,
-      kills: validatedStats.kills,
-      asteroids: validatedStats.asteroidsDestroyed,
-      survivalSec: validatedStats.survivalTime,
-      beltTimeSec: validatedStats.beltTime,
-      ts: timestamp || Date.now(),
-      metadata: {
-        ...metadata,
-        submissionMethod: "DAHR",
-        gameId: gameId,
-      },
-    };
-
-    // Add to leaderboards
-    Object.keys(top).forEach((category) => {
-      const arr = top[category];
-      const score =
-        submission[
-          category === "survival"
-            ? "survivalSec"
-            : category === "belt"
-            ? "beltTimeSec"
-            : category === "asteroids"
-            ? "asteroids"
-            : category
-        ];
-      if (typeof score === "number" && score > 0) {
-        arr.push(submission);
-        arr.sort(
-          (a, b) =>
-            b[
-              category === "survival"
-                ? "survivalSec"
-                : category === "belt"
-                ? "beltTimeSec"
-                : category === "asteroids"
-                ? "asteroids"
-                : category
-            ] -
-            a[
-              category === "survival"
-                ? "survivalSec"
-                : category === "belt"
-                ? "beltTimeSec"
-                : category === "asteroids"
-                ? "asteroids"
-                : category
-            ]
-        );
-        if (arr.length > 100) arr.length = 100; // Keep top 100
-      }
-    });
-
-    // Also add to sessions
-    top.sessions.unshift(submission);
-    if (top.sessions.length > 100) top.sessions.length = 100;
-
-    console.log("✅ DAHR score submission processed successfully:", {
-      playerAddress: submission.uid,
-      name: submission.name,
-      points: submission.points,
-      kills: submission.kills,
-      asteroids: submission.asteroids,
-    });
-
-    // Return success response with DAHR-specific data
-    res.json({
-      ok: true,
-      message: "Score submitted successfully via DAHR",
-      submission: {
-        playerAddress: submission.uid,
-        playerName: submission.name,
-        score: submission.points,
-        timestamp: submission.ts,
-        ranking: top.points.findIndex((s) => s.uid === playerAddress) + 1,
-      },
-      leaderboardUpdate: {
-        totalSubmissions: top.sessions.length,
-        yourRanking: top.points.findIndex((s) => s.uid === playerAddress) + 1,
-      },
-    });
-  } catch (error) {
-    console.error("❌ DAHR score submission error:", error);
-    res.status(500).json({
-      ok: false,
-      error: `DAHR submission failed: ${error.message}`,
-    });
-  }
-});
-
-app.post("/submit", (req, res) => {
-  const s = req.body || {};
-  try {
-    const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "";
-    const now = Date.now();
-    const last = lastSubmitByIp.get(ip) || 0;
-    if (now - last < 1500)
-      return res.status(429).json({ ok: false, error: "rate-limited" });
-    lastSubmitByIp.set(ip, now);
-    s.ts = Date.now();
-    // Basic anti-tamper: clamp fields and require uid
-    s.uid = String(s.uid || "").slice(0, 64);
-    s.name = String(s.name || "").slice(0, 24) || "Anon";
-    s.points = Math.max(0, Math.min(10_000_000, Number(s.points || 0))); // 10M cap
-    s.kills = Math.max(0, Math.min(1_000_000, Number(s.kills || 0)));
-    s.asteroids = Math.max(0, Math.min(5_000_000, Number(s.asteroids || 0)));
-    s.beltTimeSec = Math.max(
-      0,
-      Math.min(1_000_000, Number(s.beltTimeSec || 0))
-    );
-    s.survivalSec = Math.max(
-      0,
-      Math.min(1_000_000, Number(s.survivalSec || 0))
-    );
-    if (!s.uid)
-      return res.status(400).json({ ok: false, error: "missing uid" });
-
-    pushTop(top.sessions, s, "ts", 100);
-    pushTop(top.points, s, "points");
-    pushTop(top.kills, s, "kills");
-    pushTop(top.asteroids, s, "asteroids");
-    pushTop(top.belt, s, "beltTimeSec");
-    pushTop(top.survival, s, "survivalSec");
-    persist();
-    broadcast({
-      type: "leaderboards",
-      payload: {
-        points: top.points,
-        kills: top.kills,
-        asteroids: top.asteroids,
-        belt: top.belt,
-        survival: top.survival,
-      },
-    });
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(400).json({ ok: false, error: String(e) });
-  }
-});
 
 // Blockchain API endpoints
 let demosConnected = false;
@@ -496,7 +447,6 @@ app.post("/blockchain/validate", async (req, res) => {
   }
 });
 
-// Submit game stats to blockchain (player pays via client signature)
 app.post("/blockchain/submit", async (req, res) => {
   try {
     const { stats, signature, playerAddress, nonce, gameData, dataBytes } =
@@ -627,6 +577,58 @@ app.post("/blockchain/submit", async (req, res) => {
         throw new Error("Broadcast did not return a transaction hash");
       }
       console.log("✅ Broadcasted storage tx:", hash || sendRes);
+
+      try {
+        const prevRecord =
+          Array.isArray(top.points) && top.points.length
+            ? Number(top.points[0]?.points || 0)
+            : 0;
+        const nowTs = Date.now();
+        const short = (addr) =>
+          typeof addr === "string" && addr.startsWith("0x") && addr.length > 10
+            ? addr.slice(0, 6) + "…" + addr.slice(-4)
+            : String(addr || "Player");
+        const submission = {
+          uid: playerAddress,
+          name: short(playerAddress),
+          points: Number(stats?.points || 0),
+          kills: Number(stats?.kills || 0),
+          asteroids: Number(stats?.asteroids || stats?.asteroidsDestroyed || 0),
+          beltTimeSec: Number(stats?.beltTimeSec || stats?.beltTime || 0),
+          survivalSec: Number(stats?.survivalSec || stats?.survivalTime || 0),
+          ts: nowTs,
+          metadata: { submissionMethod: "blockchain" },
+        };
+        pushTop(top.sessions, submission, "ts", 100);
+        pushTop(top.points, submission, "points");
+        pushTop(top.kills, submission, "kills");
+        pushTop(top.asteroids, submission, "asteroids");
+        pushTop(top.belt, submission, "beltTimeSec");
+        pushTop(top.survival, submission, "survivalSec");
+        persist();
+        lbBroadcast({
+          type: "leaderboards",
+          payload: {
+            points: top.points,
+            kills: top.kills,
+            asteroids: top.asteroids,
+            belt: top.belt,
+            survival: top.survival,
+          },
+        });
+        await announcePointsRecordIfBeaten({
+          playerAddress: submission.uid,
+          playerName: submission.name,
+          points: submission.points,
+          previousRecord: prevRecord,
+        });
+      } catch (e) {
+        console.warn(
+          "📣 Post-blockchain leaderboard/announce failed:",
+          e?.message || e
+        );
+      }
+
       return res.json({ ok: true, txHash: hash });
     } catch (e) {
       console.error("❌ Broadcast failed:", e);

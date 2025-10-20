@@ -5027,14 +5027,6 @@ async function initializeDemosSDK() {
         "or_lb_survival",
         pushTop(parse("or_lb_survival"), s, "survivalSec")
       );
-      // fire-and-forget sync endpoint if configured
-      if (window.ORBIT_RUNNER_API) {
-        fetch(`${window.ORBIT_RUNNER_API}/submit`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(s),
-        }).catch(() => {});
-      }
     } catch (e) {
       console.warn("Leaderboard save failed", e);
     }
