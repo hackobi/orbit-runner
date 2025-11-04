@@ -35,7 +35,7 @@ python3 -m http.server 8000
 # open http://localhost:8000/
 ```
 
-Optional live server (leaderboards + multiplayer):
+Optional live server (leaderboards + multiplayer + payments):
 
 ```bash
 npm run server
@@ -62,6 +62,38 @@ DEMOS_SERVER_MNEMONIC="twelve or twenty-four words"
 Endpoints:
 
 - `POST /blockchain/submit` → verifies signature, stores bytes on-chain, returns `txHash`
+- `GET  /pay/info` → { ok, price: 1, tokenDecimals: 0, currency: "DEM", treasuryAddress }
+- `POST /pay/verify` → body `{ txHash, playerAddress }` (and optionally `validityData` for diagnostics). Verifies a native transfer of 1 DEM from `playerAddress` to the treasury, then returns `{ ok, paidToken, expiresAt }`.
+
+Pay‑to‑play (1 DEM)
+
+- Client “Pay 1 DEM to Play” uses the wallet `nativeTransfer` helper to send 1 DEM to the treasury.
+- Server requires a real on‑chain transaction hash and verifies it across the network (mempool/inclusion) before issuing a short‑lived session token. The token is required in the first multiplayer hello and to enable “Launch Into Space”.
+
+Payouts (jackpot to new global high score)
+
+- When a new all‑time points record is set, the server pays the jackpot from the treasury to the winner (treasury covers gas). The Telegram message includes the winner’s handle (if available), score and tx hash.
+- Treasury safety: a minimum reserve is always kept to fund the next payout.
+
+Environment variables (add to `orbit-runner/.env`):
+
+```
+DEMOS_SERVER_MNEMONIC="twelve or twenty-four words"   # server wallet (storage tx)
+DEMOS_TREASURY_MNEMONIC="twelve or twenty-four words" # treasury wallet (jackpot + receives 1 DEM per play)
+
+# Treasury configuration (DEM)
+TREASURY_MIN_RESERVE="3"   # amount to keep in treasury at all times (default 2)
+PAYOUT_MIN_PRIZE="1"       # only pay out if transferable >= this (default 1)
+
+# Telegram announcements (optional)
+TELEGRAM_BOT_TOKEN=123456789:AA...
+TELEGRAM_CHAT_ID=-1001234567890
+```
+
+Notes
+
+- After changing `.env`, restart the server so new values are loaded.
+- A reserve of 3 DEM is a good default on testnet: ~1 DEM gas + 1 DEM next prize + 1 DEM buffer.
 
 Notes
 
@@ -70,7 +102,7 @@ Notes
 
 ## Telegram high‑score announcements (optional)
 
-The server can announce new all‑time points records to a Telegram group or channel.
+The server announces new all‑time points records and jackpot payouts to a Telegram group or channel. When available, the winner’s Telegram handle is shown (otherwise a short address is used).
 
 Environment variables (set in `orbit-runner/.env`):
 
