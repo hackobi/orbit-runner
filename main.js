@@ -3,22 +3,6 @@
 import { FontLoader } from "https://unpkg.com/three@0.164.0/examples/jsm/loaders/FontLoader.js";
 import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geometries/TextGeometry.js";
 
-// Demos SDK Integration - DISABLED for extension-only debugging
-// SDK loading is causing wallet connection failures, so we'll use extension-only approach
-let DemosSDK = null;
-let demosLoaded = false;
-
-// Dynamic CommonJS loader for browser compatibility - DISABLED
-async function loadDemosSDK() {
-  console.log("🔗 SDK loading disabled for extension debugging...");
-  return null;
-}
-
-// Initialize Demos SDK - DISABLED
-async function initializeDemosSDK() {
-  console.log("⚠️ SDK initialization disabled - using extension-only mode");
-  return null;
-}
 (() => {
   // Enhanced error handling for extension communication
   const originalConsoleError = console.error;
@@ -261,6 +245,7 @@ async function initializeDemosSDK() {
   let walletAddress = "";
   let playerName = "";
   let currentProvider = null;
+  let paidSessionToken = null;
   let providersDetected = false;
   let connecting = false;
   let detectionRetryTimer = null;
@@ -604,9 +589,10 @@ async function initializeDemosSDK() {
   }
   // Wallet functions
   function updateLaunchButton() {
-    const isValid = walletAddress.length > 0;
+    const isValid = walletAddress.length > 0 && !!paidSessionToken;
     console.log("🚀 updateLaunchButton called:", {
       walletAddress,
+      paidSessionToken: !!paidSessionToken,
       isValid,
       launchBtnDisabled: launchBtn?.disabled,
     });
@@ -621,10 +607,11 @@ async function initializeDemosSDK() {
       });
     }
 
-    // Update blockchain test button
+    // Update blockchain test button (only requires wallet connection)
     if (testBlockchainBtn) {
-      testBlockchainBtn.disabled = !isValid;
-      if (isValid) testBlockchainBtn.classList.add("enabled");
+      const canTest = walletAddress.length > 0;
+      testBlockchainBtn.disabled = !canTest;
+      if (canTest) testBlockchainBtn.classList.add("enabled");
       else testBlockchainBtn.classList.remove("enabled");
     }
   }
@@ -680,15 +667,146 @@ async function initializeDemosSDK() {
     }
     if (connectExtensionBtn) {
       if (address) {
-        connectExtensionBtn.disabled = true;
-        connectExtensionBtn.classList.remove("enabled");
-        connectExtensionBtn.textContent = "Connected";
+        // Hide the connect button when wallet is connected
+        connectExtensionBtn.style.display = "none";
       } else {
+        connectExtensionBtn.style.display = "block";
         connectExtensionBtn.disabled = false;
         connectExtensionBtn.classList.add("enabled");
         connectExtensionBtn.textContent = "Connect Demos Extension";
       }
     }
+    // Manage Pay button
+    try {
+      const btn = ensurePayButton();
+      if (btn) {
+        if (address && !paidSessionToken) {
+          btn.disabled = false;
+          btn.textContent = "Pay 1 DEM to Play";
+        } else if (paidSessionToken) {
+          btn.disabled = true;
+          btn.textContent = "✓ Paid";
+        } else {
+          btn.disabled = true;
+          btn.textContent = "Pay 1 DEM to Play";
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Create and manage a Pay button to collect 1 DEM before launch
+  let payBtn = null;
+  function ensurePayButton() {
+    if (payBtn) return payBtn;
+    try {
+      const controlsContainer = document.querySelector(".controls-section");
+      if (!controlsContainer) return null;
+      const btn = document.createElement("button");
+      btn.id = "pay-btn";
+      btn.className = "launch-btn";
+      btn.textContent = "Pay 1 DEM to Play";
+      btn.disabled = true;
+      btn.addEventListener("click", async () => {
+        btn.disabled = true;
+        btn.textContent = "Processing...";
+        try {
+          await ensurePaymentForSession();
+          btn.textContent = "✓ Paid";
+        } catch (e) {
+          console.error(e);
+          btn.textContent = "Pay 1 DEM to Play";
+          btn.disabled = false;
+          alert(String(e?.message || e));
+        }
+        updateLaunchButton();
+      });
+      controlsContainer.appendChild(btn);
+      payBtn = btn;
+      return btn;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async function ensurePaymentForSession() {
+    if (!walletAddress) throw new Error("Connect your wallet first");
+    let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
+    const infoRes = await fetch(`${apiBase}/pay/info`);
+    if (!infoRes.ok) throw new Error("Payment info unavailable");
+    const info = await infoRes.json();
+    if (!info?.ok) throw new Error(info?.error || "Payment info error");
+    const { treasuryAddress, price } = info;
+    if (!treasuryAddress) throw new Error("Treasury address missing");
+
+    const provider = await getDemosProvider();
+    if (!provider || typeof provider.request !== "function") {
+      throw new Error("Demos wallet provider not available");
+    }
+    try {
+      await provider.request({ method: "connect" });
+    } catch (_) {}
+
+    const resp = await provider.request({
+      method: "nativeTransfer",
+      params: [
+        { recipientAddress: treasuryAddress, amount: Number(price || 1) },
+      ],
+    });
+    try {
+      console.log("[Pay] nativeTransfer response:", resp);
+      const vdat = resp?.data?.validityData || resp?.validityData || null;
+      console.log("[Pay] validityData:", vdat);
+      if (vdat && vdat.response) {
+        console.log("[Pay] validityData.response:", vdat.response);
+      }
+    } catch (_) {}
+
+    const vdat = resp?.data?.validityData || resp?.validityData || null;
+    const txHash =
+      vdat?.response?.data?.transaction?.hash ||
+      resp?.result?.data?.transaction?.hash ||
+      resp?.result?.txHash ||
+      resp?.result?.hash ||
+      resp?.hash ||
+      "";
+    console.log("[Pay] extracted txHash:", txHash);
+    if (!txHash) {
+      throw new Error(
+        "Wallet did not return a transaction hash. Please update/try again."
+      );
+    }
+
+    // Retry verification for up to ~30s to allow propagation/confirmation
+    let paid = null;
+    for (let i = 0; i < 30; i++) {
+      const vRes = await fetch(`${apiBase}/pay/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          txHash,
+          playerAddress: walletAddress,
+          validityData: vdat,
+        }),
+      });
+      if (vRes.ok) {
+        const v = await vRes.json();
+        if (v?.ok && v?.paidToken) {
+          paid = v;
+          break;
+        }
+      } else {
+        // If 404 (not found) keep retrying shortly; otherwise break on hard errors
+        if (vRes.status !== 404) {
+          const msg = await vRes.text().catch(() => "");
+          throw new Error(
+            `Payment verification failed (${vRes.status}) ${msg}`
+          );
+        }
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    if (!paid) throw new Error("Payment verification timed out");
+    paidSessionToken = paid.paidToken;
   }
 
   // DAHR Score Submission Implementation
@@ -768,7 +886,7 @@ async function initializeDemosSDK() {
         },
         metadata: {
           version: "1.0.0",
-          game: "Demos Orbit Runner 3D",
+          game: "Orbit Runner",
           roundDuration: 180,
         },
       };
@@ -812,6 +930,7 @@ async function initializeDemosSDK() {
 
       const dahrData = await dahrResponse.json();
       console.log("🔐 DAHR token received:", dahrData);
+      const dahrToken = dahrData && dahrData.token ? dahrData.token : undefined;
 
       // Submit to blockchain using proper Demos extension patterns
       console.log("🔗 Submitting to blockchain using Demos extension...");
@@ -976,6 +1095,7 @@ async function initializeDemosSDK() {
             nonce: stats.ts,
             gameData: signedMessage,
             dataBytes,
+            dahrToken,
           }),
         });
 
@@ -4578,6 +4698,21 @@ async function initializeDemosSDK() {
           if (msg && msg.type === "leaderboards") {
             latestServerLB = msg.payload;
             if (lbOverlay && lbOverlay.style.display !== "none") renderLb();
+            return;
+          }
+          if (msg && msg.type === "payout") {
+            const p = msg.payload || {};
+            const who =
+              p.winnerLabel ||
+              (p.winner || "").slice(0, 6) + "…" + (p.winner || "").slice(-4);
+            const pts = Number(p.points || 0).toLocaleString();
+            const tx = String(p.txHash || "");
+            try {
+              alert(
+                `🏆 Jackpot paid!\nWinner: ${who}\nScore: ${pts}\nTx: ${tx}`
+              );
+            } catch (_) {}
+            return;
           }
         } catch (_) {}
       };
@@ -4817,6 +4952,7 @@ async function initializeDemosSDK() {
             type: "hello",
             name: ensurePlayerName(),
             clientVersion: "mp1",
+            paidToken: paidSessionToken || "",
           })
         );
       };
@@ -4980,8 +5116,12 @@ async function initializeDemosSDK() {
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
       dbg("focus");
-      // Show reconnect overlay and require user action
-      showReconnectOverlay();
+      // Only show reconnect overlay if game is active (welcome screen is hidden)
+      const welcomeScreen = document.getElementById("welcome-screen");
+      if (welcomeScreen && welcomeScreen.classList.contains("hidden")) {
+        // Game is active, show reconnect overlay
+        showReconnectOverlay();
+      }
     } else {
       dbg("hidden");
       input.fire = false;
@@ -5027,14 +5167,6 @@ async function initializeDemosSDK() {
         "or_lb_survival",
         pushTop(parse("or_lb_survival"), s, "survivalSec")
       );
-      // fire-and-forget sync endpoint if configured
-      if (window.ORBIT_RUNNER_API) {
-        fetch(`${window.ORBIT_RUNNER_API}/submit`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(s),
-        }).catch(() => {});
-      }
     } catch (e) {
       console.warn("Leaderboard save failed", e);
     }

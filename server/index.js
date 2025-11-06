@@ -3,15 +3,27 @@ const cors = require("cors");
 const fs = require("fs");
 const path = require("path");
 const { WebSocketServer } = require("ws");
+const https = require("https");
 const { randomUUID } = require("crypto");
 const { Demos } = require("@kynesyslabs/demosdk/websdk");
 const demos = new Demos();
+// Separate Demos instance for treasury wallet operations
+const treasuryDemos = new Demos();
+// Known public RPCs to probe during payment verification (helps with propagation)
+const ALT_RPCS = [
+  "https://node2.demos.sh",
+  "https://demosnode.discus.sh",
+  "http://mungaist.com:53550",
+];
 const app = express();
 // Load environment variables from .env if present
 try {
   require("dotenv").config();
 } catch (_) {}
+
 const PORT = process.env.PORT || 8787;
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
 app.use(cors());
 app.use(express.json());
@@ -49,11 +61,186 @@ function persist() {
 }
 // simple rate-limit per IP
 const lastSubmitByIp = new Map();
+
+// --- Security helpers/state ---
+// Short-lived DAHR tokens: token -> { address, expiresAt, used }
+const issuedDahrTokens = new Map();
+// Nonce replay protection: key (address:nonce) -> expiresAt
+const seenNonces = new Map();
+// Per-address simple rate limit: address -> { windowStart, count }
+const addressRate = new Map();
+
+function pruneExpirations() {
+  const nowMs = Date.now();
+  // Nonces
+  for (const [k, exp] of seenNonces) if (exp <= nowMs) seenNonces.delete(k);
+  // DAHR tokens
+  for (const [tok, v] of issuedDahrTokens)
+    if (!v || v.expiresAt <= nowMs || v.used) issuedDahrTokens.delete(tok);
+}
+
+function rateLimitAddress(address, limitPerMinute = 10) {
+  const nowMs = Date.now();
+  const winMs = 60 * 1000;
+  const entry = addressRate.get(address) || { windowStart: nowMs, count: 0 };
+  if (nowMs - entry.windowStart >= winMs) {
+    entry.windowStart = nowMs;
+    entry.count = 0;
+  }
+  entry.count++;
+  addressRate.set(address, entry);
+  return entry.count <= limitPerMinute;
+}
 function pushTop(list, rec, key, maxLen = 10) {
   list.push(rec);
   list.sort((a, b) => (b[key] || 0) - (a[key] || 0));
   if (list.length > maxLen) list.length = maxLen;
   return list;
+}
+
+// --- Telegram announcer helpers ---
+async function ensureDemosConnected() {
+  try {
+    if (!(await connectToDemos())) return false;
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function isLikelyDemosAddress(addr) {
+  if (typeof addr !== "string") return false;
+  const s = addr.trim();
+  return /^0x[0-9a-fA-F]{64}$/.test(s);
+}
+
+async function getTelegramUsernameForAddress(address) {
+  try {
+    if (!isLikelyDemosAddress(address)) return null;
+    const ok = await ensureDemosConnected();
+    if (!ok) return null;
+
+    // Try web2-only identities first
+    const reqWeb2 = {
+      method: "gcr_routine",
+      params: [{ method: "getWeb2Identities", params: [address] }],
+    };
+    let resp = await demos.rpcCall(reqWeb2, true);
+    console.log("📣 Web2 identities raw:", JSON.stringify(resp));
+    let payload = resp?.response || resp?.data || resp || null;
+    let web2 =
+      payload?.web2 || payload?.identities?.web2 || payload?.data?.web2;
+
+    // Fallback to full identities if needed
+    if (!web2) {
+      const reqAll = {
+        method: "gcr_routine",
+        params: [{ method: "getIdentities", params: [address] }],
+      };
+      resp = await demos.rpcCall(reqAll, true);
+      console.log("📣 All identities raw:", JSON.stringify(resp));
+      payload = resp?.response || resp?.data || resp || null;
+      web2 = payload?.web2 || payload?.identities?.web2 || payload?.data?.web2;
+    }
+
+    const telegram = web2?.telegram;
+    if (Array.isArray(telegram) && telegram.length > 0) {
+      const first = telegram[0];
+      const uname = first?.username || first?.user || null;
+      if (uname && typeof uname === "string") return uname;
+    }
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function sendTelegramMessage(text) {
+  try {
+    if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+      console.log("📣 Skipping Telegram send (env not set)");
+      return false;
+    }
+    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+    const haveFetch = typeof fetch === "function";
+    if (haveFetch) {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!j?.ok) console.warn("📣 Telegram send failed:", j);
+      return !!j?.ok;
+    }
+    const payload = JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text });
+    const u = new URL(url);
+    const options = {
+      method: "POST",
+      hostname: u.hostname,
+      path: u.pathname + u.search,
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(payload),
+      },
+    };
+    const result = await new Promise((resolve) => {
+      const req = https.request(options, (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          try {
+            const j = JSON.parse(data || "{}");
+            if (!j?.ok) console.warn("📣 Telegram send failed (https):", j);
+            resolve(!!j?.ok);
+          } catch (_) {
+            resolve(false);
+          }
+        });
+      });
+      req.on("error", () => resolve(false));
+      req.write(payload);
+      req.end();
+    });
+    return result;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function announcePointsRecordIfBeaten({
+  playerAddress,
+  playerName,
+  points,
+  previousRecord,
+}) {
+  try {
+    if (!(points > previousRecord)) {
+      console.log("📣 No announce: not a new record", {
+        previousRecord,
+        points,
+      });
+      return;
+    }
+    let who = playerName || "Player";
+    if (isLikelyDemosAddress(playerAddress)) {
+      const uname = await getTelegramUsernameForAddress(playerAddress);
+      if (uname && typeof uname === "string") {
+        who = uname.startsWith("@") ? uname : `@${uname}`;
+        console.log("📣 Username lookup: success", {
+          address: playerAddress,
+          username: who,
+        });
+      } else {
+        console.log("📣 Username lookup: none", { address: playerAddress });
+      }
+    }
+    const text = `🚀 New Orbit Runner high score! ${who} set ${points.toLocaleString()} points.`;
+    const ok = await sendTelegramMessage(text);
+    if (ok) {
+      console.log("📣 Telegram announcement sent.");
+    }
+  } catch (_) {}
 }
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
@@ -68,188 +255,10 @@ app.get("/leaderboards", (_req, res) =>
   })
 );
 
-// DAHR Score Submission Endpoint
-app.post("/api/scores/submit", async (req, res) => {
-  try {
-    const { gameId, playerAddress, playerName, timestamp, stats, metadata } =
-      req.body;
-
-    console.log("📊 DAHR score submission received:", {
-      gameId,
-      playerAddress,
-      playerName,
-      timestamp,
-      stats,
-      metadata,
-    });
-
-    // Validate required fields
-    if (!playerAddress || !stats || !gameId) {
-      return res.status(400).json({
-        ok: false,
-        error: "Missing required fields: playerAddress, stats, or gameId",
-      });
-    }
-
-    // Validate score data
-    const validatedStats = {
-      points: Math.max(0, Math.min(10_000_000, Number(stats.points || 0))),
-      kills: Math.max(0, Math.min(1000, Number(stats.kills || 0))),
-      asteroidsDestroyed: Math.max(
-        0,
-        Math.min(1000, Number(stats.asteroidsDestroyed || 0))
-      ),
-      survivalTime: Math.max(0, Number(stats.survivalTime || 0)),
-      beltTime: Math.max(0, Number(stats.beltTime || 0)),
-    };
-
-    // Create submission record
-    const submission = {
-      uid: playerAddress,
-      name: playerName || "DAHR Player",
-      points: validatedStats.points,
-      kills: validatedStats.kills,
-      asteroids: validatedStats.asteroidsDestroyed,
-      survivalSec: validatedStats.survivalTime,
-      beltTimeSec: validatedStats.beltTime,
-      ts: timestamp || Date.now(),
-      metadata: {
-        ...metadata,
-        submissionMethod: "DAHR",
-        gameId: gameId,
-      },
-    };
-
-    // Add to leaderboards
-    Object.keys(top).forEach((category) => {
-      const arr = top[category];
-      const score =
-        submission[
-          category === "survival"
-            ? "survivalSec"
-            : category === "belt"
-            ? "beltTimeSec"
-            : category === "asteroids"
-            ? "asteroids"
-            : category
-        ];
-      if (typeof score === "number" && score > 0) {
-        arr.push(submission);
-        arr.sort(
-          (a, b) =>
-            b[
-              category === "survival"
-                ? "survivalSec"
-                : category === "belt"
-                ? "beltTimeSec"
-                : category === "asteroids"
-                ? "asteroids"
-                : category
-            ] -
-            a[
-              category === "survival"
-                ? "survivalSec"
-                : category === "belt"
-                ? "beltTimeSec"
-                : category === "asteroids"
-                ? "asteroids"
-                : category
-            ]
-        );
-        if (arr.length > 100) arr.length = 100; // Keep top 100
-      }
-    });
-
-    // Also add to sessions
-    top.sessions.unshift(submission);
-    if (top.sessions.length > 100) top.sessions.length = 100;
-
-    console.log("✅ DAHR score submission processed successfully:", {
-      playerAddress: submission.uid,
-      name: submission.name,
-      points: submission.points,
-      kills: submission.kills,
-      asteroids: submission.asteroids,
-    });
-
-    // Return success response with DAHR-specific data
-    res.json({
-      ok: true,
-      message: "Score submitted successfully via DAHR",
-      submission: {
-        playerAddress: submission.uid,
-        playerName: submission.name,
-        score: submission.points,
-        timestamp: submission.ts,
-        ranking: top.points.findIndex((s) => s.uid === playerAddress) + 1,
-      },
-      leaderboardUpdate: {
-        totalSubmissions: top.sessions.length,
-        yourRanking: top.points.findIndex((s) => s.uid === playerAddress) + 1,
-      },
-    });
-  } catch (error) {
-    console.error("❌ DAHR score submission error:", error);
-    res.status(500).json({
-      ok: false,
-      error: `DAHR submission failed: ${error.message}`,
-    });
-  }
-});
-
-app.post("/submit", (req, res) => {
-  const s = req.body || {};
-  try {
-    const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress || "";
-    const now = Date.now();
-    const last = lastSubmitByIp.get(ip) || 0;
-    if (now - last < 1500)
-      return res.status(429).json({ ok: false, error: "rate-limited" });
-    lastSubmitByIp.set(ip, now);
-    s.ts = Date.now();
-    // Basic anti-tamper: clamp fields and require uid
-    s.uid = String(s.uid || "").slice(0, 64);
-    s.name = String(s.name || "").slice(0, 24) || "Anon";
-    s.points = Math.max(0, Math.min(10_000_000, Number(s.points || 0))); // 10M cap
-    s.kills = Math.max(0, Math.min(1_000_000, Number(s.kills || 0)));
-    s.asteroids = Math.max(0, Math.min(5_000_000, Number(s.asteroids || 0)));
-    s.beltTimeSec = Math.max(
-      0,
-      Math.min(1_000_000, Number(s.beltTimeSec || 0))
-    );
-    s.survivalSec = Math.max(
-      0,
-      Math.min(1_000_000, Number(s.survivalSec || 0))
-    );
-    if (!s.uid)
-      return res.status(400).json({ ok: false, error: "missing uid" });
-
-    pushTop(top.sessions, s, "ts", 100);
-    pushTop(top.points, s, "points");
-    pushTop(top.kills, s, "kills");
-    pushTop(top.asteroids, s, "asteroids");
-    pushTop(top.belt, s, "beltTimeSec");
-    pushTop(top.survival, s, "survivalSec");
-    persist();
-    broadcast({
-      type: "leaderboards",
-      payload: {
-        points: top.points,
-        kills: top.kills,
-        asteroids: top.asteroids,
-        belt: top.belt,
-        survival: top.survival,
-      },
-    });
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(400).json({ ok: false, error: String(e) });
-  }
-});
-
 // Blockchain API endpoints
 let demosConnected = false;
 let walletConnected = false;
+let treasuryConnected = false;
 
 // Connect to Demos network
 async function connectToDemos() {
@@ -293,6 +302,149 @@ async function connectWallet() {
   } catch (error) {
     console.error("❌ Failed to connect server wallet:", error);
     return false;
+  }
+}
+
+// Connect treasury wallet (separate from server wallet)
+async function connectTreasuryWallet() {
+  if (treasuryConnected) return true;
+
+  try {
+    console.log("👛 Connecting treasury wallet...");
+
+    const envMnemonic = (process.env.DEMOS_TREASURY_MNEMONIC || "").trim();
+    if (envMnemonic.length === 0) {
+      throw new Error(
+        "DEMOS_TREASURY_MNEMONIC is not set. Please configure a treasury wallet seed in the environment."
+      );
+    }
+
+    // Ensure node connection ready for this instance as well
+    await treasuryDemos.connect("https://node2.demos.sh");
+    await treasuryDemos.connectWallet(envMnemonic, { isSeed: true });
+    treasuryConnected = true;
+
+    const address = treasuryDemos.getAddress();
+    console.log("✅ Treasury wallet connected. Address:", address);
+    return true;
+  } catch (error) {
+    console.error("❌ Failed to connect treasury wallet:", error);
+    return false;
+  }
+}
+
+// Treasury helpers
+async function getTreasuryBalance() {
+  const addr = treasuryDemos.getAddress();
+  const info = await treasuryDemos.getAddressInfo(addr);
+  const bal = info?.balance ?? 0n;
+  return typeof bal === "bigint" ? bal : BigInt(String(bal || 0));
+}
+
+async function payoutTreasuryAll(recipientAddress) {
+  try {
+    const connected = await connectToDemos();
+    if (!connected) throw new Error("Network unavailable");
+    const tOk = await connectTreasuryWallet();
+    if (!tOk) throw new Error("Treasury unavailable");
+
+    const bal = await getTreasuryBalance();
+    if (bal <= 0n) {
+      console.log("🏦 Payout skipped: empty treasury");
+      return { ok: false, reason: "empty" };
+    }
+
+    // Keep a configurable reserve to cover future payouts + gas
+    const minReserve = (() => {
+      const raw = String(process.env.TREASURY_MIN_RESERVE || "2");
+      try {
+        return BigInt(raw);
+      } catch {
+        return 2n;
+      }
+    })();
+
+    const gasReserve = (() => {
+      const raw = String(process.env.TREASURY_GAS_RESERVE || "1"); // default 1 DEM gas
+      try {
+        return BigInt(raw);
+      } catch {
+        return 1n;
+      }
+    })();
+
+    const minPrize = (() => {
+      const raw = String(process.env.PAYOUT_MIN_PRIZE || "1");
+      try {
+        return BigInt(raw);
+      } catch {
+        return 1n;
+      }
+    })();
+
+    // Required headroom = reserve + gas headroom
+    const headroom = minReserve + gasReserve;
+    const transferable = bal > headroom ? bal - headroom : 0n;
+
+    if (transferable < minPrize) {
+      console.log(
+        "🏦 Payout skipped: below minimum prize or reserve requirement",
+        {
+          balance: bal.toString(),
+          minReserve: minReserve.toString(),
+          gasReserve: gasReserve.toString(),
+          minPrize: minPrize.toString(),
+        }
+      );
+      return { ok: false, reason: "below_min_prize" };
+    }
+
+    const amountNum = Number(
+      transferable <= BigInt(Number.MAX_SAFE_INTEGER)
+        ? transferable
+        : BigInt(Number.MAX_SAFE_INTEGER)
+    );
+    console.log("🏦 Preparing payout from treasury:", {
+      transferable: amountNum,
+      recipientAddress,
+    });
+
+    const tx = await treasuryDemos.pay(recipientAddress, amountNum);
+    const validity = await treasuryDemos.confirm(tx);
+
+    // Extract tx hash similarly to storage flow
+    const normalizeHash = (h) => {
+      if (!h || typeof h !== "string") return null;
+      const m = h.match(/^(0x)?([0-9a-fA-F]{64})$/);
+      return m ? (m[1] ? h : "0x" + m[2]) : null;
+    };
+    let hash = normalizeHash(
+      (validity &&
+        validity.response &&
+        validity.response.data &&
+        validity.response.data.transaction &&
+        validity.response.data.transaction.hash) ||
+        tx?.hash ||
+        null
+    );
+    const sendRes = await treasuryDemos.broadcast(validity);
+    const r = sendRes && sendRes.response ? sendRes.response : null;
+    if (r && typeof r === "object") {
+      const candidate =
+        r.data?.txHash ||
+        r.data?.transactionHash ||
+        r.data?.hash ||
+        r.txHash ||
+        r.hash ||
+        null;
+      if (candidate) hash = candidate;
+    }
+    if (!hash) throw new Error("Broadcast did not return a transaction hash");
+    console.log("✅ Payout broadcasted:", hash);
+    return { ok: true, txHash: hash };
+  } catch (e) {
+    console.error("❌ Payout failed:", e?.message || e);
+    return { ok: false, error: String(e?.message || e) };
   }
 }
 
@@ -353,6 +505,207 @@ app.post("/blockchain/test", async (req, res) => {
   }
 });
 
+// --- Pay-to-play (1 DEM) ---
+const paidSessions = new Map(); // token -> { address, expiresAt }
+
+function issuePaidSessionToken(address, ttlMs = 15 * 60 * 1000) {
+  const token = require("crypto").randomUUID();
+  const expiresAt = Date.now() + ttlMs;
+  paidSessions.set(token, { address, expiresAt });
+  return { token, expiresAt };
+}
+
+function prunePaidSessions() {
+  const nowMs = Date.now();
+  for (const [tok, v] of paidSessions) {
+    if (!v || v.expiresAt <= nowMs) paidSessions.delete(tok);
+  }
+}
+
+app.get("/pay/info", async (_req, res) => {
+  try {
+    const connected = await connectToDemos();
+    if (!connected)
+      return res.status(500).json({ ok: false, error: "Network unavailable" });
+    const tOk = await connectTreasuryWallet();
+    if (!tOk)
+      return res.status(500).json({ ok: false, error: "Treasury unavailable" });
+    const treasuryAddress = treasuryDemos.getAddress();
+    return res.json({
+      ok: true,
+      price: 1,
+      tokenDecimals: 0,
+      currency: "DEM",
+      treasuryAddress,
+    });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// Verify a native transfer of exactly 1 DEM to treasury; returns a paid session token
+app.post("/pay/verify", async (req, res) => {
+  try {
+    const { txHash, playerAddress, validityData } = req.body || {};
+    console.log("/pay/verify", {
+      txHash,
+      playerAddress,
+      hasValidity: !!validityData,
+    });
+    if (!playerAddress) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Missing playerAddress" });
+    }
+    if (!txHash) {
+      return res.status(400).json({ ok: false, error: "Missing txHash" });
+    }
+    const connected = await connectToDemos();
+    if (!connected)
+      return res.status(500).json({ ok: false, error: "Network unavailable" });
+    const tOk = await connectTreasuryWallet();
+    if (!tOk)
+      return res.status(500).json({ ok: false, error: "Treasury unavailable" });
+
+    const treasuryAddress = treasuryDemos.getAddress();
+    // Try confirmed tx first
+    let tx = txHash ? await demos.getTxByHash(txHash).catch(() => null) : null;
+    // If not found, try mempool as fallback (pending tx)
+    if (!tx || !tx.content) {
+      try {
+        const mem = await demos.getMempool();
+        if (Array.isArray(mem)) {
+          const found = mem.find(
+            (m) =>
+              m?.hash &&
+              String(m.hash).toLowerCase().replace(/^0x/, "") ===
+                String(txHash).toLowerCase().replace(/^0x/, "")
+          );
+          if (found) tx = found;
+        }
+      } catch (_) {}
+    }
+    if (!tx || !tx.content) {
+      // Fallback: scan recent transactions
+      try {
+        const recent = await demos.getTransactions("latest", 200);
+        if (Array.isArray(recent)) {
+          const lower = String(txHash).toLowerCase().replace(/^0x/, "");
+          let match = recent.find(
+            (t) =>
+              String(t?.hash || "")
+                .toLowerCase()
+                .replace(/^0x/, "") === lower
+          );
+          if (!match) {
+            // heuristic: native send from player to treasury amount 1 within last 5 minutes
+            match = recent.find((t) => {
+              try {
+                const c = t?.content || {};
+                if (c?.type !== "native") return false;
+                if (String(c.from_ed25519_address) !== String(playerAddress))
+                  return false;
+                const data = Array.isArray(c.data) ? c.data : null;
+                const tag = data && data[0];
+                const payload = data && data[1];
+                const isSend =
+                  tag === "native" && payload?.nativeOperation === "send";
+                if (!isSend) return false;
+                const args = Array.isArray(payload.args) ? payload.args : [];
+                const [toAddr, amt] = args;
+                const tsOk =
+                  Number(c.timestamp || 0) > Date.now() - 5 * 60 * 1000;
+                return toAddr === treasuryAddress && Number(amt) === 1 && tsOk;
+              } catch (_) {
+                return false;
+              }
+            });
+          }
+          if (match) tx = match;
+        }
+      } catch (_) {}
+    }
+    if (!tx || !tx.content) {
+      // Final fallback: probe alternate RPCs for this tx
+      try {
+        for (const rpc of ALT_RPCS) {
+          try {
+            const probe = new Demos();
+            await probe.connect(rpc);
+            let t = txHash
+              ? await probe.getTxByHash(txHash).catch(() => null)
+              : null;
+            if (!t || !t.content) {
+              try {
+                const mem = await probe.getMempool();
+                if (Array.isArray(mem)) {
+                  const found = mem.find(
+                    (m) =>
+                      m?.hash &&
+                      String(m.hash).toLowerCase().replace(/^0x/, "") ===
+                        String(txHash).toLowerCase().replace(/^0x/, "")
+                  );
+                  if (found) t = found;
+                }
+              } catch (_) {}
+            }
+            if (t && t.content) {
+              tx = t;
+              break;
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+    // Do not accept validityData-only fallbacks in production
+    if (!tx || !tx.content) {
+      return res
+        .status(404)
+        .json({ ok: false, error: "Transaction not found" });
+    }
+    const c = tx.content;
+    const isNative = c.type === "native";
+    const data = Array.isArray(c.data) ? c.data : null;
+    const nativeTag = data && data[0];
+    const nativePayload = data && data[1];
+    const isSend =
+      nativeTag === "native" &&
+      nativePayload &&
+      nativePayload.nativeOperation === "send";
+    const args =
+      isSend && Array.isArray(nativePayload.args) ? nativePayload.args : [];
+    const [toAddr, amount] = args;
+
+    if (
+      !isNative ||
+      !isSend ||
+      toAddr !== treasuryAddress ||
+      Number(amount) !== 1
+    ) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Payment does not match required transfer" });
+    }
+    // Check sender
+    if (String(c.from_ed25519_address) !== String(playerAddress)) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Payment sender mismatch" });
+    }
+    // Basic freshness check (<= 30 min)
+    const tsOk = Number(c.timestamp || 0) > Date.now() - 30 * 60 * 1000;
+    if (!tsOk) {
+      return res.status(400).json({ ok: false, error: "Payment too old" });
+    }
+
+    prunePaidSessions();
+    const { token, expiresAt } = issuePaidSessionToken(playerAddress);
+    return res.json({ ok: true, paidToken: token, expiresAt });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
 // DAHR - Data Access Handling Request endpoint
 app.post("/blockchain/dahr", async (req, res) => {
   try {
@@ -367,15 +720,21 @@ app.post("/blockchain/dahr", async (req, res) => {
 
     console.log("🔐 Generating DAHR for:", playerAddress);
 
-    // Generate secure transaction token
-    const token = require("crypto").randomUUID();
-
     // Create DAHR response
+    const token = require("crypto").randomUUID();
+    const ttlMs = 15 * 60 * 1000;
+    const expiresAt = Date.now() + ttlMs;
+    issuedDahrTokens.set(token, {
+      address: playerAddress,
+      expiresAt,
+      used: false,
+    });
+
     const dahrResponse = {
       ok: true,
       token: token,
       playerAddress: playerAddress,
-      expiresAt: Date.now() + 15 * 60 * 1000, // 15 minutes
+      expiresAt,
       instructions: {
         title: "Blockchain Transaction Approval",
         message:
@@ -458,17 +817,18 @@ app.post("/blockchain/validate", async (req, res) => {
     const validationErrors = [];
 
     // Validate score ranges
-    if (stats.points > 10_000_000) validationErrors.push("Points too high");
-    if (stats.kills > stats.points / 100)
-      validationErrors.push("Kill ratio inconsistent");
+    if (Number(stats.points || 0) > 10_000_000)
+      validationErrors.push("Points too high");
+    if (Number(stats.kills || 0) > Math.max(0, Number(stats.points || 0)) / 50)
+      validationErrors.push("Kill to points ratio inconsistent");
 
     // Validate time consistency
-    const gameTime = stats.survivalSec;
-    if (gameTime < 10 || gameTime > 3600)
+    const gameTime = Number(stats.survivalSec || 0);
+    if (gameTime < 20 || gameTime > 3600)
       validationErrors.push("Game time unrealistic");
 
     // Validate achievement consistency
-    if (stats.asteroids > 0 && stats.survivalSec < 30)
+    if (Number(stats.asteroids || 0) > 0 && gameTime < 30)
       validationErrors.push("Asteroid achievement too fast");
 
     if (validationErrors.length > 0) {
@@ -496,11 +856,17 @@ app.post("/blockchain/validate", async (req, res) => {
   }
 });
 
-// Submit game stats to blockchain (player pays via client signature)
 app.post("/blockchain/submit", async (req, res) => {
   try {
-    const { stats, signature, playerAddress, nonce, gameData, dataBytes } =
-      req.body;
+    const {
+      stats,
+      signature,
+      playerAddress,
+      nonce,
+      gameData,
+      dataBytes,
+      dahrToken,
+    } = req.body;
 
     if (!stats || !signature || !playerAddress || !nonce || !gameData) {
       return res.status(400).json({
@@ -508,6 +874,36 @@ app.post("/blockchain/submit", async (req, res) => {
         error:
           "Missing required fields: stats, signature, playerAddress, nonce, gameData",
       });
+    }
+
+    // Enforce DAHR token
+    pruneExpirations();
+    const tokenInfo = issuedDahrTokens.get(dahrToken);
+    if (
+      !tokenInfo ||
+      tokenInfo.used ||
+      tokenInfo.address !== playerAddress ||
+      tokenInfo.expiresAt < Date.now()
+    ) {
+      return res
+        .status(401)
+        .json({ ok: false, error: "Invalid or expired DAHR token" });
+    }
+    tokenInfo.used = true;
+    issuedDahrTokens.set(dahrToken, tokenInfo);
+
+    // Per-address nonce replay protection
+    const nonceKey = `${playerAddress}:${nonce}`;
+    if (seenNonces.has(nonceKey)) {
+      return res
+        .status(409)
+        .json({ ok: false, error: "Replay detected (nonce already used)" });
+    }
+    seenNonces.set(nonceKey, Date.now() + 30 * 60 * 1000);
+
+    // Per-address rate limit 10/min
+    if (!rateLimitAddress(playerAddress, 10)) {
+      return res.status(429).json({ ok: false, error: "Rate limited" });
     }
 
     console.log("📊 Preparing blockchain submission for:", playerAddress);
@@ -627,6 +1023,119 @@ app.post("/blockchain/submit", async (req, res) => {
         throw new Error("Broadcast did not return a transaction hash");
       }
       console.log("✅ Broadcasted storage tx:", hash || sendRes);
+
+      try {
+        const prevRecord =
+          Array.isArray(top.points) && top.points.length
+            ? Number(top.points[0]?.points || 0)
+            : 0;
+        const nowTs = Date.now();
+        const short = (addr) =>
+          typeof addr === "string" && addr.startsWith("0x") && addr.length > 10
+            ? addr.slice(0, 6) + "…" + addr.slice(-4)
+            : String(addr || "Player");
+        const submission = {
+          uid: playerAddress,
+          name: short(playerAddress),
+          points: Number(stats?.points || 0),
+          kills: Number(stats?.kills || 0),
+          asteroids: Number(stats?.asteroids || stats?.asteroidsDestroyed || 0),
+          beltTimeSec: Number(stats?.beltTimeSec || stats?.beltTime || 0),
+          survivalSec: Number(stats?.survivalSec || stats?.survivalTime || 0),
+          ts: nowTs,
+          metadata: { submissionMethod: "blockchain" },
+        };
+        pushTop(top.sessions, submission, "ts", 100);
+        pushTop(top.points, submission, "points");
+        pushTop(top.kills, submission, "kills");
+        pushTop(top.asteroids, submission, "asteroids");
+        pushTop(top.belt, submission, "beltTimeSec");
+        pushTop(top.survival, submission, "survivalSec");
+        persist();
+        lbBroadcast({
+          type: "leaderboards",
+          payload: {
+            points: top.points,
+            kills: top.kills,
+            asteroids: top.asteroids,
+            belt: top.belt,
+            survival: top.survival,
+          },
+        });
+        await announcePointsRecordIfBeaten({
+          playerAddress: submission.uid,
+          playerName: submission.name,
+          points: submission.points,
+          previousRecord: prevRecord,
+        });
+        // Payout to new global points record holder (treasury pays gas)
+        try {
+          if (
+            submission.points > prevRecord &&
+            isLikelyDemosAddress(submission.uid)
+          ) {
+            console.log(
+              "🏦 New record detected. Initiating payout to:",
+              submission.uid
+            );
+            const payoutRes = await payoutTreasuryAll(submission.uid);
+            if (payoutRes?.ok) {
+              console.log("🏦 Payout success:", payoutRes.txHash);
+              // Resolve handle if available
+              let shortAddr = `${submission.uid.slice(
+                0,
+                6
+              )}…${submission.uid.slice(-4)}`;
+              let handle = null;
+              try {
+                if (isLikelyDemosAddress(submission.uid)) {
+                  const uname = await getTelegramUsernameForAddress(
+                    submission.uid
+                  );
+                  if (uname && typeof uname === "string") {
+                    handle = uname.startsWith("@") ? uname : `@${uname}`;
+                  }
+                }
+              } catch (_) {}
+              const winnerLabel = handle ? `${handle}` : shortAddr;
+
+              // Broadcast payout to clients via leaderboard WS
+              try {
+                lbBroadcast({
+                  type: "payout",
+                  payload: {
+                    winner: submission.uid,
+                    winnerLabel,
+                    points: submission.points,
+                    txHash: payoutRes.txHash,
+                  },
+                });
+              } catch (_) {}
+              // Telegram payout details (best-effort)
+              try {
+                const txId = String(payoutRes.txHash || "").replace(/^0x/, "");
+                const explorerBase = "https://explorer.demos.sh";
+                const txUrl = `${explorerBase}/transactions/${txId}`;
+                const text = `🏆 Orbit Runner jackpot paid!\nWinner: ${winnerLabel}\nScore: ${submission.points.toLocaleString()}\nTx: ${txUrl}`;
+                await sendTelegramMessage(text);
+              } catch (_) {}
+            } else {
+              console.warn(
+                "🏦 Payout skipped/failed:",
+                payoutRes?.reason || payoutRes?.error || "unknown"
+              );
+            }
+          }
+        } catch (e) {
+          console.warn("🏦 Payout error:", e?.message || e);
+        }
+      } catch (e) {
+        console.warn(
+          "📣 Post-blockchain leaderboard/announce failed:",
+          e?.message || e
+        );
+      }
+
       return res.json({ ok: true, txHash: hash });
     } catch (e) {
       console.error("❌ Broadcast failed:", e);
@@ -657,6 +1166,13 @@ const server = app.listen(PORT, () =>
     if (ok) {
       const addr = demos.getAddress();
       console.log("💳 Server wallet ready. Address:", addr);
+    }
+    const tOk = await connectTreasuryWallet();
+    if (tOk) {
+      console.log(
+        "🏦 Treasury wallet ready. Address:",
+        treasuryDemos.getAddress()
+      );
     }
   } catch (e) {
     console.warn("⚠️ Server wallet not connected at boot:", e?.message || e);
@@ -743,6 +1259,26 @@ mpWss.on("connection", (ws) => {
     if (!msg || typeof msg !== "object") return;
 
     if (msg.type === "hello" && !playerId) {
+      // Enforce paid session token before allowing a player to join
+      try {
+        prunePaidSessions();
+        const payToken = String(msg.paidToken || "");
+        const rec = paidSessions.get(payToken);
+        if (!rec || rec.expiresAt <= Date.now()) {
+          try {
+            ws.close();
+          } catch (_) {}
+          return;
+        }
+        // One-time use token
+        paidSessions.delete(payToken);
+      } catch (_) {
+        try {
+          ws.close();
+        } catch (_) {}
+        return;
+      }
+
       const name = String(msg.name || "").slice(0, 24) || "Anon";
       playerId = makePlayerId();
       ws.playerId = playerId;
