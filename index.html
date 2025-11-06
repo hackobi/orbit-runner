@@ -6,91 +6,144 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <div id="welcome-screen" class="welcome-container">
-      <div class="welcome-card">
-        <div class="welcome-emoji">🚀</div>
-        <h1 class="welcome-title">Orbit Runner<br />3D</h1>
-        <h2 class="welcome-sub">Multiplayer Space Combat</h2>
-        <!-- Wallet Connection UI -->
-        <div class="wallet-connect-container">
+    <div id="welcome-screen" class="welcome-layout">
+      <!-- Header Section -->
+      <div class="welcome-header">
+        <div class="game-logo">
+          <div class="logo-icon">🚀</div>
+          <div class="logo-text">
+            <h1 class="game-title">Orbit Runner</h1>
+            <p class="game-subtitle">Multiplayer Space Combat</p>
+          </div>
+        </div>
+        <p class="game-description">
+          Connect your Demos wallet to join other pilots in real-time 3D space
+          combat! Break the current high score to win the jackpot. Pay 1 DEM to play.
+        </p>
+      </div>
+
+      <!-- Main Content Grid -->
+      <div class="welcome-content">
+        <!-- Wallet Section -->
+        <div class="wallet-section">
+          <h3 class="section-title">Wallet Connection</h3>
+          
           <div class="connection-status" id="extension-status">
-            <div
-              class="status-indicator checking"
-              id="extension-indicator"
-            ></div>
-            <span id="extension-status-text"
-              >Checking for Demos extension...</span
-            >
+            <div class="status-indicator checking" id="extension-indicator"></div>
+            <span id="extension-status-text">Checking for Demos extension...</span>
           </div>
 
-          <button id="connect-extension-btn" class="wallet-btn" disabled>
+          <button id="connect-extension-btn" class="primary-btn" disabled>
             Connect Demos Extension
           </button>
 
-          <div
-            class="wallet-warning"
-            id="extension-warning"
-            style="display: none"
-          >
-            Demos extension not detected. Please install the extension or use
-            another connection method.
+          <div class="wallet-warning" id="extension-warning" style="display: none">
+            Demos extension not detected. Please install the extension or use another connection method.
+          </div>
+
+          <div id="connected-wallet" class="connected-wallet" style="display: none">
+            <div class="wallet-info">
+              <div class="connection-status connected">
+                <div class="status-indicator connected"></div>
+                <span>Connected</span>
+              </div>
+              <div class="wallet-address" id="connected-address">Not connected</div>
+              <div class="wallet-balance" id="connected-balance">Balance: 0 DEMOS</div>
+            </div>
+            <button id="disconnect-btn" class="disconnect-btn">Disconnect</button>
           </div>
 
           <div class="extension-help">
             <p><strong>Don't have the Demos extension?</strong></p>
-            <p>
-              Install the Demos browser extension for seamless wallet
-              connectivity.
-            </p>
-            <a
-              href="https://chromewebstore.google.com/detail/demos-wallet/nefongcpmdahjaijjkihgieiamoahcoo?pli=1"
-              target="_blank"
-              >Download Demos Extension</a
-            >
+            <p>Install the Demos browser extension for seamless wallet connectivity.</p>
+            <a href="https://chromewebstore.google.com/detail/demos-wallet/nefongcpmdahjaijjkihgieiamoahcoo?pli=1" 
+               target="_blank" class="help-link">Download Demos Extension</a>
           </div>
         </div>
 
-        <div
-          id="connected-wallet"
-          class="connected-wallet"
-          style="display: none"
-        >
-          <div class="wallet-info">
-            <div class="wallet-address" id="connected-address">
-              Not connected
-            </div>
-            <div class="wallet-balance" id="connected-balance">
-              Balance: 0 DEMOS
-            </div>
-          </div>
-          <button id="disconnect-btn" class="wallet-btn disconnect-btn">
-            Disconnect
+        <!-- Game Controls Section -->
+        <div class="controls-section">
+          <h3 class="section-title">Launch Game</h3>
+          
+          <button id="launch-btn" class="launch-btn" disabled>
+            <span class="btn-icon">🚀</span>
+            <span>Launch Into Space</span>
           </button>
         </div>
+      </div>
 
-        <button id="launch-btn" class="wallet-btn launch-btn" disabled>
-          Launch Into Space
+      <!-- Blockchain Test Section (moved to bottom) -->
+      <div class="blockchain-test-section">
+        <button id="test-blockchain-btn" class="secondary-btn" disabled>
+          Test Blockchain Connection
         </button>
-
-        <div class="blockchain-test-section" style="margin-top: 20px">
-          <button id="test-blockchain-btn" class="wallet-btn" disabled>
-            Test Blockchain Connection
-          </button>
-          <div
-            id="blockchain-test-results"
-            class="blockchain-test-results"
-            style="display: none"
-          ></div>
-        </div>
-
-        <p class="welcome-desc">
-          Connect your Demos wallet to join other pilots in real-time 3D space
-          combat! Your wallet address will be your unique pilot identifier.
-        </p>
+        <div id="blockchain-test-results" class="blockchain-test-results" style="display: none"></div>
       </div>
     </div>
 
     <canvas id="gameCanvas"></canvas>
+
+    <!-- Testnet Notice Banner -->
+    <div id="testnet-banner" class="testnet-banner">
+      <div class="testnet-content">
+        <div class="testnet-icon">⚠️</div>
+        <div>
+          <h3 class="testnet-title">Testnet Mode</h3>
+          <p class="testnet-text">This app uses testnet DEM tokens. No asteroid was hurt during the creation of this game.</p>
+        </div>
+        <button id="testnet-close" class="testnet-close">
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+      <div class="testnet-progress"></div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="demos-footer">
+      <div class="footer-content">
+        <a href="https://demos.sh" target="_blank" rel="noopener noreferrer" class="footer-link">
+          Made with Demos SDK
+        </a>
+      </div>
+    </footer>
+
+    <script>
+      // Testnet banner functionality
+      document.addEventListener('DOMContentLoaded', function() {
+        const banner = document.getElementById('testnet-banner');
+        const closeBtn = document.getElementById('testnet-close');
+        
+        if (banner && closeBtn) {
+          // Auto-dismiss after 20 seconds
+          const autoDismissTimer = setTimeout(() => {
+            dismissBanner();
+          }, 20000);
+          
+          // Close button functionality
+          closeBtn.addEventListener('click', () => {
+            clearTimeout(autoDismissTimer);
+            dismissBanner();
+          });
+          
+          // Dismiss on scroll
+          const handleScroll = () => {
+            clearTimeout(autoDismissTimer);
+            dismissBanner();
+            window.removeEventListener('scroll', handleScroll);
+          };
+          window.addEventListener('scroll', handleScroll);
+          
+          function dismissBanner() {
+            banner.classList.add('dismissing');
+            setTimeout(() => {
+              banner.style.display = 'none';
+            }, 300);
+          }
+        }
+      });
+    </script>
 
     <script type="importmap">
       {

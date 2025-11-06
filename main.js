@@ -667,10 +667,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
     if (connectExtensionBtn) {
       if (address) {
-        connectExtensionBtn.disabled = true;
-        connectExtensionBtn.classList.remove("enabled");
-        connectExtensionBtn.textContent = "Connected";
+        // Hide the connect button when wallet is connected
+        connectExtensionBtn.style.display = "none";
       } else {
+        connectExtensionBtn.style.display = "block";
         connectExtensionBtn.disabled = false;
         connectExtensionBtn.classList.add("enabled");
         connectExtensionBtn.textContent = "Connect Demos Extension";
@@ -699,15 +699,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   function ensurePayButton() {
     if (payBtn) return payBtn;
     try {
-      const walletContainer =
-        document.querySelector(".connected-wallet") ||
-        document.getElementById("welcome-screen");
-      if (!walletContainer) return null;
+      const controlsContainer = document.querySelector(".controls-section");
+      if (!controlsContainer) return null;
       const btn = document.createElement("button");
       btn.id = "pay-btn";
-      btn.className = "wallet-btn";
+      btn.className = "launch-btn";
       btn.textContent = "Pay 1 DEM to Play";
-      btn.style.marginTop = "8px";
       btn.disabled = true;
       btn.addEventListener("click", async () => {
         btn.disabled = true;
@@ -723,7 +720,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         }
         updateLaunchButton();
       });
-      walletContainer.appendChild(btn);
+      controlsContainer.appendChild(btn);
       payBtn = btn;
       return btn;
     } catch (_) {
@@ -889,7 +886,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         },
         metadata: {
           version: "1.0.0",
-          game: "Demos Orbit Runner 3D",
+          game: "Orbit Runner",
           roundDuration: 180,
         },
       };
@@ -5119,8 +5116,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
       dbg("focus");
-      // Show reconnect overlay and require user action
-      showReconnectOverlay();
+      // Only show reconnect overlay if game is active (welcome screen is hidden)
+      const welcomeScreen = document.getElementById("welcome-screen");
+      if (welcomeScreen && welcomeScreen.classList.contains("hidden")) {
+        // Game is active, show reconnect overlay
+        showReconnectOverlay();
+      }
     } else {
       dbg("hidden");
       input.fire = false;
