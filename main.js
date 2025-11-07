@@ -2721,6 +2721,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         hideGameOver();
         roundSubmitted = false;
         statsSaved = false;
+        
+        // Reset submit button state for new round
+        if (endDemosBtn) {
+          endDemosBtn.textContent = "Submit to Demos";
+          endDemosBtn.disabled = false;
+          endDemosBtn.style.background = "rgba(0,0,0,0.3)";
+          endDemosBtn.style.borderColor = "rgba(255,255,255,0.25)";
+        }
         // Local soft respawn near origin; reset movement
         speedUnitsPerSec = 20;
         targetSpeedUnitsPerSec = 20;
