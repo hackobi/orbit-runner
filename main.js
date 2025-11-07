@@ -5689,61 +5689,126 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             if (!walletAddress) throw new Error("No wallet address available");
 
             // Execute native transfer for 2 DEM
-            buyDEM.textContent = "Confirm in wallet...";
-            const resp = await provider.request({
+            console.log("[Time Extension] About to call nativeTransfer with:", {
               method: "nativeTransfer",
-              params: [
-                { recipientAddress: treasuryAddress, amount: 2 },
-              ],
+              params: [{ recipientAddress: treasuryAddress, amount: 2 }]
             });
-
-            console.log("[Time Extension] nativeTransfer response:", resp);
             
-            // Extract transaction hash
+            buyDEM.textContent = "Confirm in wallet...";
+            
+            let resp;
+            try {
+              resp = await provider.request({
+                method: "nativeTransfer",
+                params: [
+                  { recipientAddress: treasuryAddress, amount: 2 },
+                ],
+              });
+              console.log("[Time Extension] Raw nativeTransfer response:", resp);
+              console.log("[Time Extension] Response type:", typeof resp);
+              console.log("[Time Extension] Response keys:", Object.keys(resp || {}));
+            } catch (walletError) {
+              console.error("[Time Extension] Wallet request failed:", walletError);
+              throw new Error(`Wallet transaction failed: ${walletError.message}`);
+            }
+            
+            // Extract transaction hash with detailed debugging
+            console.log("[Time Extension] Extracting transaction hash...");
             const vdat = resp?.data?.validityData || resp?.validityData || null;
+            console.log("[Time Extension] validityData:", vdat);
+            
+            const candidates = [
+              { path: "vdat?.response?.data?.transaction?.hash", value: vdat?.response?.data?.transaction?.hash },
+              { path: "resp?.result?.data?.transaction?.hash", value: resp?.result?.data?.transaction?.hash },
+              { path: "resp?.result?.txHash", value: resp?.result?.txHash },
+              { path: "resp?.result?.hash", value: resp?.result?.hash },
+              { path: "resp?.hash", value: resp?.hash },
+              { path: "resp?.data?.hash", value: resp?.data?.hash },
+              { path: "resp?.transactionHash", value: resp?.transactionHash },
+              { path: "resp?.signature", value: resp?.signature }
+            ];
+            
+            console.log("[Time Extension] Transaction hash candidates:");
+            candidates.forEach(c => {
+              if (c.value) console.log(`  ${c.path}: ${c.value}`);
+            });
+            
             const txHash =
               vdat?.response?.data?.transaction?.hash ||
               resp?.result?.data?.transaction?.hash ||
               resp?.result?.txHash ||
               resp?.result?.hash ||
               resp?.hash ||
+              resp?.data?.hash ||
+              resp?.transactionHash ||
+              resp?.signature ||
               "";
               
-            console.log("[Time Extension] extracted txHash:", txHash);
+            console.log("[Time Extension] Final extracted txHash:", txHash);
             if (!txHash) {
-              throw new Error("Wallet did not return a transaction hash");
+              console.error("[Time Extension] Failed to extract hash. Full response structure:", JSON.stringify(resp, null, 2));
+              throw new Error("Wallet did not return a transaction hash. Check console for response details.");
             }
 
             // Verify transaction with server
             buyDEM.textContent = "Verifying...";
+            console.log("[Time Extension] Starting verification with:", {
+              txHash,
+              playerAddress: walletAddress,
+              hasValidityData: !!vdat
+            });
+            
             let verified = false;
-            for (let i = 0; i < 30; i++) {
-              const vRes = await fetch(`${apiBase}/time/verify`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  txHash,
-                  playerAddress: walletAddress,
-                  validityData: vdat,
-                }),
-              });
+            let lastError = null;
+            
+            for (let i = 0; i < 15; i++) {
+              console.log(`[Time Extension] Verification attempt ${i + 1}/15`);
               
-              if (vRes.ok) {
-                const v = await vRes.json();
-                if (v?.ok && v?.verified) {
-                  verified = true;
-                  break;
+              try {
+                const vRes = await fetch(`${apiBase}/time/verify`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    txHash,
+                    playerAddress: walletAddress,
+                    validityData: vdat,
+                  }),
+                });
+                
+                console.log(`[Time Extension] Server response status: ${vRes.status}`);
+                
+                if (vRes.ok) {
+                  const v = await vRes.json();
+                  console.log("[Time Extension] Server response:", v);
+                  
+                  if (v?.ok && v?.verified) {
+                    console.log("[Time Extension] Transaction verified successfully!");
+                    verified = true;
+                    break;
+                  } else {
+                    lastError = v?.error || "Verification returned false";
+                    console.log("[Time Extension] Verification failed:", lastError);
+                  }
+                } else {
+                  const errorText = await vRes.text();
+                  lastError = `Server error ${vRes.status}: ${errorText}`;
+                  console.log("[Time Extension] Server error:", lastError);
                 }
+              } catch (fetchError) {
+                lastError = `Network error: ${fetchError.message}`;
+                console.log("[Time Extension] Network error:", lastError);
               }
               
-              // Wait 1 second before retrying
-              if (i < 29) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
+              // Wait 2 seconds before retrying
+              if (i < 14) {
+                console.log("[Time Extension] Waiting 2 seconds before retry...");
+                await new Promise(resolve => setTimeout(resolve, 2000));
               }
             }
 
             if (!verified) {
-              throw new Error("Payment verification failed");
+              console.error("[Time Extension] Verification failed after all attempts:", lastError);
+              throw new Error(`Payment verification failed: ${lastError}`);
             }
             
             // If successful, extend time
