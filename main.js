@@ -1420,6 +1420,38 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
   }
 
+  // Initialize Demos SDK
+  async function initializeDemosSDK() {
+    try {
+      // Check if Demos SDK is available
+      if (window.demos && typeof window.demos.request === "function") {
+        console.log("✅ Demos SDK initialized from window.demos");
+        return window.demos;
+      }
+      
+      // Try alternative SDK access patterns
+      if (window.DemosSDK && typeof window.DemosSDK.init === "function") {
+        const sdk = await window.DemosSDK.init();
+        console.log("✅ Demos SDK initialized via DemosSDK.init()");
+        return sdk;
+      }
+      
+      // Check for provider-based SDK
+      const providers = await window.detectDemosExtension();
+      if (providers.length > 0) {
+        const provider = providers[0].provider || providers[0];
+        console.log("✅ Demos SDK initialized from detected provider");
+        return provider;
+      }
+      
+      console.log("⚠️ No Demos SDK available");
+      return null;
+    } catch (error) {
+      console.error("❌ Failed to initialize Demos SDK:", error);
+      return null;
+    }
+  }
+
   // Connect wallet using Demos extension directly
   async function connectWalletWithSDK() {
     try {
