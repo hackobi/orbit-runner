@@ -266,6 +266,35 @@ app.get("/test-telegram", async (_req, res) => {
   }
 });
 
+// Clear leaderboards (admin endpoint)
+app.post("/admin/clear-leaderboard", async (_req, res) => {
+  try {
+    // Clear all leaderboard data
+    top.points = [];
+    top.kills = [];
+    top.asteroids = [];
+    top.belt = [];
+    top.survival = [];
+    top.sessions = [];
+    
+    // Persist the cleared data
+    persist();
+    
+    res.json({ 
+      ok: true, 
+      message: "Leaderboard cleared successfully",
+      timestamp: new Date().toISOString()
+    });
+    
+    console.log("🧹 Leaderboard cleared via admin endpoint");
+  } catch (error) {
+    res.status(500).json({ 
+      ok: false, 
+      error: error.message 
+    });
+  }
+});
+
 app.get("/leaderboards", (_req, res) =>
   res.json({
     points: top.points,
