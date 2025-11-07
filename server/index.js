@@ -284,19 +284,26 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 app.get("/test-telegram", async (_req, res) => {
   try {
     const testMessage = "🤖 Bot connectivity test from Railway server";
+    console.log("📣 TEST-TELEGRAM endpoint called");
     const result = await sendTelegramMessage(testMessage);
+    console.log("📣 TEST-TELEGRAM result:", result);
     res.json({ 
       ok: result, 
       hasToken: !!TELEGRAM_BOT_TOKEN,
       hasChatId: !!TELEGRAM_CHAT_ID,
+      tokenLength: TELEGRAM_BOT_TOKEN?.length || 0,
+      chatId: TELEGRAM_CHAT_ID,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
+    console.error("📣 TEST-TELEGRAM error:", error.message);
     res.status(500).json({ 
       ok: false, 
       error: error.message,
       hasToken: !!TELEGRAM_BOT_TOKEN,
-      hasChatId: !!TELEGRAM_CHAT_ID
+      hasChatId: !!TELEGRAM_CHAT_ID,
+      tokenLength: TELEGRAM_BOT_TOKEN?.length || 0,
+      chatId: TELEGRAM_CHAT_ID
     });
   }
 });
