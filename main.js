@@ -5536,6 +5536,17 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           shield = 100;
         },
       },
+      {
+        key: "time",
+        label: "Extend Time +12s (Cost: 1200 points or 2 DEM)",
+        cost: 1200,
+        action: () => {
+          if (roundActive && roundEndsAt > Date.now()) {
+            roundEndsAt += 12 * 1000; // Add 12 seconds
+            updateHud();
+          }
+        },
+      },
     ];
     items.forEach((entry) => {
       const li = document.createElement("li");
@@ -5545,30 +5556,146 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       li.style.gap = "10px";
       const span = document.createElement("span");
       span.textContent = entry.label;
-      const buy = document.createElement("button");
-      buy.textContent = "Buy";
-      Object.assign(buy.style, {
-        padding: "4px 10px",
-        border: "none",
-        borderRadius: "6px",
-        cursor: "pointer",
-        background: "rgba(0,255,180,0.25)",
-        color: "#fff",
-      });
-      buy.onclick = () => {
-        if (score >= entry.cost) {
-          score -= entry.cost;
-          entry.action();
-          updateHud();
-          hideStoreOverlay();
-        } else {
-          buy.textContent = "Not enough points";
-          setTimeout(() => {
-            buy.textContent = "Buy";
-          }, 1200);
-        }
-      };
-      li.append(span, buy);
+      
+      if (entry.key === "time") {
+        // Special handling for time extension - dual payment options
+        const buttonContainer = document.createElement("div");
+        buttonContainer.style.display = "flex";
+        buttonContainer.style.gap = "6px";
+        
+        const buyPoints = document.createElement("button");
+        buyPoints.textContent = "Buy (Points)";
+        Object.assign(buyPoints.style, {
+          padding: "4px 8px",
+          border: "none",
+          borderRadius: "6px",
+          cursor: "pointer",
+          background: "rgba(0,255,180,0.25)",
+          color: "#fff",
+          fontSize: "11px",
+        });
+        
+        const buyDEM = document.createElement("button");
+        buyDEM.textContent = "Buy (2 DEM)";
+        Object.assign(buyDEM.style, {
+          padding: "4px 8px",
+          border: "none",
+          borderRadius: "6px",
+          cursor: "pointer",
+          background: "rgba(255,180,0,0.25)",
+          color: "#fff",
+          fontSize: "11px",
+        });
+
+        buyPoints.onclick = () => {
+          if (!roundActive) {
+            buyPoints.textContent = "No round active";
+            setTimeout(() => {
+              buyPoints.textContent = "Buy (Points)";
+            }, 1200);
+            return;
+          }
+          if (score >= entry.cost) {
+            score -= entry.cost;
+            entry.action();
+            updateHud();
+            hideStoreOverlay();
+          } else {
+            buyPoints.textContent = "Not enough points";
+            setTimeout(() => {
+              buyPoints.textContent = "Buy (Points)";
+            }, 1200);
+          }
+        };
+
+        buyDEM.onclick = async () => {
+          if (!roundActive) {
+            buyDEM.textContent = "No round active";
+            setTimeout(() => {
+              buyDEM.textContent = "Buy (2 DEM)";
+            }, 1200);
+            return;
+          }
+          
+          buyDEM.textContent = "Processing...";
+          buyDEM.disabled = true;
+          
+          try {
+            // Get treasury address from payment info
+            let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
+            const infoRes = await fetch(`${apiBase}/pay/info`);
+            if (!infoRes.ok) throw new Error("Payment info unavailable");
+            const info = await infoRes.json();
+            if (!info?.ok) throw new Error(info?.error || "Payment info error");
+            const { treasuryAddress } = info;
+            if (!treasuryAddress) throw new Error("Treasury address missing");
+
+            // Get Demos provider
+            const provider = await getDemosProvider();
+            if (!provider || typeof provider.request !== "function") {
+              throw new Error("Demos wallet provider not available");
+            }
+
+            // Execute native transfer for 2 DEM
+            const resp = await provider.request({
+              method: "nativeTransfer",
+              params: [
+                { recipientAddress: treasuryAddress, amount: 2 },
+              ],
+            });
+
+            console.log("[Time Extension] nativeTransfer response:", resp);
+            
+            // If successful, extend time
+            entry.action();
+            updateHud();
+            hideStoreOverlay();
+            
+          } catch (error) {
+            console.error("[Time Extension] Payment failed:", error);
+            buyDEM.textContent = "Payment failed";
+            setTimeout(() => {
+              buyDEM.textContent = "Buy (2 DEM)";
+              buyDEM.disabled = false;
+            }, 2000);
+            return;
+          }
+          
+          buyDEM.textContent = "Buy (2 DEM)";
+          buyDEM.disabled = false;
+        };
+
+        buttonContainer.append(buyPoints, buyDEM);
+        li.append(span, buttonContainer);
+        
+      } else {
+        // Regular single-payment items
+        const buy = document.createElement("button");
+        buy.textContent = "Buy";
+        Object.assign(buy.style, {
+          padding: "4px 10px",
+          border: "none",
+          borderRadius: "6px",
+          cursor: "pointer",
+          background: "rgba(0,255,180,0.25)",
+          color: "#fff",
+        });
+        buy.onclick = () => {
+          if (score >= entry.cost) {
+            score -= entry.cost;
+            entry.action();
+            updateHud();
+            hideStoreOverlay();
+          } else {
+            buy.textContent = "Not enough points";
+            setTimeout(() => {
+              buy.textContent = "Buy";
+            }, 1200);
+          }
+        };
+        li.append(span, buy);
+      }
+      
       list.appendChild(li);
     });
 
