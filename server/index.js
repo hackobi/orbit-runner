@@ -635,6 +635,164 @@ app.get("/pay/info", async (_req, res) => {
   }
 });
 
+// Verify a native transfer of exactly 2 DEM to treasury for time extension
+app.post("/time/verify", async (req, res) => {
+  try {
+    const { txHash, playerAddress, validityData } = req.body || {};
+    console.log("/time/verify", {
+      txHash,
+      playerAddress,
+      hasValidity: !!validityData,
+    });
+    if (!playerAddress) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Missing playerAddress" });
+    }
+    if (!txHash) {
+      return res.status(400).json({ ok: false, error: "Missing txHash" });
+    }
+
+    const connected = await ensureConnection();
+    if (!connected)
+      return res.status(500).json({ ok: false, error: "Network unavailable" });
+    const tOk = await connectTreasuryWallet();
+    if (!tOk)
+      return res.status(500).json({ ok: false, error: "Treasury unavailable" });
+
+    const treasuryAddress = treasuryDemos.getAddress();
+    // Try confirmed tx first
+    let tx = txHash ? await demos.getTxByHash(txHash).catch(() => null) : null;
+    // If not found, try mempool as fallback (pending tx)
+    if (!tx || !tx.content) {
+      try {
+        const mem = await demos.getMempool();
+        if (Array.isArray(mem)) {
+          const found = mem.find(
+            (m) =>
+              m?.hash &&
+              String(m.hash).toLowerCase().replace(/^0x/, "") ===
+                String(txHash).toLowerCase().replace(/^0x/, "")
+          );
+          if (found) tx = found;
+        }
+      } catch (_) {}
+    }
+    // Final fallback: search recent transactions
+    if (!tx || !tx.content) {
+      try {
+        const recent = await demos.getTransactions("latest", 200);
+        if (Array.isArray(recent)) {
+          const lower = String(txHash).toLowerCase().replace(/^0x/, "");
+          let match = recent.find(
+            (t) =>
+              String(t?.hash || "")
+                .toLowerCase()
+                .replace(/^0x/, "") === lower
+          );
+          if (!match) {
+            // heuristic: native send from player to treasury amount 2 within last 5 minutes
+            match = recent.find((c) => {
+              if (!c?.content) return false;
+              try {
+                const payload = JSON.parse(c.content);
+                const isNative = payload.data?.type === "native";
+                const isSend = payload.data?.function === "send";
+                if (!isSend) return false;
+                const args = Array.isArray(payload.args) ? payload.args : [];
+                const [toAddr, amt] = args;
+                const tsOk =
+                  Number(c.timestamp || 0) > Date.now() - 5 * 60 * 1000;
+                return toAddr === treasuryAddress && Number(amt) === 2 && tsOk;
+              } catch (_) {
+                return false;
+              }
+            });
+          }
+          if (match) tx = match;
+        }
+      } catch (_) {}
+    }
+    // Alt RPC fallbacks
+    if (!tx || !tx.content) {
+      for (const rpc of ALT_RPCS) {
+        try {
+          const probe = new Demos();
+          await probe.connect(rpc);
+          let t = txHash
+            ? await probe.getTxByHash(txHash).catch(() => null)
+            : null;
+          if (!t || !t.content) {
+            try {
+              const mem = await probe.getMempool();
+              if (Array.isArray(mem)) {
+                const found = mem.find(
+                  (m) =>
+                    m?.hash &&
+                    String(m.hash).toLowerCase().replace(/^0x/, "") ===
+                      String(txHash).toLowerCase().replace(/^0x/, "")
+                );
+                if (found) t = found;
+              }
+            } catch (_) {}
+          }
+          if (t && t.content) {
+            tx = t;
+            break;
+          }
+        } catch (e) {
+          console.error("Alt RPC failed:", String(e));
+        }
+      }
+    }
+
+    if (!tx || !tx.content) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Transaction not found" });
+    }
+
+    const content = tx.content;
+    let payload;
+    try {
+      payload = JSON.parse(content);
+    } catch (e) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Invalid transaction format" });
+    }
+
+    const isNative = payload.data?.type === "native";
+    const isSend = payload.data?.function === "send";
+    const args = Array.isArray(payload.args) ? payload.args : [];
+    const [toAddr, amount] = args;
+
+    if (
+      !isNative ||
+      !isSend ||
+      toAddr !== treasuryAddress ||
+      Number(amount) !== 2
+    ) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Payment does not match required 2 DEM transfer" });
+    }
+
+    // Verify address
+    if (payload.address !== playerAddress) {
+      return res.status(400).json({
+        ok: false,
+        error: `Transaction from ${payload.address} but expected from ${playerAddress}`,
+      });
+    }
+
+    return res.json({ ok: true, verified: true });
+  } catch (e) {
+    console.error("/time/verify error:", String(e));
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
 // Verify a native transfer of exactly 1 DEM to treasury; returns a paid session token
 app.post("/pay/verify", async (req, res) => {
   try {

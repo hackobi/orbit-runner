@@ -5449,6 +5449,50 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     duendeTextLabels.push({ group: mesh, life }); // reuse label updater; treat as group
   }
 
+  // Status message system for store feedback
+  function showStatusMessage(message, isSuccess) {
+    // Remove any existing status message
+    const existing = document.getElementById('statusMessage');
+    if (existing) {
+      existing.remove();
+    }
+
+    const statusDiv = document.createElement('div');
+    statusDiv.id = 'statusMessage';
+    statusDiv.textContent = message;
+    
+    Object.assign(statusDiv.style, {
+      position: 'fixed',
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      padding: '12px 24px',
+      background: isSuccess ? 'rgba(0, 255, 0, 0.9)' : 'rgba(255, 0, 0, 0.9)',
+      color: '#fff',
+      borderRadius: '8px',
+      fontSize: '16px',
+      fontWeight: 'bold',
+      zIndex: '10000',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+      pointerEvents: 'none',
+      opacity: '1',
+      transition: 'opacity 0.5s ease-out'
+    });
+
+    document.body.appendChild(statusDiv);
+
+    // Start fading out after 2 seconds, remove after 3 seconds
+    setTimeout(() => {
+      statusDiv.style.opacity = '0';
+    }, 2000);
+
+    setTimeout(() => {
+      if (statusDiv && statusDiv.parentNode) {
+        statusDiv.remove();
+      }
+    }, 3000);
+  }
+
   // Store Overlay UI
   let storeOverlay = null;
   function ensureStoreOverlay() {
@@ -5589,6 +5633,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
         buyPoints.onclick = () => {
           if (!roundActive) {
+            showStatusMessage("No round active", false);
             buyPoints.textContent = "No round active";
             setTimeout(() => {
               buyPoints.textContent = "Buy (Points)";
@@ -5599,8 +5644,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             score -= entry.cost;
             entry.action();
             updateHud();
+            showStatusMessage("⏱️ +12 seconds added!", true);
             hideStoreOverlay();
           } else {
+            showStatusMessage("Not enough points", false);
             buyPoints.textContent = "Not enough points";
             setTimeout(() => {
               buyPoints.textContent = "Buy (Points)";
@@ -5610,6 +5657,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
         buyDEM.onclick = async () => {
           if (!roundActive) {
+            showStatusMessage("No round active", false);
             buyDEM.textContent = "No round active";
             setTimeout(() => {
               buyDEM.textContent = "Buy (2 DEM)";
@@ -5630,13 +5678,18 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             const { treasuryAddress } = info;
             if (!treasuryAddress) throw new Error("Treasury address missing");
 
-            // Get Demos provider
+            // Get Demos provider and wallet address
             const provider = await getDemosProvider();
             if (!provider || typeof provider.request !== "function") {
               throw new Error("Demos wallet provider not available");
             }
 
+            const accounts = await provider.request({ method: "eth_requestAccounts" });
+            const walletAddress = Array.isArray(accounts) && accounts.length > 0 ? accounts[0] : null;
+            if (!walletAddress) throw new Error("No wallet address available");
+
             // Execute native transfer for 2 DEM
+            buyDEM.textContent = "Confirm in wallet...";
             const resp = await provider.request({
               method: "nativeTransfer",
               params: [
@@ -5646,13 +5699,62 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
             console.log("[Time Extension] nativeTransfer response:", resp);
             
+            // Extract transaction hash
+            const vdat = resp?.data?.validityData || resp?.validityData || null;
+            const txHash =
+              vdat?.response?.data?.transaction?.hash ||
+              resp?.result?.data?.transaction?.hash ||
+              resp?.result?.txHash ||
+              resp?.result?.hash ||
+              resp?.hash ||
+              "";
+              
+            console.log("[Time Extension] extracted txHash:", txHash);
+            if (!txHash) {
+              throw new Error("Wallet did not return a transaction hash");
+            }
+
+            // Verify transaction with server
+            buyDEM.textContent = "Verifying...";
+            let verified = false;
+            for (let i = 0; i < 30; i++) {
+              const vRes = await fetch(`${apiBase}/time/verify`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  txHash,
+                  playerAddress: walletAddress,
+                  validityData: vdat,
+                }),
+              });
+              
+              if (vRes.ok) {
+                const v = await vRes.json();
+                if (v?.ok && v?.verified) {
+                  verified = true;
+                  break;
+                }
+              }
+              
+              // Wait 1 second before retrying
+              if (i < 29) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              }
+            }
+
+            if (!verified) {
+              throw new Error("Payment verification failed");
+            }
+            
             // If successful, extend time
             entry.action();
             updateHud();
+            showStatusMessage("⏱️ +12 seconds added!", true);
             hideStoreOverlay();
             
           } catch (error) {
             console.error("[Time Extension] Payment failed:", error);
+            showStatusMessage(`❌ Payment failed: ${error.message}`, false);
             buyDEM.textContent = "Payment failed";
             setTimeout(() => {
               buyDEM.textContent = "Buy (2 DEM)";
