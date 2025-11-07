@@ -3119,6 +3119,27 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (isWithinBeltXZ(pos)) mult *= 2;
     return Math.round(base * mult);
   }
+  function getOrbScore(orbType, pos) {
+    const baseAsteroidScore = 110; // Reference asteroid score
+    let multiplier = 1;
+    
+    // Set multipliers based on orb type
+    switch(orbType) {
+      case 'pink': multiplier = 10; break;      // Pink orbs: 10x
+      case 'shield': multiplier = 5; break;    // Shield orbs: 5x  
+      case 'boost': multiplier = 5; break;     // Boost orbs: 5x
+      case 'zaphire': multiplier = 1; break;   // Red/Zaphire orbs: 1x
+      default: multiplier = 1;
+    }
+    
+    let score = baseAsteroidScore * multiplier;
+    
+    // Apply existing belt and multiplier bonuses
+    if (asteroidMultTimer > 0) score *= 2;
+    if (isWithinBeltXZ(pos)) score *= 2;
+    
+    return Math.round(score);
+  }
 
   // Math utility: squared-distance radius check to avoid sqrt per frame
   function isWithinRadiusSquared(posA, posB, combinedRadius) {
@@ -6225,6 +6246,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         ) {
           shield = Math.min(100, shield + 25);
           spawnShieldExplosion(o.mesh.position, "pickup");
+          // Add scoring for shield orb
+          if (roundActive) score += getOrbScore('shield', o.mesh.position);
           scene.remove(o.mesh);
           shieldOrbs.splice(i, 1);
           continue;
@@ -6241,6 +6264,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             shield = Math.min(100, shield + 25);
             spawnShieldText(o.mesh.position);
             spawnShieldExplosion(o.mesh.position, "shot");
+            // Add scoring for shield orb
+            if (roundActive) score += getOrbScore('shield', o.mesh.position);
             scene.remove(o.mesh);
             shieldOrbs.splice(i, 1);
             scene.remove(b.mesh);
@@ -6270,6 +6295,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           spawnDuendeText(o.mesh.position);
           spawnImpactBurst(o.mesh.position, 0xff33cc, 20);
           spawnShieldRing(o.mesh.position, 0xff33cc);
+          // Add scoring for pink orb
+          if (roundActive) score += getOrbScore('pink', o.mesh.position);
         };
         if (
           isWithinRadiusSquared(
@@ -6381,6 +6408,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           spawnCenteredTextLabel("STORE", o.mesh.position, 0xffeeee, 2.8, 2.2);
           spawnImpactBurst(o.mesh.position, 0xff6666, 26);
           spawnShieldRing(o.mesh.position, 0xff6666);
+          // Add scoring for zaphire orb
+          if (roundActive) score += getOrbScore('zaphire', o.mesh.position);
           showStoreOverlay();
           if (o.glow) scene.remove(o.glow);
           scene.remove(o.mesh);
@@ -6406,6 +6435,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             );
             spawnImpactBurst(o.mesh.position, 0xff6666, 26);
             spawnShieldRing(o.mesh.position, 0xff6666);
+            // Add scoring for zaphire orb
+            if (roundActive) score += getOrbScore('zaphire', o.mesh.position);
             showStoreOverlay();
             if (o.glow) scene.remove(o.glow);
             scene.remove(o.mesh);
@@ -6451,6 +6482,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           spawnShieldRing(o.core.position, 0x99ff66);
           spawnImpactBurst(o.core.position, 0xaa55ff, 18);
           cameraShake += 0.3;
+          // Add scoring for boost orb
+          if (roundActive) score += getOrbScore('boost', o.core.position);
           scene.remove(o.core);
           scene.remove(o.ringG);
           scene.remove(o.ringP);
@@ -6871,7 +6904,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             bots.splice(bi, 1);
             scene.remove(b.mesh);
             bullets.splice(i, 1);
-            if (roundActive) score += getKillScore(300, bot.pos); // base 300; belt & multipliers apply
+            if (roundActive) score += getKillScore(330, bot.pos); // base 330 (3x asteroid); belt & multipliers apply
             killsCount++;
             break;
           }
