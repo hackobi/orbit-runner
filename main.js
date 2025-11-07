@@ -2850,16 +2850,80 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   // Ship (factory functions)
   function buildDefaultShip() {
-    const mat = new THREE.MeshStandardMaterial({
-      color: 0x47e6ff,
-      emissive: 0x0a2a44,
-      emissiveIntensity: 1.5,
-      metalness: 0.2,
-      roughness: 0.5,
+    const group = new THREE.Group();
+    
+    // Main saucer body - metallic blue-silver
+    const saucerMat = new THREE.MeshStandardMaterial({
+      color: 0x6699ff,
+      emissive: 0x003366,
+      emissiveIntensity: 0.8,
+      metalness: 0.8,
+      roughness: 0.2,
     });
-    const geo = new THREE.ConeGeometry(1.0, 3.2, 14);
-    geo.rotateX(Math.PI / 2); // nose +Z
-    return new THREE.Mesh(geo, mat);
+    
+    // Create the main saucer disc shape
+    const saucerGeo = new THREE.SphereGeometry(2.0, 24, 8, 0, Math.PI * 2, 0, Math.PI * 0.5);
+    saucerGeo.scale(1, 0.3, 1); // Flatten it to be disc-like
+    const saucerTop = new THREE.Mesh(saucerGeo, saucerMat);
+    
+    // Bottom half of saucer
+    const saucerBottomGeo = new THREE.SphereGeometry(2.0, 24, 8, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5);
+    saucerBottomGeo.scale(1, 0.25, 1);
+    const saucerBottom = new THREE.Mesh(saucerBottomGeo, saucerMat);
+    
+    // Central dome/cockpit - glowing cyan
+    const domeMat = new THREE.MeshStandardMaterial({
+      color: 0x00ffff,
+      emissive: 0x00cccc,
+      emissiveIntensity: 2,
+      metalness: 0.3,
+      roughness: 0.1,
+      transparent: true,
+      opacity: 0.9,
+    });
+    const domeGeo = new THREE.SphereGeometry(0.6, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5);
+    const dome = new THREE.Mesh(domeGeo, domeMat);
+    dome.position.y = 0.3;
+    
+    // Engine ring - glowing blue
+    const ringMat = new THREE.MeshStandardMaterial({
+      color: 0x0099ff,
+      emissive: 0x0066ff,
+      emissiveIntensity: 3,
+      metalness: 0.5,
+      roughness: 0.3,
+    });
+    const ringGeo = new THREE.TorusGeometry(1.5, 0.1, 8, 24);
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = -0.1;
+    
+    // Small lights around the rim
+    const lightMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      emissive: 0x00ffff,
+      emissiveIntensity: 5,
+    });
+    
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      const lightGeo = new THREE.SphereGeometry(0.08, 8, 8);
+      const light = new THREE.Mesh(lightGeo, lightMat);
+      light.position.x = Math.cos(angle) * 1.8;
+      light.position.z = Math.sin(angle) * 1.8;
+      light.position.y = 0;
+      group.add(light);
+    }
+    
+    group.add(saucerTop);
+    group.add(saucerBottom);
+    group.add(dome);
+    group.add(ring);
+    
+    // Rotate so it faces forward properly
+    group.rotation.x = Math.PI / 2;
+    
+    return group;
   }
   let ship = buildDefaultShip();
   scene.add(ship);
