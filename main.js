@@ -3410,13 +3410,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Duende SVG label for pink orb hits (renders as billboarded plane)
   const duendeTextLabels = []; // { group, life }
   function spawnDuendeText(position) {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 160" width="520" height="160" role="img" aria-labelledby="title desc">\n  <title id="title">Demos logo with wave-dual emblem</title>\n  <desc id="desc">A circular emblem split by a flowing S-like curve with asymmetric dots, followed by the word Demos.</desc>\n  <defs>\n    <clipPath id="emblem-clip">\n      <circle cx="80" cy="80" r="70"/>\n    </clipPath>\n  </defs>\n  <g transform="translate(80 80) rotate(-12) translate(-80 -80)">\n    <circle cx="80" cy="80" r="70" fill="#111111"/>\n    <g clip-path="url(#emblem-clip)">\n      <path fill="#ffffff" fill-rule="evenodd" d="\n        M -20 -20 H 180 V 180 H -20 Z\n        M -20 -20\n        L 28 -20\n        C 84 -18 120 40 133 78\n        C 146 114 94 142 12 160\n        L -20 160 Z\"/>\n    </g>\n    <circle cx="108" cy="48" r="11" fill="#ffffff"/>\n    <circle cx="52"  cy="114" r="15" fill="#111111"/>\n    <circle cx="80" cy="80" r="70" fill="none" stroke="#111111" stroke-width="2"/>\n  </g>\n  <text x="170" y="86" fill="#222222" font-size="64" font-weight="700" dominant-baseline="middle">Demos</text>\n</svg>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" data-name="Шар 1" viewBox="0 0 293.54 348.94" width="293.54" height="348.94">\n  <path d="m90.97 266.49 10.91 3.74 87.56-259.41-11.06-3.74C162.26 2.05 51.54-28.3 8.63 91.81c-40.94 131.35 76.71 172.43 82.33 174.68Zm54.69-242.37c6.93 1.31 12.1 8.07 9.71 15.09l-31.08 92.65C102.34 195.26 10.37 158 37.44 91.69c27.47-67.29 83.68-72.21 108.22-67.57Zm56.93 59.28-10.91-3.74-87.56 259.41 11.06 3.74c8.4 2.88 126.84 35.39 169.75-84.73C325.87 126.73 207.79 85.33 202.6 83.4ZM147.9 325.77c-6.93-1.31-12.1-8.07-9.71-15.09l31.08-92.65c21.95-63.4 113.92-26.14 86.85 40.17-27.47 67.29-83.68 72.22-108.22 67.57Z" style="fill:#fff"/>\n</svg>`;
     const dataUrl = "data:image/svg+xml;utf8," + encodeURIComponent(svg);
     const loader = new THREE.TextureLoader();
     loader.load(dataUrl, (texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-      const aspect = 520 / 160; // 3.25
+      const aspect = 293.54 / 348.94; // 0.84 (taller than wide)
       const widthUnits = 9; // visible but not huge
       const heightUnits = widthUnits / aspect;
       const mat = new THREE.MeshBasicMaterial({
