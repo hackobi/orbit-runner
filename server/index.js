@@ -215,6 +215,20 @@ async function announcePointsRecordIfBeaten({
   previousRecord,
 }) {
   try {
+    // Debug: Send message for every score submission
+    const who = playerName || "Player";
+    const debugText = `🎮 Someone just played Orbit Runner! ${who} scored ${points.toLocaleString()} points. Current record: ${previousRecord.toLocaleString()}`;
+    
+    console.log("📣 Debug: Score submitted", {
+      player: who,
+      score: points,
+      previousRecord,
+      isNewRecord: points > previousRecord
+    });
+    
+    // Send debug message for every score
+    await sendTelegramMessage(debugText);
+    
     if (!(points > previousRecord)) {
       console.log("📣 No announce: not a new record", {
         previousRecord,
@@ -222,20 +236,22 @@ async function announcePointsRecordIfBeaten({
       });
       return;
     }
-    let who = playerName || "Player";
+    
+    // For record announcements, look up Telegram username
+    let recordWho = who;
     if (isLikelyDemosAddress(playerAddress)) {
       const uname = await getTelegramUsernameForAddress(playerAddress);
       if (uname && typeof uname === "string") {
-        who = uname.startsWith("@") ? uname : `@${uname}`;
+        recordWho = uname.startsWith("@") ? uname : `@${uname}`;
         console.log("📣 Username lookup: success", {
           address: playerAddress,
-          username: who,
+          username: recordWho,
         });
       } else {
         console.log("📣 Username lookup: none", { address: playerAddress });
       }
     }
-    const text = `🚀 New Orbit Runner high score! ${who} set ${points.toLocaleString()} points.`;
+    const text = `🚀 New Orbit Runner high score! ${recordWho} set ${points.toLocaleString()} points.`;
     const ok = await sendTelegramMessage(text);
     if (ok) {
       console.log("📣 Telegram announcement sent.");
