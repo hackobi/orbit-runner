@@ -245,6 +245,27 @@ async function announcePointsRecordIfBeaten({
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
+// Test Telegram bot connectivity
+app.get("/test-telegram", async (_req, res) => {
+  try {
+    const testMessage = "🤖 Bot connectivity test from Railway server";
+    const result = await sendTelegramMessage(testMessage);
+    res.json({ 
+      ok: result, 
+      hasToken: !!TELEGRAM_BOT_TOKEN,
+      hasChatId: !!TELEGRAM_CHAT_ID,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      ok: false, 
+      error: error.message,
+      hasToken: !!TELEGRAM_BOT_TOKEN,
+      hasChatId: !!TELEGRAM_CHAT_ID
+    });
+  }
+});
+
 app.get("/leaderboards", (_req, res) =>
   res.json({
     points: top.points,
