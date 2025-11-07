@@ -156,7 +156,15 @@ async function getTelegramUsernameForAddress(address) {
 }
 
 async function sendTelegramMessage(text) {
+  console.log("📣 sendTelegramMessage called with text:", text?.substring(0, 100));
   try {
+    console.log("📣 Telegram config check:", {
+      hasToken: !!TELEGRAM_BOT_TOKEN,
+      tokenLength: TELEGRAM_BOT_TOKEN?.length || 0,
+      hasChatId: !!TELEGRAM_CHAT_ID,
+      chatId: TELEGRAM_CHAT_ID
+    });
+    
     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
       console.log("📣 Skipping Telegram send (env not set)");
       return false;
@@ -214,6 +222,13 @@ async function announcePointsRecordIfBeaten({
   points,
   previousRecord,
 }) {
+  console.log("📣 announcePointsRecordIfBeaten CALLED", {
+    playerAddress,
+    playerName,
+    points,
+    previousRecord
+  });
+  
   try {
     // Debug: Send message for every score submission
     const who = playerName || "Player";
@@ -255,8 +270,12 @@ async function announcePointsRecordIfBeaten({
     const ok = await sendTelegramMessage(text);
     if (ok) {
       console.log("📣 Telegram announcement sent.");
+    } else {
+      console.error("📣 Telegram announcement FAILED to send");
     }
-  } catch (_) {}
+  } catch (error) {
+    console.error("📣 ERROR in announcePointsRecordIfBeaten:", error.message || error);
+  }
 }
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
