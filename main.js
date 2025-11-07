@@ -2884,13 +2884,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   function buildDefaultShip() {
     const group = new THREE.Group();
     
-    // Main saucer body - metallic blue-silver
+    // Main saucer body - matte black
     const saucerMat = new THREE.MeshStandardMaterial({
-      color: 0x6699ff,
-      emissive: 0x003366,
-      emissiveIntensity: 0.8,
-      metalness: 0.8,
-      roughness: 0.2,
+      color: 0x1a1a1a,
+      emissive: 0x000000,
+      emissiveIntensity: 0.0,
+      metalness: 0.1,
+      roughness: 0.9,
     });
     
     // Create the main saucer disc shape
