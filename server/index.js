@@ -653,7 +653,7 @@ app.post("/time/verify", async (req, res) => {
       return res.status(400).json({ ok: false, error: "Missing txHash" });
     }
 
-    const connected = await ensureConnection();
+    const connected = await connectToDemos();
     if (!connected)
       return res.status(500).json({ ok: false, error: "Network unavailable" });
     const tOk = await connectTreasuryWallet();
