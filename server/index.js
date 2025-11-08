@@ -752,19 +752,18 @@ app.post("/time/verify", async (req, res) => {
         .json({ ok: false, error: "Transaction not found" });
     }
 
-    const content = tx.content;
-    let payload;
-    try {
-      payload = JSON.parse(content);
-    } catch (e) {
-      return res
-        .status(400)
-        .json({ ok: false, error: "Invalid transaction format" });
-    }
-
-    const isNative = payload.data?.type === "native";
-    const isSend = payload.data?.function === "send";
-    const args = Array.isArray(payload.args) ? payload.args : [];
+    const c = tx.content;
+    console.log("/time/verify - transaction content:", c);
+    const isNative = c.type === "native";
+    const data = Array.isArray(c.data) ? c.data : null;
+    const nativeTag = data && data[0];
+    const nativePayload = data && data[1];
+    const isSend =
+      nativeTag === "native" &&
+      nativePayload &&
+      nativePayload.nativeOperation === "send";
+    const args =
+      isSend && Array.isArray(nativePayload.args) ? nativePayload.args : [];
     const [toAddr, amount] = args;
 
     if (
@@ -778,12 +777,17 @@ app.post("/time/verify", async (req, res) => {
         .json({ ok: false, error: "Payment does not match required 2 DEM transfer" });
     }
 
-    // Verify address
-    if (payload.address !== playerAddress) {
+    // Check sender
+    if (String(c.from_ed25519_address) !== String(playerAddress)) {
       return res.status(400).json({
         ok: false,
-        error: `Transaction from ${payload.address} but expected from ${playerAddress}`,
+        error: "Payment sender mismatch",
       });
+    }
+    // Basic freshness check (<= 30 min)
+    const tsOk = Number(c.timestamp || 0) > Date.now() - 30 * 60 * 1000;
+    if (!tsOk) {
+      return res.status(400).json({ ok: false, error: "Payment too old" });
     }
 
     return res.json({ ok: true, verified: true });
