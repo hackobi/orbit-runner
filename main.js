@@ -2841,6 +2841,16 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           endDemosBtn.style.background = "rgba(0,0,0,0.3)";
           endDemosBtn.style.borderColor = "rgba(255,255,255,0.25)";
         }
+        
+        // Reset to default ship - remove any upgrades
+        fenixActive = false;
+        boostActive = false;
+        boostTimer = 0;
+        scene.remove(ship);
+        ship = buildDefaultShip();
+        ship.visible = true;
+        scene.add(ship);
+        
         // Local soft respawn near origin; reset movement
         speedUnitsPerSec = 20;
         targetSpeedUnitsPerSec = 20;
