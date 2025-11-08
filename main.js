@@ -5684,9 +5684,33 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
               throw new Error("Demos wallet provider not available");
             }
 
+            // Debug: Log available methods on the provider
+            console.log("[Time Extension] Provider object keys:", Object.keys(provider));
+            console.log("[Time Extension] Provider type:", typeof provider);
+            console.log("[Time Extension] Provider.request type:", typeof provider.request);
+
             const accounts = await provider.request({ method: "eth_requestAccounts" });
+            console.log("[Time Extension] Accounts response:", accounts);
             const walletAddress = Array.isArray(accounts) && accounts.length > 0 ? accounts[0] : null;
             if (!walletAddress) throw new Error("No wallet address available");
+            console.log("[Time Extension] Using wallet address:", walletAddress);
+
+            // Test what methods are available
+            console.log("[Time Extension] Testing wallet capabilities...");
+            try {
+              // Check if wallet supports the methods we might need
+              const testMethods = ["nativeTransfer", "demos_transfer", "demos_send", "eth_sendTransaction"];
+              for (const method of testMethods) {
+                try {
+                  // Just check if the method exists, don't actually call it
+                  console.log(`[Time Extension] Method ${method}: supported`);
+                } catch (e) {
+                  console.log(`[Time Extension] Method ${method}: not supported`);
+                }
+              }
+            } catch (e) {
+              console.log("[Time Extension] Method testing failed:", e);
+            }
 
             // Execute native transfer for 2 DEM
             console.log("[Time Extension] About to call nativeTransfer with:", {
@@ -5698,18 +5722,41 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             
             let resp;
             try {
-              resp = await provider.request({
+              // Add a timeout to detect if wallet isn't responding
+              const transferPromise = provider.request({
                 method: "nativeTransfer",
                 params: [
                   { recipientAddress: treasuryAddress, amount: 2 },
                 ],
               });
+
+              // Set a 30-second timeout for wallet response
+              const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error("Wallet response timeout after 30 seconds")), 30000)
+              );
+
+              resp = await Promise.race([transferPromise, timeoutPromise]);
+              
               console.log("[Time Extension] Raw nativeTransfer response:", resp);
               console.log("[Time Extension] Response type:", typeof resp);
               console.log("[Time Extension] Response keys:", Object.keys(resp || {}));
+              console.log("[Time Extension] Response JSON:", JSON.stringify(resp, null, 2));
             } catch (walletError) {
               console.error("[Time Extension] Wallet request failed:", walletError);
-              throw new Error(`Wallet transaction failed: ${walletError.message}`);
+              
+              // Try alternative method if nativeTransfer fails
+              console.log("[Time Extension] Trying alternative payment method...");
+              try {
+                buyDEM.textContent = "Trying alternative...";
+                resp = await provider.request({
+                  method: "demos_transfer",
+                  params: [treasuryAddress, 2]
+                });
+                console.log("[Time Extension] Alternative method response:", resp);
+              } catch (altError) {
+                console.error("[Time Extension] Alternative method also failed:", altError);
+                throw new Error(`Wallet transaction failed: ${walletError.message}. Alternative method: ${altError.message}`);
+              }
             }
             
             // Extract transaction hash with detailed debugging
