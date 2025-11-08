@@ -682,19 +682,19 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       if (btn) {
         if (address && !paidSessionToken) {
           btn.disabled = false;
-          btn.textContent = "Pay 1 DEM to Play";
+          btn.textContent = "Pay 2 DEM to Play";
         } else if (paidSessionToken) {
           btn.disabled = true;
           btn.textContent = "✓ Paid";
         } else {
           btn.disabled = true;
-          btn.textContent = "Pay 1 DEM to Play";
+          btn.textContent = "Pay 2 DEM to Play";
         }
       }
     } catch (_) {}
   }
 
-  // Create and manage a Pay button to collect 1 DEM before launch
+  // Create and manage a Pay button to collect 2 DEM before launch
   let payBtn = null;
   function ensurePayButton() {
     if (payBtn) return payBtn;
@@ -704,7 +704,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       const btn = document.createElement("button");
       btn.id = "pay-btn";
       btn.className = "launch-btn";
-      btn.textContent = "Pay 1 DEM to Play";
+      btn.textContent = "Pay 2 DEM to Play";
       btn.disabled = true;
       btn.addEventListener("click", async () => {
         btn.disabled = true;
@@ -714,7 +714,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           btn.textContent = "✓ Paid";
         } catch (e) {
           console.error(e);
-          btn.textContent = "Pay 1 DEM to Play";
+          btn.textContent = "Pay 2 DEM to Play";
           btn.disabled = false;
           alert(String(e?.message || e));
         }
@@ -735,8 +735,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (!infoRes.ok) throw new Error("Payment info unavailable");
     const info = await infoRes.json();
     if (!info?.ok) throw new Error(info?.error || "Payment info error");
-    const { treasuryAddress, price } = info;
+    const { treasuryAddress, serverAddress, price } = info;
     if (!treasuryAddress) throw new Error("Treasury address missing");
+    if (!serverAddress) throw new Error("Server address missing");
 
     const provider = await getDemosProvider();
     if (!provider || typeof provider.request !== "function") {
@@ -746,14 +747,16 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       await provider.request({ method: "connect" });
     } catch (_) {}
 
+    // Send 1 DEM to treasury + 1 DEM to server (for gas)
     const resp = await provider.request({
       method: "nativeTransfer",
       params: [
-        { recipientAddress: treasuryAddress, amount: Number(price || 1) },
+        { recipientAddress: treasuryAddress, amount: 1 },
+        { recipientAddress: serverAddress, amount: 1 },
       ],
     });
     try {
-      console.log("[Pay] nativeTransfer response:", resp);
+      console.log("[Pay] Dual payment response:", resp);
       const vdat = resp?.data?.validityData || resp?.validityData || null;
       console.log("[Pay] validityData:", vdat);
       if (vdat && vdat.response) {

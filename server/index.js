@@ -619,16 +619,21 @@ app.get("/pay/info", async (_req, res) => {
     const connected = await connectToDemos();
     if (!connected)
       return res.status(500).json({ ok: false, error: "Network unavailable" });
+    const wOk = await connectWallet();
+    if (!wOk)
+      return res.status(500).json({ ok: false, error: "Server wallet unavailable" });
     const tOk = await connectTreasuryWallet();
     if (!tOk)
       return res.status(500).json({ ok: false, error: "Treasury unavailable" });
     const treasuryAddress = treasuryDemos.getAddress();
+    const serverAddress = demos.getAddress();
     return res.json({
       ok: true,
-      price: 1,
+      price: 2,
       tokenDecimals: 0,
       currency: "DEM",
       treasuryAddress,
+      serverAddress,
     });
   } catch (e) {
     return res.status(500).json({ ok: false, error: String(e) });
@@ -869,7 +874,7 @@ app.post("/pay/verify", async (req, res) => {
                 const [toAddr, amt] = args;
                 const tsOk =
                   Number(c.timestamp || 0) > Date.now() - 5 * 60 * 1000;
-                return toAddr === treasuryAddress && Number(amt) === 1 && tsOk;
+                return toAddr === treasuryAddress && Number(amt) === 2 && tsOk;
               } catch (_) {
                 return false;
               }
@@ -934,11 +939,11 @@ app.post("/pay/verify", async (req, res) => {
       !isNative ||
       !isSend ||
       toAddr !== treasuryAddress ||
-      Number(amount) !== 1
+      Number(amount) !== 2
     ) {
       return res
         .status(400)
-        .json({ ok: false, error: "Payment does not match required transfer" });
+        .json({ ok: false, error: "Payment does not match required 2 DEM transfer" });
     }
     // Check sender
     if (String(c.from_ed25519_address) !== String(playerAddress)) {
