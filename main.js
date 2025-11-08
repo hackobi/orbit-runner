@@ -3035,6 +3035,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     // Rotate so it faces forward properly
     group.rotation.x = Math.PI / 2;
     
+    // Ensure ship is always visible by default
+    group.visible = true;
+    
     return group;
   }
   let ship = buildDefaultShip();
@@ -6114,6 +6117,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     ship = buildDefaultShip();
     ship.visible = true;
     scene.add(ship);
+    
+    // Defensive fix for ship visibility bug - ensure ship is visible after restart
+    setTimeout(() => {
+      if (ship && !ship.visible) {
+        console.warn('[Bug Fix] Ship was invisible after restart, fixing...');
+        ship.visible = true;
+      }
+    }, 100);
 
     health = 100;
     shield = 0;
