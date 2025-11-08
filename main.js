@@ -2820,9 +2820,15 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       if (e.target === endRestartBtn) {
         e.preventDefault();
         e.stopPropagation();
-        // Restart timed round: reset score and timers; respawn to initial area (local)
+        // Restart requires new payment - clear payment token and show welcome screen
         hideEndOverlay();
-        // Reset ship state, HP, shield, and score
+        
+        // Clear payment token to require new payment
+        paidSessionToken = null;
+        
+        // Reset game state
+        gameInitialized = false;
+        roundActive = false;
         score = 0;
         killsCount = 0;
         asteroidsDestroyed = 0;
@@ -2851,7 +2857,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         ship.visible = true;
         scene.add(ship);
         
-        // Local soft respawn near origin; reset movement
+        // Reset movement
         speedUnitsPerSec = 20;
         targetSpeedUnitsPerSec = 20;
         velocity.set(0, 0, 0);
@@ -2861,13 +2867,18 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         pitch = 0;
         roll = 0;
         ship.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, roll, "YXZ"));
-        // Start new timed round
-        roundActive = true;
-        roundEndsAt = Date.now() + 3 * 60 * 1000;
-        controlsUnlockAt = Date.now() + 2000; // brief lock to avoid immediate inputs
-        try {
-          canvas.focus();
-        } catch (_) {}
+        
+        // Hide game UI and show welcome screen for payment
+        if (hud) hud.style.display = "none";
+        if (help) help.style.display = "none";
+        if (canvas) {
+          canvas.classList.add("hidden");
+          canvas.style.display = "none";
+        }
+        if (welcomeScreen) welcomeScreen.classList.remove("hidden");
+        
+        // Update payment button state
+        updateLaunchButton();
       }
       if (e.target === endFreeBtn) {
         e.preventDefault();
