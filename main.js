@@ -598,12 +598,32 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     });
 
     if (launchBtn) {
-      launchBtn.disabled = !isValid;
-      if (isValid) launchBtn.classList.add("enabled");
-      else launchBtn.classList.remove("enabled");
+      const hasWallet = walletAddress.length > 0;
+      const needsPayment = hasWallet && !paidSessionToken;
+      
+      // Enable button if wallet is connected (for payment) or if already paid (for launch)
+      launchBtn.disabled = !hasWallet;
+      
+      // Update button text based on state
+      const buttonSpan = launchBtn.querySelector('span');
+      if (needsPayment) {
+        if (buttonSpan) buttonSpan.textContent = "Pay 2 DEM to Launch";
+        launchBtn.classList.remove("enabled");
+        launchBtn.classList.add("payment-ready");
+      } else if (isValid) {
+        if (buttonSpan) buttonSpan.textContent = "Launch Into Space";
+        launchBtn.classList.add("enabled");
+        launchBtn.classList.remove("payment-ready");
+      } else {
+        if (buttonSpan) buttonSpan.textContent = "Connect Wallet First";
+        launchBtn.classList.remove("enabled", "payment-ready");
+      }
+      
       console.log("🚀 Launch button state updated:", {
         disabled: launchBtn.disabled,
+        text: buttonSpan?.textContent,
         hasEnabledClass: launchBtn.classList.contains("enabled"),
+        hasPaymentReadyClass: launchBtn.classList.contains("payment-ready"),
       });
     }
 
@@ -2695,8 +2715,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         }
       } catch (error) {
         console.log(
-          "ℹ️ Extension direct method not available, using provider method (this is normal):",
-          error.message
+          "ℹ️ Extension direct method not available, using provider method (this is normal)"
         );
       }
 
