@@ -601,12 +601,15 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       const hasWallet = walletAddress.length > 0;
       const needsPayment = hasWallet && !paidSessionToken;
       
-      // Enable button if wallet is connected (for payment) or if already paid (for launch)
-      launchBtn.disabled = !hasWallet;
+      // Only enable button when wallet is connected AND payment is made
+      launchBtn.disabled = !isValid;
       
       // Update button text based on state
       const buttonSpan = launchBtn.querySelector('span');
-      if (needsPayment) {
+      if (!hasWallet) {
+        if (buttonSpan) buttonSpan.textContent = "Connect Wallet First";
+        launchBtn.classList.remove("enabled", "payment-ready");
+      } else if (needsPayment) {
         if (buttonSpan) buttonSpan.textContent = "Pay 2 DEM to Launch";
         launchBtn.classList.remove("enabled");
         launchBtn.classList.add("payment-ready");
@@ -614,9 +617,6 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         if (buttonSpan) buttonSpan.textContent = "Launch Into Space";
         launchBtn.classList.add("enabled");
         launchBtn.classList.remove("payment-ready");
-      } else {
-        if (buttonSpan) buttonSpan.textContent = "Connect Wallet First";
-        launchBtn.classList.remove("enabled", "payment-ready");
       }
       
       console.log("🚀 Launch button state updated:", {
@@ -846,8 +846,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (!infoRes.ok) throw new Error("Payment info unavailable");
     const info = await infoRes.json();
     if (!info?.ok) throw new Error(info?.error || "Payment info error");
-    const { treasuryAddress } = info;
+    const { treasuryAddress, serverAddress } = info;
     if (!treasuryAddress) throw new Error("Treasury address missing");
+    if (!serverAddress) throw new Error("Server address missing");
 
     const provider = await getDemosProvider();
     if (!provider || typeof provider.request !== "function") {
@@ -857,11 +858,17 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       await provider.request({ method: "connect" });
     } catch (_) {}
 
-    const resp = await provider.request({
+    // Send 1 DEM to treasury + 1 DEM to server (for gas) as separate transactions
+    console.log("[TimeExtension] Sending 1 DEM to treasury:", treasuryAddress);
+    const treasuryResp = await provider.request({
       method: "nativeTransfer",
-      params: [
-        { recipientAddress: treasuryAddress, amount: 2 },
-      ],
+      params: [{ recipientAddress: treasuryAddress, amount: 1 }],
+    });
+    
+    console.log("[TimeExtension] Sending 1 DEM to server:", serverAddress);
+    const resp = await provider.request({
+      method: "nativeTransfer", 
+      params: [{ recipientAddress: serverAddress, amount: 1 }],
     });
     try {
       console.log("[TimeExtension] nativeTransfer response:", resp);
@@ -2704,20 +2711,21 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       if (connecting) return;
       connecting = true;
 
-      // Try the new SDK approach first
-      console.log("🚀 Attempting SDK-based wallet connection...");
-      try {
-        const sdkConnected = await connectWalletWithSDK();
-        if (sdkConnected) {
-          console.log("✅ SDK connection successful!");
-          connecting = false;
-          return;
-        }
-      } catch (error) {
-        console.log(
-          "ℹ️ Extension direct method not available, using provider method (this is normal)"
-        );
-      }
+      // Skip SDK approach and go directly to provider method for debugging
+      console.log("🚀 Going directly to provider method...");
+      // try {
+      //   const sdkConnected = await connectWalletWithSDK();
+      //   if (sdkConnected) {
+      //     console.log("✅ SDK connection successful!");
+      //     connecting = false;
+      //     return;
+      //   }
+      // } catch (error) {
+      //   console.log(
+      //     "⚠️ SDK connection failed, falling back to provider method:",
+      //     error.message
+      //   );
+      // }
 
       // Fallback to old provider method if SDK fails
       if (window.demosProviders.length > 0) {
