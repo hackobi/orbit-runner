@@ -1682,12 +1682,16 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       );
 
       // Use extension provider for wallet connection
-      const provider = getDemosProvider();
+      const provider = await getDemosProvider();
       if (!provider) {
         throw new Error("No Demos extension provider found");
       }
 
       console.log("✅ Using Demos extension provider (fallback mode)");
+      console.log("🔍 Provider object:", provider);
+      console.log("🔍 Provider methods:", Object.getOwnPropertyNames(provider).filter(
+        (name) => typeof provider[name] === "function"
+      ));
 
       // Request wallet address from extension
       let address;
@@ -1695,48 +1699,97 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       // Try multiple approaches to get address
       if (typeof provider.request === "function") {
         try {
-          address = await safeProviderRequest(provider, "eth_requestAccounts");
-          if (address && Array.isArray(address) && address.length > 0) {
-            address = address[0];
+          // Try with Demos-specific method first
+          const demosAccounts = await provider.request({
+            method: "demos_accounts"
+          });
+          if (demosAccounts && Array.isArray(demosAccounts) && demosAccounts.length > 0) {
+            address = demosAccounts[0];
+            console.log("✅ Got address from demos_accounts:", address);
           }
         } catch (error) {
-          console.log("⚠️ eth_requestAccounts failed, trying eth_accounts");
+          console.log("⚠️ demos_accounts failed:", error.message);
+        }
+        
+        if (!address) {
           try {
-            address = await safeProviderRequest(provider, "eth_accounts");
-            if (address && Array.isArray(address) && address.length > 0) {
-              address = address[0];
+            const accounts = await provider.request({
+              method: "eth_requestAccounts"
+            });
+            if (accounts && Array.isArray(accounts) && accounts.length > 0) {
+              address = accounts[0];
+              console.log("✅ Got address from eth_requestAccounts:", address);
             }
-          } catch (error2) {
-            console.log("⚠️ eth_accounts also failed");
+          } catch (error) {
+            console.log("⚠️ eth_requestAccounts failed:", error.message);
+            try {
+              const accounts = await provider.request({
+                method: "eth_accounts"
+              });
+              if (accounts && Array.isArray(accounts) && accounts.length > 0) {
+                address = accounts[0];
+                console.log("✅ Got address from eth_accounts:", address);
+              }
+            } catch (error2) {
+              console.log("⚠️ eth_accounts also failed:", error2.message);
+            }
           }
         }
       }
 
       // Try direct getAddress method
       if (!address && typeof provider.getAddress === "function") {
-        address = await provider.getAddress();
+        try {
+          address = await provider.getAddress();
+          console.log("✅ Got address from getAddress:", address);
+        } catch (error) {
+          console.log("⚠️ getAddress failed:", error.message);
+        }
       }
 
       // Try alternative method names
       if (!address) {
-        const methods = ["getAccounts", "eth_getAccounts", "requestAccounts"];
+        const methods = ["getAccounts", "eth_getAccounts", "requestAccounts", "accounts"];
         for (const method of methods) {
           if (typeof provider[method] === "function") {
             try {
               const result = await provider[method]();
               if (result && Array.isArray(result) && result.length > 0) {
                 address = result[0];
+                console.log(`✅ Got address from ${method}:`, address);
                 break;
               }
             } catch (error) {
-              console.log(`⚠️ Method ${method} failed:`, error);
+              console.log(`⚠️ Method ${method} failed:`, error.message);
             }
           }
         }
       }
+      
+      // Try enable method for older extensions
+      if (!address && typeof provider.enable === "function") {
+        try {
+          const accounts = await provider.enable();
+          if (accounts && Array.isArray(accounts) && accounts.length > 0) {
+            address = accounts[0];
+            console.log("✅ Got address from enable:", address);
+          }
+        } catch (error) {
+          console.log("⚠️ enable failed:", error.message);
+        }
+      }
 
       if (!address) {
-        throw new Error("Could not get address from provider");
+        // Check if there's a selected address property
+        if (provider.selectedAddress) {
+          address = provider.selectedAddress;
+          console.log("✅ Using selectedAddress:", address);
+        } else if (provider.accounts && Array.isArray(provider.accounts) && provider.accounts.length > 0) {
+          address = provider.accounts[0];
+          console.log("✅ Using accounts[0]:", address);
+        } else {
+          throw new Error("Could not get address from provider - please make sure wallet is unlocked");
+        }
       }
 
       console.log("✅ Wallet address received (extension-only mode):", address);
