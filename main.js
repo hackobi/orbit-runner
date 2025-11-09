@@ -1780,16 +1780,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
 
       if (!address) {
-        // Check if there's a selected address property
-        if (provider.selectedAddress) {
-          address = provider.selectedAddress;
-          console.log("✅ Using selectedAddress:", address);
-        } else if (provider.accounts && Array.isArray(provider.accounts) && provider.accounts.length > 0) {
-          address = provider.accounts[0];
-          console.log("✅ Using accounts[0]:", address);
-        } else {
-          throw new Error("Could not get address from provider - please make sure wallet is unlocked");
-        }
+        console.log("ℹ️ Extension method couldn't get address, this is normal - will use provider method");
+        throw new Error("Extension connection method not available");
       }
 
       console.log("✅ Wallet address received (extension-only mode):", address);
@@ -2703,7 +2695,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         }
       } catch (error) {
         console.log(
-          "⚠️ SDK connection failed, falling back to provider method:",
+          "ℹ️ Extension direct method not available, using provider method (this is normal):",
           error.message
         );
       }
