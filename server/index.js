@@ -626,7 +626,16 @@ app.get("/pay/info", async (_req, res) => {
     if (!tOk)
       return res.status(500).json({ ok: false, error: "Treasury unavailable" });
     const treasuryAddress = treasuryDemos.getAddress();
+    
+    // Ensure server wallet is connected with correct mnemonic
+    // (Treasury wallet connection might affect the main demos instance)
+    const serverMnemonic = (process.env.DEMOS_SERVER_MNEMONIC || "").trim();
+    if (serverMnemonic.length > 0) {
+      await demos.connectWallet(serverMnemonic, { isSeed: true });
+    }
+    
     const serverAddress = demos.getAddress();
+    
     return res.json({
       ok: true,
       price: 2,
@@ -666,6 +675,14 @@ app.post("/time/verify", async (req, res) => {
       return res.status(500).json({ ok: false, error: "Treasury unavailable" });
 
     const treasuryAddress = treasuryDemos.getAddress();
+    
+    // Ensure server wallet is connected with correct mnemonic
+    const serverMnemonic = (process.env.DEMOS_SERVER_MNEMONIC || "").trim();
+    if (serverMnemonic.length > 0) {
+      await demos.connectWallet(serverMnemonic, { isSeed: true });
+    }
+    const serverAddress = demos.getAddress();
+    
     // Try confirmed tx first
     let tx = txHash ? await demos.getTxByHash(txHash).catch(() => null) : null;
     // If not found, try mempool as fallback (pending tx)
@@ -771,15 +788,16 @@ app.post("/time/verify", async (req, res) => {
       isSend && Array.isArray(nativePayload.args) ? nativePayload.args : [];
     const [toAddr, amount] = args;
 
+    // Check if this is the server transaction (1 DEM to server address)
     if (
       !isNative ||
       !isSend ||
-      toAddr !== treasuryAddress ||
-      Number(amount) !== 2
+      toAddr !== serverAddress ||
+      Number(amount) !== 1
     ) {
       return res
         .status(400)
-        .json({ ok: false, error: "Payment does not match required 2 DEM transfer" });
+        .json({ ok: false, error: "Payment does not match required 1 DEM to server wallet" });
     }
 
     // Check sender
@@ -827,6 +845,14 @@ app.post("/pay/verify", async (req, res) => {
       return res.status(500).json({ ok: false, error: "Treasury unavailable" });
 
     const treasuryAddress = treasuryDemos.getAddress();
+    
+    // Ensure server wallet is connected with correct mnemonic
+    const serverMnemonic = (process.env.DEMOS_SERVER_MNEMONIC || "").trim();
+    if (serverMnemonic.length > 0) {
+      await demos.connectWallet(serverMnemonic, { isSeed: true });
+    }
+    const serverAddress = demos.getAddress();
+    
     // Try confirmed tx first
     let tx = txHash ? await demos.getTxByHash(txHash).catch(() => null) : null;
     // If not found, try mempool as fallback (pending tx)
@@ -857,8 +883,8 @@ app.post("/pay/verify", async (req, res) => {
                 .replace(/^0x/, "") === lower
           );
           if (!match) {
-            // heuristic: native send from player to treasury amount 1 within last 5 minutes
-            match = recent.find((t) => {
+            // heuristic: native send from player - check for both 1 DEM to treasury and 1 DEM to server within last 5 minutes
+            const treasuryTx = recent.find((t) => {
               try {
                 const c = t?.content || {};
                 if (c?.type !== "native") return false;
@@ -874,11 +900,38 @@ app.post("/pay/verify", async (req, res) => {
                 const [toAddr, amt] = args;
                 const tsOk =
                   Number(c.timestamp || 0) > Date.now() - 5 * 60 * 1000;
-                return toAddr === treasuryAddress && Number(amt) === 2 && tsOk;
+                return toAddr === treasuryAddress && Number(amt) === 1 && tsOk;
               } catch (_) {
                 return false;
               }
             });
+            
+            const serverTx = recent.find((t) => {
+              try {
+                const c = t?.content || {};
+                if (c?.type !== "native") return false;
+                if (String(c.from_ed25519_address) !== String(playerAddress))
+                  return false;
+                const data = Array.isArray(c.data) ? c.data : null;
+                const tag = data && data[0];
+                const payload = data && data[1];
+                const isSend =
+                  tag === "native" && payload?.nativeOperation === "send";
+                if (!isSend) return false;
+                const args = Array.isArray(payload.args) ? payload.args : [];
+                const [toAddr, amt] = args;
+                const tsOk =
+                  Number(c.timestamp || 0) > Date.now() - 5 * 60 * 1000;
+                return toAddr === serverAddress && Number(amt) === 1 && tsOk;
+              } catch (_) {
+                return false;
+              }
+            });
+            
+            // Both transactions must exist for valid payment
+            if (treasuryTx && serverTx) {
+              match = serverTx; // Use server transaction for verification response
+            }
           }
           if (match) tx = match;
         }
@@ -935,15 +988,16 @@ app.post("/pay/verify", async (req, res) => {
       isSend && Array.isArray(nativePayload.args) ? nativePayload.args : [];
     const [toAddr, amount] = args;
 
+    // Check if this is the server transaction (1 DEM to server address)
     if (
       !isNative ||
       !isSend ||
-      toAddr !== treasuryAddress ||
-      Number(amount) !== 2
+      toAddr !== serverAddress ||
+      Number(amount) !== 1
     ) {
       return res
         .status(400)
-        .json({ ok: false, error: "Payment does not match required 2 DEM transfer" });
+        .json({ ok: false, error: "Payment does not match required 1 DEM to server wallet" });
     }
     // Check sender
     if (String(c.from_ed25519_address) !== String(playerAddress)) {
@@ -1432,6 +1486,12 @@ const server = app.listen(PORT, () =>
         "🏦 Treasury wallet ready. Address:",
         treasuryDemos.getAddress()
       );
+      
+      // Debug: Check if treasury wallet connection interfered with server wallet
+      const serverAddrAfterTreasury = demos.getAddress();
+      console.log("DEBUG - Server address after treasury connection:", serverAddrAfterTreasury);
+      console.log("DEBUG - Expected server address:", addr);
+      console.log("DEBUG - Did treasury interfere?", serverAddrAfterTreasury !== addr);
     }
   } catch (e) {
     console.warn("⚠️ Server wallet not connected at boot:", e?.message || e);

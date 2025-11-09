@@ -391,7 +391,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       d.style.borderRadius = "6px";
       d.style.display = "none";
       d.textContent =
-        "W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H target • N name • T dev 500 • R restart";
+        "W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H target • N name • T dev 500 • R restart (2 DEM)";
       document.body.appendChild(d);
       return d;
     })();
@@ -590,7 +590,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Wallet functions
   function updateLaunchButton() {
     const isValid = walletAddress.length > 0 && !!paidSessionToken;
-    console.log("🚀 updateLaunchButton called:", {
+    console.log("updateLaunchButton called:", {
       walletAddress,
       paidSessionToken: !!paidSessionToken,
       isValid,
@@ -747,14 +747,21 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       await provider.request({ method: "connect" });
     } catch (_) {}
 
-    // Send 1 DEM to treasury + 1 DEM to server (for gas)
-    const resp = await provider.request({
+    // Send 1 DEM to treasury + 1 DEM to server (for gas) as separate transactions
+    console.log("[Pay] Sending 1 DEM to treasury:", treasuryAddress);
+    const treasuryResp = await provider.request({
       method: "nativeTransfer",
-      params: [
-        { recipientAddress: treasuryAddress, amount: 1 },
-        { recipientAddress: serverAddress, amount: 1 },
-      ],
+      params: [{ recipientAddress: treasuryAddress, amount: 1 }],
     });
+    
+    console.log("[Pay] Sending 1 DEM to server:", serverAddress);
+    const serverResp = await provider.request({
+      method: "nativeTransfer", 
+      params: [{ recipientAddress: serverAddress, amount: 1 }],
+    });
+    
+    // Use server response for verification (since server wallet handles gas)
+    const resp = serverResp;
     try {
       console.log("[Pay] Dual payment response:", resp);
       const vdat = resp?.data?.validityData || resp?.validityData || null;
@@ -2880,8 +2887,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         }
         if (welcomeScreen) welcomeScreen.classList.remove("hidden");
         
-        // Update payment button state
+        // Update payment button state and ensure pay button is shown
         updateLaunchButton();
+        
+        // If wallet is connected, enable payment button
+        if (walletAddress) {
+          ensurePayButton();
+          updatePayButtonState();
+        }
       }
       if (e.target === endFreeBtn) {
         e.preventDefault();
@@ -4752,7 +4765,55 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       ensureMpOverlay().style.display = mpOverlayOn ? "block" : "none";
       renderMpOverlay();
     }
-    if (c === "KeyR" && gameOver) resetGame();
+    if (c === "KeyR" && gameOver) {
+      // Restart requires new payment - same logic as restart button
+      hideEndOverlay();
+      
+      // Clear payment token to require new payment
+      paidSessionToken = null;
+      
+      // Reset game state
+      gameOver = false;
+      statsSaved = false;
+      score = 0;
+      lives = 3;
+      kills = 0;
+      asteroids = 0;
+      t = 0;
+      beltTimeSec = 0;
+      survivalSec = 0;
+      rollVel = 0;
+      ship.position.set(0, 0, 0);
+      ship.velocity.set(0, 0, 0);
+      pitch = 0;
+      yaw = 0;
+      roll = 0;
+      ship.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, roll, "YXZ"));
+      
+      // Reset ship to default (remove all upgrades)
+      scene.remove(ship);
+      ship = buildDefaultShip();
+      ship.visible = true;
+      scene.add(ship);
+      
+      // Hide game UI and show welcome screen for payment
+      if (hud) hud.style.display = "none";
+      if (help) help.style.display = "none";
+      if (canvas) {
+        canvas.style.cursor = "";
+        canvas.style.filter = "blur(6px)";
+      }
+      if (welcomeScreen) welcomeScreen.classList.remove("hidden");
+      
+      // Update payment button state and ensure pay button is shown
+      updateLaunchButton();
+      
+      // If wallet is connected, enable payment button
+      if (walletAddress) {
+        ensurePayButton();
+        updatePayButtonState();
+      }
+    }
   }
   function onKeyUp(e) {
     const active = document.activeElement;
