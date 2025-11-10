@@ -610,7 +610,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         if (buttonSpan) buttonSpan.textContent = "Connect Wallet First";
         launchBtn.classList.remove("enabled", "payment-ready");
       } else if (needsPayment) {
-        if (buttonSpan) buttonSpan.textContent = "Pay 2 DEM to Launch";
+        if (buttonSpan) buttonSpan.textContent = "Launch Into Space";
         launchBtn.classList.remove("enabled");
         launchBtn.classList.add("payment-ready");
       } else if (isValid) {
@@ -767,21 +767,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       await provider.request({ method: "connect" });
     } catch (_) {}
 
-    // Send 1 DEM to treasury + 1 DEM to server (for gas) as separate transactions
-    console.log("[Pay] Sending 1 DEM to treasury:", treasuryAddress);
-    const treasuryResp = await provider.request({
-      method: "nativeTransfer",
-      params: [{ recipientAddress: treasuryAddress, amount: 1 }],
-    });
-    
-    console.log("[Pay] Sending 1 DEM to server:", serverAddress);
-    const serverResp = await provider.request({
+    // Send 2 DEM to server wallet only (server handles jackpot and gas)
+    console.log("[Pay] Sending 2 DEM to server:", serverAddress);
+    const resp = await provider.request({
       method: "nativeTransfer", 
-      params: [{ recipientAddress: serverAddress, amount: 1 }],
+      params: [{ recipientAddress: serverAddress, amount: 2 }],
     });
-    
-    // Use server response for verification (since server wallet handles gas)
-    const resp = serverResp;
     try {
       console.log("[Pay] Dual payment response:", resp);
       const vdat = resp?.data?.validityData || resp?.validityData || null;
@@ -858,17 +849,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       await provider.request({ method: "connect" });
     } catch (_) {}
 
-    // Send 1 DEM to treasury + 1 DEM to server (for gas) as separate transactions
-    console.log("[TimeExtension] Sending 1 DEM to treasury:", treasuryAddress);
-    const treasuryResp = await provider.request({
-      method: "nativeTransfer",
-      params: [{ recipientAddress: treasuryAddress, amount: 1 }],
-    });
-    
-    console.log("[TimeExtension] Sending 1 DEM to server:", serverAddress);
+    // Send 2 DEM to server wallet only (server handles jackpot and gas)
+    console.log("[TimeExtension] Sending 2 DEM to server:", serverAddress);
     const resp = await provider.request({
       method: "nativeTransfer", 
-      params: [{ recipientAddress: serverAddress, amount: 1 }],
+      params: [{ recipientAddress: serverAddress, amount: 2 }],
     });
     try {
       console.log("[TimeExtension] nativeTransfer response:", resp);
