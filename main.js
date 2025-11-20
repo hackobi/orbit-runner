@@ -336,6 +336,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   const FENIX_BEAM_SPEED = 300;
   const FENIX_BEAM_LIFE =
     (DEFAULT_BULLET_SPEED * DEFAULT_BULLET_LIFE * 1.12) / FENIX_BEAM_SPEED; // 12% longer reach vs default
+  
+  // Bomb constants
+  const BOMB_SPEED = 180; // Slower than bullets
+  const BOMB_LIFE = (DEFAULT_BULLET_LIFE * 0.6); // Explodes at 3/5 of bullet range
+  const BOMB_EXPLOSION_RADIUS = 250; // Large explosion to affect ~15 asteroids
   const MIN_WORMHOLE_TELEPORT_DIST = 12000; // meters (12 km)
 
   // Global caps to prevent overload
@@ -360,6 +365,29 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   const bots = [];
 
   // HUD and overlays
+  let hudVisible = true; // Track HUD visibility state for toggle
+
+  // Add global HUD toggle functionality
+  document.addEventListener('keydown', function(e) {
+    if (e.code === 'KeyJ' && !e.repeat) {
+      console.log("HUD toggle triggered - KeyJ pressed");
+      hudVisible = !hudVisible;
+      
+      // Update main HUD overlay
+      const hud = document.getElementById("ui-overlay");
+      if (hud) {
+        hud.style.display = hudVisible ? "block" : "none";
+      }
+      
+      // Update all elements with .hud-element class
+      const hudElements = document.querySelectorAll('.hud-element');
+      hudElements.forEach(element => {
+        element.style.display = hudVisible ? "block" : "none";
+      });
+      
+      console.log("HUD visibility set to:", hudVisible);
+    }
+  });
   const hud =
     document.getElementById("hud") ||
     (() => {
@@ -370,7 +398,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       d.style.left = "10px";
       d.style.color = "#0ff";
       d.style.fontSize = "1.1rem";
-      d.style.display = "none";
+      d.style.display = hudVisible ? "block" : "none";
       document.body.appendChild(d);
       return d;
     })();
@@ -391,7 +419,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       d.style.borderRadius = "6px";
       d.style.display = "none";
       d.textContent =
-        "W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H target • N name • T dev 500 • R restart (2 DEM)";
+        "W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H target • N name • J toggle HUD • T dev 500 • R restart (2 DEM)";
       document.body.appendChild(d);
       return d;
     })();
@@ -714,6 +742,23 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     } catch (_) {}
   }
 
+  // Update pay button state based on wallet and payment status
+  function updatePayButtonState() {
+    const btn = ensurePayButton();
+    if (btn) {
+      if (walletAddress && !paidSessionToken) {
+        btn.disabled = false;
+        btn.textContent = "Pay 2 DEM to Play";
+      } else if (paidSessionToken) {
+        btn.disabled = true;
+        btn.textContent = "✓ Paid";
+      } else {
+        btn.disabled = true;
+        btn.textContent = "Pay 2 DEM to Play";
+      }
+    }
+  }
+
   // Create and manage a Pay button to collect 2 DEM before launch
   let payBtn = null;
   function ensurePayButton() {
@@ -793,7 +838,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     console.log("[Pay] extracted txHash:", txHash);
     if (!txHash) {
       throw new Error(
-        "Wallet did not return a transaction hash. Please update/try again."
+        "Payment failed. Please check that you have enough DEM tokens in your wallet."
       );
     }
 
@@ -830,6 +875,56 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     paidSessionToken = paid.paidToken;
   }
 
+  async function ensureBombPayment(demAmount) {
+    if (!walletAddress) throw new Error("Connect your wallet first");
+    
+    const provider = await getDemosProvider();
+    if (!provider || typeof provider.request !== "function") {
+      throw new Error("Demos wallet provider not available");
+    }
+    
+    try {
+      await provider.request({ method: "connect" });
+    } catch (_) {}
+
+    // Get server address for bomb purchases
+    let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
+    const infoRes = await fetch(`${apiBase}/pay/info`);
+    if (!infoRes.ok) throw new Error("Payment info unavailable");
+    const info = await infoRes.json();
+    if (!info?.ok) throw new Error(info?.error || "Payment info error");
+    const { serverAddress } = info;
+    if (!serverAddress) throw new Error("Server address missing");
+
+    // Send DEM payment for bombs to server wallet
+    console.log(`[Bomb Purchase] Sending ${demAmount} DEM to server:`, serverAddress);
+    const resp = await provider.request({
+      method: "nativeTransfer",
+      params: [{ recipientAddress: serverAddress, amount: demAmount }],
+    });
+    
+    const vdat = resp?.data?.validityData || resp?.validityData || null;
+    const txHash =
+      vdat?.response?.data?.transaction?.hash ||
+      resp?.result?.data?.transaction?.hash ||
+      resp?.result?.txHash ||
+      resp?.result?.hash ||
+      resp?.hash ||
+      "";
+    
+    console.log("[Bomb Purchase] extracted txHash:", txHash);
+    if (!txHash) {
+      throw new Error(
+        "Payment failed. Please check that you have enough DEM tokens in your wallet."
+      );
+    }
+
+    // Simple verification - just check transaction was sent
+    // Server can verify on-chain later if needed
+    console.log(`[Bomb Purchase] Payment successful: ${demAmount} DEM for bombs`);
+    return txHash;
+  }
+
   async function ensureTimeExtensionPayment() {
     if (!walletAddress) throw new Error("Connect your wallet first");
     let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
@@ -849,11 +944,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       await provider.request({ method: "connect" });
     } catch (_) {}
 
-    // Send 2 DEM to server wallet only (server handles jackpot and gas)
-    console.log("[TimeExtension] Sending 2 DEM to server:", serverAddress);
+    // Send 10 DEM to server wallet only (server handles split and gas)
+    console.log("[TimeExtension] Sending 10 DEM to server:", serverAddress);
     const resp = await provider.request({
       method: "nativeTransfer", 
-      params: [{ recipientAddress: serverAddress, amount: 2 }],
+      params: [{ recipientAddress: serverAddress, amount: 10 }],
     });
     try {
       console.log("[TimeExtension] nativeTransfer response:", resp);
@@ -875,7 +970,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     console.log("[TimeExtension] extracted txHash:", txHash);
     if (!txHash) {
       throw new Error(
-        "Wallet did not return a transaction hash. Please update/try again."
+        "Payment failed. Please check that you have enough DEM tokens in your wallet."
       );
     }
 
@@ -2975,11 +3070,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   function startGame() {
     if (gameInitialized) return;
     gameInitialized = true;
-    hud.style.display = "block";
+    hud.style.display = hudVisible ? "block" : "none";
     help.style.display = "block";
     connectMP();
-    // Show leaderboard overlay at top-right by default
-    ensureLbOverlay().style.display = "block";
+    // Hide leaderboard overlay by default (user can toggle with L key)
+    ensureLbOverlay().style.display = "none";
     renderLb();
     if (!lbRefreshTimer) {
       lbRefreshTimer = setInterval(() => {
@@ -3140,6 +3235,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Stats
   let health = 100; // %
   let shield = 0; // %
+  let bombsAvailable = 0; // Number of bombs player has
+  let bombQuantityToBuy = 1; // How many bombs to purchase (1-3)
   let gameOver = false;
   let damageCooldown = 0; // sec i‑frames after a hit
   let fenixActive = false;
@@ -4184,12 +4281,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     // Add multiplier orbs in the belt
     const desiredMiner = Math.min(
       CAPS.miner,
-      Math.max(50, Math.floor(ring * 0.15))
-    ); // 5x
+      Math.max(150, Math.floor(ring * 0.45))
+    ); // 15x (3x increase)
     const desiredHunter = Math.min(
       CAPS.hunter,
-      Math.max(50, Math.floor(ring * 0.15))
-    ); // 5x
+      Math.max(150, Math.floor(ring * 0.45))
+    ); // 15x (3x increase)
     for (let i = 0; i < desiredMiner; i++)
       spawnMinerOrbOnRing(planet, innerR, outerR);
     for (let i = 0; i < desiredHunter; i++)
@@ -4361,8 +4458,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   seedWormholesOnRings(targetPlanet, 3600, 5200, 100);
   seedBoostOnRings(targetPlanet, 3600, 5200, 140);
   // Seed extra multiplier orbs immediately for visibility
-  for (let i = 0; i < 80; i++) spawnMinerOrbOnRing(targetPlanet, 3600, 5200);
-  for (let i = 0; i < 80; i++) spawnHunterOrbOnRing(targetPlanet, 3600, 5200);
+  for (let i = 0; i < 240; i++) spawnMinerOrbOnRing(targetPlanet, 3600, 5200);
+  for (let i = 0; i < 240; i++) spawnHunterOrbOnRing(targetPlanet, 3600, 5200);
 
   // New: Boost Orbs (green + purple)
   function spawnBoostOrbAround(center, minR = 800, maxR = 9000) {
@@ -4516,6 +4613,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   // Particles
   const bullets = []; // { mesh, velocity, life, radius, kind?:'player'|'fenix'|'bot' }
+  const particles = []; // { mesh, velocity, life } - for explosion effects
   const bulletGeometry = new THREE.SphereGeometry(0.25, 8, 8);
   const beamGeometry = new THREE.CylinderGeometry(0.06, 0.06, 12, 8, 1, true); // thinner Fenix beam
 
@@ -4722,6 +4820,122 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
   }
 
+  function fireBomb() {
+    if (bombsAvailable <= 0) return;
+    
+    bombsAvailable--;
+    
+    const q = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(pitch, yaw, roll, "YXZ")
+    );
+    const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(q).normalize();
+    const tipWorld = new THREE.Vector3()
+      .copy(shipPosition)
+      .add(dir.clone().multiplyScalar(1.8));
+
+    // Create bomb using player bullet mesh but with bomb properties
+    const bomb = acquirePlayerBulletMesh();
+    bomb.position.copy(tipWorld);
+    bomb.material = bomb.material.clone();
+    bomb.material.color.setHex(0xff4444); // Make it red to distinguish from bullets
+    if (!bomb.parent) scene.add(bomb);
+    
+    bullets.push({
+      mesh: bomb,
+      velocity: dir.multiplyScalar(BOMB_SPEED),
+      life: BOMB_LIFE,
+      radius: 0.3,
+      kind: "bomb",
+    });
+    
+    cameraShake += 0.08;
+    // Bomb fired silently - no distracting text message
+  }
+
+  function explodeBomb(bombPosition) {
+    // Create explosion effect
+    const explosionParticles = [];
+    for (let i = 0; i < 30; i++) {
+      const particle = new THREE.Mesh(
+        new THREE.SphereGeometry(0.5 + Math.random() * 0.5),
+        new THREE.MeshBasicMaterial({ color: 0xff6600 + Math.random() * 0x009900 })
+      );
+      particle.position.copy(bombPosition);
+      
+      const velocity = new THREE.Vector3(
+        (Math.random() - 0.5) * 30,
+        (Math.random() - 0.5) * 30,
+        (Math.random() - 0.5) * 30
+      );
+      
+      scene.add(particle);
+      explosionParticles.push({ mesh: particle, velocity, life: 2 });
+    }
+    
+    // Add to global particles array for cleanup
+    particles.push(...explosionParticles);
+    
+    // Destroy asteroids within explosion radius
+    for (let i = asteroids.length - 1; i >= 0; i--) {
+      const asteroid = asteroids[i];
+      const distance = bombPosition.distanceTo(asteroid.mesh.position);
+      
+      if (distance <= BOMB_EXPLOSION_RADIUS) {
+        // Destroy this asteroid
+        scene.remove(asteroid.mesh);
+        asteroids.splice(i, 1);
+        
+        // Add explosion effect for each destroyed asteroid
+        const asteroidParticles = [];
+        for (let j = 0; j < 8; j++) {
+          const debris = new THREE.Mesh(
+            new THREE.SphereGeometry(0.2),
+            new THREE.MeshBasicMaterial({ color: 0x666666 })
+          );
+          debris.position.copy(asteroid.mesh.position);
+          debris.position.add(new THREE.Vector3(
+            (Math.random() - 0.5) * 4,
+            (Math.random() - 0.5) * 4,
+            (Math.random() - 0.5) * 4
+          ));
+          
+          const debrisVel = new THREE.Vector3(
+            (Math.random() - 0.5) * 15,
+            (Math.random() - 0.5) * 15,
+            (Math.random() - 0.5) * 15
+          );
+          
+          scene.add(debris);
+          asteroidParticles.push({ mesh: debris, velocity: debrisVel, life: 1.5 });
+        }
+        particles.push(...asteroidParticles);
+        
+        // Award points (base asteroid points)
+        if (roundActive) score += getAsteroidScore(110, asteroid.mesh.position);
+        asteroidsDestroyed++;
+      }
+    }
+    
+    // Destroy enemies within explosion radius
+    for (let i = bots.length - 1; i >= 0; i--) {
+      const enemy = bots[i];
+      const distance = bombPosition.distanceTo(enemy.mesh.position);
+      
+      if (distance <= BOMB_EXPLOSION_RADIUS) {
+        // Destroy this enemy
+        scene.remove(enemy.mesh);
+        bots.splice(i, 1);
+        
+        // Award points (base enemy points)
+        if (roundActive) score += getKillScore(330, enemy.mesh.position);
+        killsCount++;
+      }
+    }
+    
+    cameraShake += 0.3;
+    // No distracting text when bomb explodes - keep view clear
+  }
+
   // Inputs
   const input = {
     yawLeft: false,
@@ -4770,6 +4984,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       "KeyL",
       "KeyP",
       "KeyN",
+      "KeyB",
     ].includes(c);
     if (handled) {
       e.preventDefault();
@@ -4822,6 +5037,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       ensureMpOverlay().style.display = mpOverlayOn ? "block" : "none";
       renderMpOverlay();
     }
+    // B key for firing bombs
+    if (c === "KeyB" && bombsAvailable > 0) {
+      fireBomb();
+    }
     if (c === "KeyR" && gameOver) {
       // Restart requires new payment - same logic as restart button
       hideEndOverlay();
@@ -4842,6 +5061,19 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       rollVel = 0;
       ship.position.set(0, 0, 0);
       ship.velocity.set(0, 0, 0);
+      
+      // Hide game UI and show welcome screen for payment
+      if (hud) hud.style.display = "none";
+      if (help) help.style.display = "none";
+      if (canvas) {
+        canvas.classList.add("hidden");
+        canvas.style.display = "none";
+      }
+      const welcomeScreen = document.getElementById("welcome-screen");
+      if (welcomeScreen) welcomeScreen.classList.remove("hidden");
+      
+      // Update payment button state and ensure pay button is shown
+      updateLaunchButton();
       pitch = 0;
       yaw = 0;
       roll = 0;
@@ -4986,7 +5218,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           timeLeftSec % 60
         ).padStart(2, "0")}`
       : "";
-    hud.textContent = `Speed ${speedTxt}${timeText} | HP ${hp}% | Shield ${sh}% | Points ${score} | Kills ${killsCount} | Ast ${asteroidsDestroyed}${ax2}${kx2} | Dist ${distFromOrigin} | Target ${distToTarget}${mp}`;
+    hud.textContent = `Speed ${speedTxt}${timeText} | HP ${hp}% | Shield ${sh}% | Points ${score} | Kills ${killsCount} | Ast ${asteroidsDestroyed}${ax2}${kx2} | Bombs ${bombsAvailable} | Dist ${distFromOrigin} | Target ${distToTarget}${mp}`;
   }
 
   function showGameOver() {
@@ -5692,13 +5924,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       left: '50%',
       transform: 'translate(-50%, -50%)',
       padding: '12px 24px',
-      background: isSuccess ? 'rgba(0, 255, 0, 0.9)' : 'rgba(255, 0, 0, 0.9)',
-      color: '#fff',
-      borderRadius: '8px',
-      fontSize: '16px',
+      color: isSuccess ? 'rgba(0, 255, 0, 0.9)' : 'rgba(255, 0, 0, 0.9)',
+      fontSize: '18px',
       fontWeight: 'bold',
       zIndex: '10000',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+      textShadow: '2px 2px 4px rgba(0,0,0,0.8)',
       pointerEvents: 'none',
       opacity: '1',
       transition: 'opacity 0.5s ease-out'
@@ -5806,12 +6036,22 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         },
       },
       {
+        key: "bomb",
+        label: `💣 Bomb x${bombQuantityToBuy} (Cost: ${bombQuantityToBuy * 3} DEM)`,
+        cost: bombQuantityToBuy * 3,
+        isDEM: true,
+        action: () => {
+          bombsAvailable += bombQuantityToBuy;
+          showStatusMessage(`💣 Purchased ${bombQuantityToBuy} bomb${bombQuantityToBuy > 1 ? 's' : ''}!`, true);
+        },
+      },
+      {
         key: "time",
-        label: "Extend Time +12s (Cost: 1200 points or 2 DEM)",
-        cost: 1200,
+        label: "Extend Time +60s (Cost: 6000 points or 10 DEM)",
+        cost: 6000,
         action: () => {
           if (roundActive && roundEndsAt > Date.now()) {
-            roundEndsAt += 12 * 1000; // Add 12 seconds
+            roundEndsAt += 60 * 1000; // Add 60 seconds (1 minute)
             updateHud();
           }
         },
@@ -5845,7 +6085,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         });
         
         const buyDEM = document.createElement("button");
-        buyDEM.textContent = "Buy (2 DEM)";
+        buyDEM.textContent = "Buy (10 DEM)";
         Object.assign(buyDEM.style, {
           padding: "4px 8px",
           border: "none",
@@ -5869,7 +6109,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             score -= entry.cost;
             entry.action();
             updateHud();
-            showStatusMessage("⏱️ +12 seconds added!", true);
+            showStatusMessage("⏱️ +60 seconds added!", true);
             hideStoreOverlay();
           } else {
             showStatusMessage("Not enough points", false);
@@ -5885,7 +6125,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             showStatusMessage("No round active", false);
             buyDEM.textContent = "No round active";
             setTimeout(() => {
-              buyDEM.textContent = "Buy (2 DEM)";
+              buyDEM.textContent = "Buy (10 DEM)";
             }, 1200);
             return;
           }
@@ -5898,16 +6138,16 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             // If successful, extend time
             entry.action();
             updateHud();
-            showStatusMessage("⏱️ +12 seconds added!", true);
+            showStatusMessage("⏱️ +60 seconds added!", true);
             hideStoreOverlay();
-            buyDEM.textContent = "Buy (2 DEM)";
+            buyDEM.textContent = "Buy (10 DEM)";
             buyDEM.disabled = false;
           } catch (error) {
             console.error("[Time Extension] Payment failed:", error);
             showStatusMessage(`❌ Payment failed: ${error.message}`, false);
             buyDEM.textContent = "Payment failed";
             setTimeout(() => {
-              buyDEM.textContent = "Buy (2 DEM)";
+              buyDEM.textContent = "Buy (10 DEM)";
               buyDEM.disabled = false;
             }, 2000);
           }
@@ -5916,6 +6156,100 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         buttonContainer.append(buyPoints, buyDEM);
         li.append(span, buttonContainer);
         
+      } else if (entry.key === "bomb") {
+        // Bomb with quantity selector
+        const buttonContainer = document.createElement("div");
+        buttonContainer.style.display = "flex";
+        buttonContainer.style.gap = "6px";
+        buttonContainer.style.alignItems = "center";
+        
+        // Quantity display
+        const quantityDisplay = document.createElement("span");
+        quantityDisplay.textContent = `x${bombQuantityToBuy}`;
+        quantityDisplay.style.minWidth = "30px";
+        quantityDisplay.style.textAlign = "center";
+        
+        // Plus button to increase quantity (max 3)
+        const plusBtn = document.createElement("button");
+        plusBtn.textContent = "+";
+        Object.assign(plusBtn.style, {
+          padding: "2px 8px",
+          border: "none",
+          borderRadius: "4px",
+          cursor: "pointer",
+          background: "rgba(255,255,255,0.2)",
+          color: "#fff",
+          fontSize: "14px",
+        });
+        plusBtn.onclick = () => {
+          if (bombQuantityToBuy < 3) {
+            bombQuantityToBuy++;
+            entry.cost = bombQuantityToBuy * 3;
+            entry.label = `💣 Bomb x${bombQuantityToBuy} (Cost: ${bombQuantityToBuy * 3} DEM)`;
+            rebuildStoreOverlay();
+            showStoreOverlay();
+          }
+        };
+        
+        // Minus button to decrease quantity (min 1)
+        const minusBtn = document.createElement("button");
+        minusBtn.textContent = "-";
+        Object.assign(minusBtn.style, {
+          padding: "2px 8px",
+          border: "none",
+          borderRadius: "4px",
+          cursor: "pointer",
+          background: "rgba(255,255,255,0.2)",
+          color: "#fff",
+          fontSize: "14px",
+        });
+        minusBtn.onclick = () => {
+          if (bombQuantityToBuy > 1) {
+            bombQuantityToBuy--;
+            entry.cost = bombQuantityToBuy * 3;
+            entry.label = `💣 Bomb x${bombQuantityToBuy} (Cost: ${bombQuantityToBuy * 3} DEM)`;
+            rebuildStoreOverlay();
+            showStoreOverlay();
+          }
+        };
+        
+        // Buy button (with DEM payment)
+        const buyDEM = document.createElement("button");
+        buyDEM.textContent = `Buy (${bombQuantityToBuy * 3} DEM)`;
+        Object.assign(buyDEM.style, {
+          padding: "4px 10px",
+          border: "none",
+          borderRadius: "6px",
+          cursor: "pointer",
+          background: "rgba(255,180,0,0.25)",
+          color: "#fff",
+        });
+        
+        buyDEM.onclick = async () => {
+          buyDEM.textContent = "Processing...";
+          buyDEM.disabled = true;
+          
+          try {
+            // Implement DEM payment for bombs
+            await ensureBombPayment(bombQuantityToBuy * 3);
+            entry.action();
+            updateHud();
+            hideStoreOverlay();
+            buyDEM.textContent = `Buy (${bombQuantityToBuy * 3} DEM)`;
+            buyDEM.disabled = false;
+          } catch (error) {
+            console.error("[Bomb Purchase] Payment failed:", error);
+            showStatusMessage(`❌ Payment failed: ${error.message}`, false);
+            buyDEM.textContent = "Payment failed";
+            setTimeout(() => {
+              buyDEM.textContent = `Buy (${bombQuantityToBuy * 3} DEM)`;
+              buyDEM.disabled = false;
+            }, 2000);
+          }
+        };
+        
+        buttonContainer.append(minusBtn, quantityDisplay, plusBtn, buyDEM);
+        li.append(span, buttonContainer);
       } else {
         // Regular single-payment items
         const buy = document.createElement("button");
@@ -6432,13 +6766,35 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       const b = bullets[i];
       b.life -= dt;
       if (b.life <= 0) {
+        // Check if it's a bomb that should explode
+        if (b.kind === "bomb") {
+          explodeBomb(b.mesh.position.clone());
+        }
+        
         scene.remove(b.mesh);
-        if (b.kind === "player") releasePlayerBulletMesh(b.mesh);
+        if (b.kind === "player" || b.kind === "bomb") releasePlayerBulletMesh(b.mesh);
         else if (b.kind === "fenix") releaseFenixBeamMesh(b.mesh);
         bullets.splice(i, 1);
         continue;
       }
       b.mesh.position.addScaledVector(b.velocity, dt);
+    }
+
+    // Update particles (explosion effects)
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life -= dt;
+      if (p.life <= 0) {
+        scene.remove(p.mesh);
+        particles.splice(i, 1);
+        continue;
+      }
+      p.mesh.position.addScaledVector(p.velocity, dt);
+      // Fade out particles as they age
+      if (p.mesh.material && p.mesh.material.transparent !== false) {
+        p.mesh.material.transparent = true;
+        p.mesh.material.opacity = Math.max(0, p.life / 2); // Fade over 2 seconds
+      }
     }
 
     // Update asteroids; build spatial hash for broad-phase
