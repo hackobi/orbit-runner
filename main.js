@@ -370,13 +370,40 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Add global HUD toggle functionality
   document.addEventListener('keydown', function(e) {
     if (e.code === 'KeyJ' && !e.repeat) {
-      console.log("HUD toggle triggered - KeyJ pressed");
       hudVisible = !hudVisible;
       
       // Update main HUD overlay
-      const hud = document.getElementById("ui-overlay");
-      if (hud) {
-        hud.style.display = hudVisible ? "block" : "none";
+      const hudElement = document.getElementById("hud");
+      if (hudElement) {
+        hudElement.style.display = hudVisible ? "block" : "none";
+        
+        // FORCE VISIBLE STYLING FOR DEBUGGING
+        if (hudVisible) {
+          hudElement.style.position = "fixed";
+          hudElement.style.top = "20px";
+          hudElement.style.left = "20px";
+          hudElement.style.color = "white";
+          hudElement.style.backgroundColor = "rgba(0, 0, 0, 0.8)";
+          hudElement.style.padding = "10px";
+          hudElement.style.fontSize = "16px";
+          hudElement.style.zIndex = "9999";
+          hudElement.style.border = "2px solid cyan";
+          hudElement.style.fontFamily = "monospace";
+          console.log("🚨 FORCED HUD STYLING APPLIED");
+        }
+        
+        // Debug info
+        console.log("HUD element after toggle:", {
+          display: hudElement.style.display,
+          textContent: hudElement.textContent,
+          position: hudElement.style.position,
+          top: hudElement.style.top,
+          left: hudElement.style.left,
+          color: hudElement.style.color,
+          fontSize: hudElement.style.fontSize,
+          zIndex: hudElement.style.zIndex || 'auto',
+          bounds: hudElement.getBoundingClientRect()
+        });
       }
       
       // Update all elements with .hud-element class
@@ -793,6 +820,20 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
   }
 
+  // Helper function to ensure wallet connection without forcing reconnect
+  async function ensureWalletReady(provider) {
+    // Only attempt connect if we don't have a wallet address
+    if (!walletAddress || walletAddress.length === 0) {
+      try {
+        await provider.request({ method: "connect" });
+      } catch (e) {
+        console.warn("Wallet connect attempt failed:", e);
+        throw new Error("Unable to connect wallet");
+      }
+    }
+    // If we have walletAddress, assume we're already connected
+  }
+
   async function ensurePaymentForSession() {
     if (!walletAddress) throw new Error("Connect your wallet first");
     let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
@@ -808,10 +849,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (!provider || typeof provider.request !== "function") {
       throw new Error("Demos wallet provider not available");
     }
-    try {
-      await provider.request({ method: "connect" });
-    } catch (_) {}
-
+    // Ensure wallet is ready without forcing reconnect
+    await ensureWalletReady(provider);
+    
     // Send 2 DEM to server wallet only (server handles jackpot and gas)
     console.log("[Pay] Sending 2 DEM to server:", serverAddress);
     const resp = await provider.request({
@@ -883,10 +923,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       throw new Error("Demos wallet provider not available");
     }
     
-    try {
-      await provider.request({ method: "connect" });
-    } catch (_) {}
-
+    // Ensure wallet is ready without forcing reconnect
+    await ensureWalletReady(provider);
+    
     // Get server address for bomb purchases
     let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
     const infoRes = await fetch(`${apiBase}/pay/info`);
@@ -919,9 +958,45 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       );
     }
 
-    // Simple verification - just check transaction was sent
-    // Server can verify on-chain later if needed
-    console.log(`[Bomb Purchase] Payment successful: ${demAmount} DEM for bombs`);
+    // Verify payment with server using bomb-specific endpoint
+    console.log("[Bomb Purchase] Verifying payment...");
+    let verified = false;
+    
+    // Try to verify for up to 10 seconds
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const vRes = await fetch(`${apiBase}/bomb/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          txHash,
+          playerAddress: walletAddress,
+          validityData: vdat,
+          amount: demAmount,  // Pass the amount for verification
+        }),
+      });
+      
+      if (vRes.ok) {
+        const v = await vRes.json();
+        if (v?.ok) {
+          verified = true;
+          console.log(`[Bomb Purchase] Payment verified: ${demAmount} DEM for bombs`);
+          break;
+        }
+      } else {
+        // If 404 (not found) keep retrying; otherwise break on hard errors
+        if (vRes.status !== 404) {
+          const msg = await vRes.text().catch(() => "");
+          throw new Error(`Bomb payment verification failed (${vRes.status}) ${msg}`);
+        }
+      }
+      
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    
+    if (!verified) {
+      throw new Error("Bomb payment verification timed out. Payment may still be processing.");
+    }
+    
     return txHash;
   }
 
@@ -940,10 +1015,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (!provider || typeof provider.request !== "function") {
       throw new Error("Demos wallet provider not available");
     }
-    try {
-      await provider.request({ method: "connect" });
-    } catch (_) {}
-
+    // Ensure wallet is ready without forcing reconnect
+    await ensureWalletReady(provider);
+    
     // Send 10 DEM to server wallet only (server handles split and gas)
     console.log("[TimeExtension] Sending 10 DEM to server:", serverAddress);
     const resp = await provider.request({
@@ -1008,6 +1082,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   // DAHR Score Submission Implementation
   async function submitStatsToDemos() {
+    console.log("🎯 submitStatsToDemos called, walletAddress:", walletAddress);
     if (!walletAddress) {
       alert("Please connect your wallet first");
       return;
@@ -1187,15 +1262,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           nonce: stats.ts,
         });
 
-        // Follow docs API: connect (no params) → sign(message)
+        // Follow docs API: sign(message) - wallet already connected
         let transactionResponse;
-        try {
-          await provider.request({ method: "connect" });
-        } catch (_) {}
-        const signRes = await provider.request({
-          method: "sign",
-          params: [signedMessage],
-        });
+        console.log("🔐 About to request signature from wallet, message:", signedMessage);
+        console.log("🔐 Provider being used:", provider);
+        
+        const signRes = await safeProviderRequest(provider, "sign", [signedMessage]);
+        
+        console.log("✅ Signature received:", signRes);
         // Normalize signature to a 0x-hex string; server verify expects hex
         function toHexFromArray(arr) {
           try {
@@ -2898,8 +2972,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         alert("Please connect your wallet first!");
         return;
       }
+      
+      if (!paidSessionToken) {
+        alert("Please pay 2 DEM to play first!");
+        return;
+      }
 
-      console.log("🚀 Launching with wallet address:", walletAddress);
+      console.log("🚀 Launching with wallet address:", walletAddress, "and payment token:", !!paidSessionToken);
 
       if (welcomeScreen) welcomeScreen.classList.add("hidden");
       if (canvas) {
@@ -3070,7 +3149,23 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   function startGame() {
     if (gameInitialized) return;
     gameInitialized = true;
-    hud.style.display = hudVisible ? "block" : "none";
+    
+    // FORCE HUD VISIBLE WITH DEBUG STYLING
+    hudVisible = true;
+    hud.style.display = "block";
+    hud.style.position = "fixed";
+    hud.style.top = "20px";
+    hud.style.left = "20px";
+    hud.style.color = "white";
+    hud.style.backgroundColor = "rgba(0, 0, 0, 0.8)";
+    hud.style.padding = "10px";
+    hud.style.fontSize = "16px";
+    hud.style.zIndex = "9999";
+    hud.style.border = "2px solid cyan";
+    hud.style.fontFamily = "monospace";
+    
+    updateHud(); // Ensure HUD has content when game starts
+    console.log("🚨 HUD FORCED VISIBLE ON GAME START");
     help.style.display = "block";
     connectMP();
     // Hide leaderboard overlay by default (user can toggle with L key)
@@ -6250,8 +6345,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         
         buttonContainer.append(minusBtn, quantityDisplay, plusBtn, buyDEM);
         li.append(span, buttonContainer);
-      } else {
-        // Regular single-payment items
+      } else if (!entry.isDEM) {
+        // Regular single-payment items (only if not DEM-only)
         const buy = document.createElement("button");
         buy.textContent = "Buy";
         Object.assign(buy.style, {

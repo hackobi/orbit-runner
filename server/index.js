@@ -789,16 +789,16 @@ app.post("/time/verify", async (req, res) => {
       isSend && Array.isArray(nativePayload.args) ? nativePayload.args : [];
     const [toAddr, amount] = args;
 
-    // Check if this is the server transaction (2 DEM to server address)
+    // Check if this is the server transaction (10 DEM to server address for time extension)
     if (
       !isNative ||
       !isSend ||
       toAddr !== serverAddress ||
-      Number(amount) !== 2
+      Number(amount) !== 10
     ) {
       return res
         .status(400)
-        .json({ ok: false, error: "Payment does not match required 2 DEM to server wallet" });
+        .json({ ok: false, error: "Payment does not match required 10 DEM to server wallet for time extension" });
     }
 
     // Check sender
@@ -817,6 +817,111 @@ app.post("/time/verify", async (req, res) => {
     return res.json({ ok: true, verified: true });
   } catch (e) {
     console.error("/time/verify error:", String(e));
+    return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// Verify bomb purchases (3, 6, or 9 DEM to server wallet)
+app.post("/bomb/verify", async (req, res) => {
+  try {
+    const { txHash, playerAddress, validityData, amount: expectedAmount } = req.body || {};
+    console.log("/bomb/verify", {
+      txHash,
+      playerAddress,
+      expectedAmount,
+      hasValidity: !!validityData,
+    });
+
+    if (!txHash || !playerAddress || !expectedAmount) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Missing transaction parameters" });
+    }
+
+    // Validate expected amount is for bombs (3, 6, or 9 DEM)
+    if (![3, 6, 9].includes(Number(expectedAmount))) {
+      return res
+        .status(400)
+        .json({ ok: false, error: "Invalid bomb purchase amount" });
+    }
+
+    // Connect to Demos network
+    const connected = await connectToDemos();
+    if (!connected)
+      return res.status(500).json({ ok: false, error: "Network unavailable" });
+    
+    // Ensure server wallet is connected
+    const serverMnemonic = (process.env.DEMOS_SERVER_MNEMONIC || "").trim();
+    if (serverMnemonic.length > 0) {
+      await demos.connectWallet(serverMnemonic, { isSeed: true });
+    }
+    const serverAddress = cachedServerAddress || demos.getAddress();
+
+    // Try to find the transaction
+    let tx = txHash ? await demos.getTxByHash(txHash).catch(() => null) : null;
+    if (!tx || !tx.content) {
+      // Try mempool as fallback
+      try {
+        const mem = await demos.getMempool();
+        if (Array.isArray(mem)) {
+          const found = mem.find(
+            (m) =>
+              m?.hash &&
+              String(m.hash).toLowerCase().replace(/^0x/, "") ===
+                String(txHash).toLowerCase().replace(/^0x/, "")
+          );
+          if (found) tx = found;
+        }
+      } catch (_) {}
+    }
+    
+    if (!tx || !tx.content) {
+      return res.status(404).json({ ok: false, error: "Transaction not found" });
+    }
+
+    const c = tx.content;
+    const isNative = c.type === "native";
+    const data = Array.isArray(c.data) ? c.data : null;
+    const nativeTag = data && data[0];
+    const nativePayload = data && data[1];
+    const isSend =
+      nativeTag === "native" &&
+      nativePayload &&
+      nativePayload.nativeOperation === "send";
+    const args =
+      isSend && Array.isArray(nativePayload.args) ? nativePayload.args : [];
+    const [toAddr, amount] = args;
+
+    // Check if payment matches expected amount to server address
+    if (
+      !isNative ||
+      !isSend ||
+      toAddr !== serverAddress ||
+      Number(amount) !== Number(expectedAmount)
+    ) {
+      return res.status(400).json({ 
+        ok: false, 
+        error: `Payment does not match required ${expectedAmount} DEM to server wallet` 
+      });
+    }
+
+    // Check sender
+    if (String(c.from_ed25519_address) !== String(playerAddress)) {
+      return res.status(400).json({
+        ok: false,
+        error: "Payment sender mismatch",
+      });
+    }
+
+    // Basic freshness check (<= 30 min)
+    const tsOk = Number(c.timestamp || 0) > Date.now() - 30 * 60 * 1000;
+    if (!tsOk) {
+      return res.status(400).json({ ok: false, error: "Payment too old" });
+    }
+
+    return res.json({ ok: true, verified: true });
+  } catch (e) {
+    console.error("/bomb/verify error:", String(e));
     return res.status(500).json({ ok: false, error: String(e) });
   }
 });
