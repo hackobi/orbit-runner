@@ -1045,8 +1045,8 @@ app.post("/pay/verify", async (req, res) => {
               }
             });
             
-            // Both transactions must exist for valid payment
-            if (treasuryTx && serverTx) {
+            // Only server transaction required for game start (2 DEM total)
+            if (serverTx) {
               match = serverTx; // Use server transaction for verification response
             }
           }
