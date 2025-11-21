@@ -225,6 +225,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Welcome DOM
   const welcomeScreen = document.getElementById("welcome-screen");
   const launchBtn = document.getElementById("launch-btn");
+  const howToPlayBtn = document.getElementById("how-to-play-btn");
   const testBlockchainBtn = document.getElementById("test-blockchain-btn");
   const blockchainTestResults = document.getElementById(
     "blockchain-test-results"
@@ -684,7 +685,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
     // Update blockchain test button (only requires wallet connection)
     if (testBlockchainBtn) {
-      const canTest = walletAddress.length > 0;
+      const canTest = walletAddress && walletAddress.length > 0;
       testBlockchainBtn.disabled = !canTest;
       if (canTest) testBlockchainBtn.classList.add("enabled");
       else testBlockchainBtn.classList.remove("enabled");
@@ -3175,6 +3176,38 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       roundActive = true;
       roundEndsAt = Date.now() + 3 * 60 * 1000;
       canvas.focus();
+    });
+  }
+
+  // How to Play button functionality
+  if (howToPlayBtn) {
+    howToPlayBtn.addEventListener("click", () => {
+      alert(`🎮 ORBIT RUNNER CONTROLS
+
+🚀 MOVEMENT:
+• W/↑ - Increase speed
+• S/↓ - Decrease speed  
+• A/D or ←/→ - Turn left/right
+• I/K - Pitch up/down
+
+⚡ COMBAT:
+• Space - Shoot
+• H - Target nearest enemy
+
+🎯 GAME:
+• J - Toggle HUD
+• N - Change name
+• R - Restart (costs 2 DEM)
+
+💰 STORE (P key):
+• Buy bombs, time extensions, health
+• Use DEM tokens for premium items
+• Points for basic upgrades
+
+🎪 MULTIPLAYER:
+• Shoot other players for points
+• Survive asteroid fields
+• Beat high scores to win jackpot!`);
     });
   }
 
