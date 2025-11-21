@@ -448,6 +448,7 @@ body::before {
   text-decoration: underline;
 }
 
+
 /* ===== BLOCKCHAIN TEST ===== */
 .blockchain-test-section {
   margin-top: 40px;
@@ -752,6 +753,151 @@ body::before {
   width: 2px;
   height: 4px;
   transform: translateX(-50%);
+}
+
+/* ===== INSTRUCTIONS OVERLAY ===== */
+.instructions-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  opacity: 1;
+  visibility: visible;
+  transition: all 0.3s ease;
+}
+
+.instructions-overlay.hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.instructions-overlay.blurred #welcome-screen {
+  filter: blur(8px);
+  transition: filter 0.3s ease;
+}
+
+.instructions-modal {
+  background: linear-gradient(135deg, #0f1419, #1a202c);
+  border: 1px solid #00d4ff;
+  border-radius: 20px;
+  max-width: 750px;
+  max-height: 90vh;
+  width: 90%;
+  position: relative;
+  box-shadow: 
+    0 25px 50px rgba(0, 212, 255, 0.15),
+    0 0 0 1px rgba(0, 212, 255, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  overflow-y: auto;
+  animation: modalSlide 0.3s ease-out;
+}
+
+@keyframes modalSlide {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.close-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: var(--dark-400);
+  border: 1px solid var(--primary-300);
+  color: white;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 18px;
+  font-weight: bold;
+  z-index: 10;
+  transition: all 0.2s ease;
+}
+
+.close-btn:hover {
+  background: var(--primary-500);
+  border-color: var(--primary-400);
+  transform: scale(1.05);
+}
+
+.instructions-content {
+  padding: 32px;
+  padding-top: 40px;
+  color: #e8eaed;
+  font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+.instructions-content h2 {
+  margin: 0 0 32px 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #00d4ff;
+  text-align: center;
+  border-bottom: 2px solid rgba(0, 212, 255, 0.2);
+  padding-bottom: 20px;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #00d4ff, #0099cc);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.instructions-section {
+  margin-bottom: 28px;
+}
+
+.instructions-section h3 {
+  margin: 0 0 16px 0;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #00d4ff;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.instructions-section ul {
+  margin: 0;
+  padding: 0;
+  list-style-type: none;
+}
+
+.instructions-section ul li {
+  margin-bottom: 12px;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  position: relative;
+  padding-left: 0;
+  color: #d1d5db;
+  font-weight: 400;
+}
+
+.instructions-section ul li strong {
+  color: #00d4ff;
+  font-weight: 600;
+}
+
+/* Remove automatic bullet points from CSS */
+.instructions-section ul li::before {
+  display: none;
 }
 
 /* ===== MOBILE ADJUSTMENTS ===== */
