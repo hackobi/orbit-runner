@@ -644,7 +644,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
   // Wallet functions
   function updateLaunchButton() {
-    const isValid = walletAddress.length > 0 && !!paidSessionToken;
+    const isValid = (walletAddress && walletAddress.length > 0) && !!paidSessionToken;
     console.log("updateLaunchButton called:", {
       walletAddress,
       paidSessionToken: !!paidSessionToken,
@@ -653,7 +653,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     });
 
     if (launchBtn) {
-      const hasWallet = walletAddress.length > 0;
+      const hasWallet = walletAddress && walletAddress.length > 0;
       const needsPayment = hasWallet && !paidSessionToken;
       
       // Only enable button when wallet is connected AND payment is made
@@ -820,21 +820,124 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
   }
 
-  // Helper function to ensure wallet connection without forcing reconnect
+  // Enhanced wallet ready function with automatic recovery
   async function ensureWalletReady(provider) {
-    // Only attempt connect if we don't have a wallet address
+    console.log("🔧 Ensuring wallet ready, current state:", {
+      walletAddress,
+      provider: !!provider
+    });
+    
+    // If we don't have a wallet address, definitely need to connect
     if (!walletAddress || walletAddress.length === 0) {
+      console.log("🔌 No wallet address, attempting connection...");
       try {
         await provider.request({ method: "connect" });
+        
+        // Get the wallet address after connection
+        const accounts = await safeProviderRequest(provider, "eth_accounts", []);
+        if (accounts && accounts.length > 0) {
+          walletAddress = accounts[0];
+          console.log("✅ Wallet connected with address:", walletAddress);
+          updateConnectedWallet(walletAddress, null);
+          updateLaunchButton();
+        } else {
+          console.warn("⚠️ Connection succeeded but no accounts returned");
+        }
       } catch (e) {
         console.warn("Wallet connect attempt failed:", e);
         throw new Error("Unable to connect wallet");
       }
+      return;
     }
-    // If we have walletAddress, assume we're already connected
+    
+    // If we have wallet address, do minimal verification without risking disconnection
+    console.log("✅ Wallet address already available, preserving connection:", walletAddress);
+    
+    // Optional: Light verification that doesn't risk clearing the wallet
+    try {
+      const accounts = await safeProviderRequest(provider, "eth_accounts", []);
+      if (accounts && accounts.length > 0) {
+        const currentAddress = accounts[0];
+        if (currentAddress !== walletAddress) {
+          console.log("🔄 Wallet address changed from verification:", currentAddress);
+          walletAddress = currentAddress;
+          updateConnectedWallet(currentAddress, null);
+          updateLaunchButton();
+        } else {
+          console.log("✅ Wallet verification confirmed address:", walletAddress);
+        }
+      } else {
+        console.warn("⚠️ Wallet verification returned empty accounts, but preserving existing address");
+        // Don't clear walletAddress, keep the existing one
+      }
+    } catch (verifyError) {
+      console.warn("⚠️ Wallet verification failed, but preserving existing address:", verifyError.message);
+      // Don't clear walletAddress, provider might still work for transactions
+    }
+  }
+
+  // Wallet state monitor with active connection maintenance
+  let walletStateMonitor = null;
+  let walletKeepaliveCount = 0;
+  
+  function startWalletStateMonitoring() {
+    if (walletStateMonitor) return; // Already running
+    
+    console.log("🔍 Starting wallet state monitoring with keepalive...");
+    walletStateMonitor = setInterval(async () => {
+      // Only monitor during gameplay when wallet should be connected
+      if (!gameInitialized || !walletAddress) return;
+      
+      walletKeepaliveCount++;
+      
+      try {
+        // Check if provider is still available
+        const provider = await getDemosProvider();
+        if (!provider) {
+          console.warn("⚠️ Wallet provider disappeared during gameplay");
+          return;
+        }
+        
+        // Every 2nd check (20 seconds), perform active keepalive
+        if (walletKeepaliveCount % 2 === 0) {
+          console.log("💓 Performing wallet keepalive ping...");
+          
+          try {
+            // Try a lightweight operation to keep connection alive
+            // Try to get accounts without forcing reconnection
+            const accounts = await safeProviderRequest(provider, "eth_accounts", []);
+            if (accounts && accounts.length > 0) {
+              const currentAccount = accounts[0];
+              if (currentAccount !== walletAddress) {
+                console.log("🔄 Wallet account changed, updating:", currentAccount);
+                walletAddress = currentAccount;
+                updateConnectedWallet(currentAccount, null);
+              }
+            } else {
+              console.warn("⚠️ Keepalive: No accounts returned, wallet may be disconnected");
+            }
+          } catch (keepaliveError) {
+            console.warn("⚠️ Wallet keepalive failed:", keepaliveError.message);
+            // Don't throw, just log the issue
+          }
+        }
+        
+      } catch (error) {
+        console.warn("⚠️ Error in wallet monitoring:", error);
+      }
+    }, 10000); // Check every 10 seconds
+  }
+
+  function stopWalletStateMonitoring() {
+    if (walletStateMonitor) {
+      clearInterval(walletStateMonitor);
+      walletStateMonitor = null;
+      console.log("🔍 Stopped wallet state monitoring");
+    }
   }
 
   async function ensurePaymentForSession() {
+    console.log("[Pay] Starting payment session with wallet:", walletAddress);
     if (!walletAddress) throw new Error("Connect your wallet first");
     let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
     const infoRes = await fetch(`${apiBase}/pay/info`);
@@ -851,6 +954,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
     // Ensure wallet is ready without forcing reconnect
     await ensureWalletReady(provider);
+    console.log("[Pay] After ensureWalletReady, wallet address:", walletAddress);
+    
+    if (!walletAddress) {
+      throw new Error("Wallet address was cleared during wallet preparation");
+    }
     
     // Send 2 DEM to server wallet only (server handles jackpot and gas)
     console.log("[Pay] Sending 2 DEM to server:", serverAddress);
@@ -884,7 +992,17 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
     // Retry verification for up to ~30s to allow propagation/confirmation
     let paid = null;
+    console.log("[Pay] Starting payment verification with:", {
+      txHash,
+      playerAddress: walletAddress,
+      validityData: !!vdat
+    });
+    
     for (let i = 0; i < 30; i++) {
+      if (!walletAddress) {
+        throw new Error("Wallet address is missing for payment verification");
+      }
+      
       const vRes = await fetch(`${apiBase}/pay/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -916,15 +1034,31 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
 
   async function ensureBombPayment(demAmount) {
-    if (!walletAddress) throw new Error("Connect your wallet first");
+    console.log("💣 Starting bomb payment with wallet state:", {
+      walletAddress,
+      currentProvider: !!currentProvider,
+      paidSessionToken: !!paidSessionToken
+    });
+    
+    if (!walletAddress) {
+      console.error("💣 Wallet address missing for bomb payment!");
+      throw new Error("Wallet disconnected. Please refresh and reconnect your wallet.");
+    }
     
     const provider = await getDemosProvider();
     if (!provider || typeof provider.request !== "function") {
-      throw new Error("Demos wallet provider not available");
+      console.error("💣 Provider unavailable for bomb payment!");
+      throw new Error("Wallet provider unavailable. Please refresh and reconnect your wallet.");
     }
     
-    // Ensure wallet is ready without forcing reconnect
+    // Enhanced wallet readiness check with recovery
+    console.log("💣 Ensuring wallet is ready for bomb purchase...");
     await ensureWalletReady(provider);
+    
+    // Re-verify wallet address after potential recovery
+    if (!walletAddress) {
+      throw new Error("Wallet connection could not be established for payment.");
+    }
     
     // Get server address for bomb purchases
     let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
@@ -1001,7 +1135,17 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
 
   async function ensureTimeExtensionPayment() {
-    if (!walletAddress) throw new Error("Connect your wallet first");
+    console.log("⏱️ Starting time extension payment with wallet state:", {
+      walletAddress,
+      currentProvider: !!currentProvider,
+      paidSessionToken: !!paidSessionToken
+    });
+    
+    if (!walletAddress) {
+      console.error("⏱️ Wallet address missing for time extension payment!");
+      throw new Error("Wallet disconnected. Please refresh and reconnect your wallet.");
+    }
+    
     let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
     const infoRes = await fetch(`${apiBase}/pay/info`);
     if (!infoRes.ok) throw new Error("Payment info unavailable");
@@ -1013,10 +1157,18 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
     const provider = await getDemosProvider();
     if (!provider || typeof provider.request !== "function") {
-      throw new Error("Demos wallet provider not available");
+      console.error("⏱️ Provider unavailable for time extension payment!");
+      throw new Error("Wallet provider unavailable. Please refresh and reconnect your wallet.");
     }
-    // Ensure wallet is ready without forcing reconnect
+    
+    // Enhanced wallet readiness check with recovery
+    console.log("⏱️ Ensuring wallet is ready for time extension purchase...");
     await ensureWalletReady(provider);
+    
+    // Re-verify wallet address after potential recovery
+    if (!walletAddress) {
+      throw new Error("Wallet connection could not be established for payment.");
+    }
     
     // Send 10 DEM to server wallet only (server handles split and gas)
     console.log("[TimeExtension] Sending 10 DEM to server:", serverAddress);
@@ -2756,38 +2908,52 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         try {
           prov.on &&
             prov.on("accountsChanged", (accs) => {
+              console.log("🔄 Accounts changed event:", accs);
               if (Array.isArray(accs) && accs[0]) {
+                // Wallet connected/account changed
+                console.log("✅ New wallet address:", accs[0]);
                 walletAddress = accs[0];
                 updateConnectedWallet(walletAddress, null);
                 fetchDemosBalance(walletAddress, prov).then((balance) => {
                   updateConnectedWallet(walletAddress, balance);
                 });
                 updateLaunchButton();
+              } else {
+                // Wallet disconnected (empty accounts array)
+                console.log("🔌 Wallet disconnected via accountsChanged");
+                // Don't force disconnect - let user stay connected
+                // This prevents unwanted disconnections from extension updates
+                console.log("ℹ️ Keeping wallet connection despite accountsChanged event");
               }
             });
         } catch (_) {}
         return true;
       }
 
-      // Try explicit connect via various provider-specific methods
-      try {
-        await prov.request({
-          method: "connect",
-          params: [{ origin: location.origin }],
-        });
-      } catch (_) {}
-      // Demos-specific alternative connect with providerId/uuid if available
-      try {
-        const pid =
-          providerDetail?.provider?.providerId ||
-          providerDetail?.info?.uuid ||
-          prov?.providerId;
-        if (pid)
+      // Try explicit connect via various provider-specific methods only if needed
+      if (!accounts && !walletAddress) {
+        console.log("🔄 No accounts found, attempting provider-specific connect methods...");
+        try {
           await prov.request({
-            method: "demos_connect",
-            params: [{ origin: location.origin, providerId: pid }],
+            method: "connect",
+            params: [{ origin: location.origin }],
           });
-      } catch (_) {}
+        } catch (_) {}
+        // Demos-specific alternative connect with providerId/uuid if available
+        try {
+          const pid =
+            providerDetail?.provider?.providerId ||
+            providerDetail?.info?.uuid ||
+            prov?.providerId;
+          if (pid)
+            await prov.request({
+              method: "demos_connect",
+              params: [{ origin: location.origin, providerId: pid }],
+            });
+        } catch (_) {}
+      } else {
+        console.log("ℹ️ Skipping explicit connect - accounts already available or wallet connected");
+      }
       // EIP-2255 style permissions
       try {
         await prov.request({
@@ -2898,6 +3064,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
         try {
           const provider = demosProviderDetail.provider;
+          
+          // Use ensureWalletReady to avoid unnecessary reconnections
+          await ensureWalletReady(provider);
+          
+          // Get wallet address without forcing reconnection
           const response = await provider.request({ method: "connect" });
           console.log("response", response);
 
@@ -2979,6 +3150,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
 
       console.log("🚀 Launching with wallet address:", walletAddress, "and payment token:", !!paidSessionToken);
+      console.log("🔍 Pre-launch wallet state check:", {
+        walletAddress,
+        currentProvider: !!currentProvider,
+        paidSessionToken: !!paidSessionToken
+      });
 
       if (welcomeScreen) welcomeScreen.classList.add("hidden");
       if (canvas) {
@@ -2988,6 +3164,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
       // ensure HUD becomes visible when created dynamically later
       startGame();
+      
+      // Check wallet state after game start
+      console.log("🔍 Post-startGame wallet state check:", {
+        walletAddress,
+        currentProvider: !!currentProvider,
+        paidSessionToken: !!paidSessionToken
+      });
       // Start the 3-minute round at game launch
       roundActive = true;
       roundEndsAt = Date.now() + 3 * 60 * 1000;
@@ -3150,6 +3333,16 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (gameInitialized) return;
     gameInitialized = true;
     
+    // PRESERVE WALLET STATE DURING GAME INITIALIZATION
+    const preservedWalletAddress = walletAddress;
+    const preservedCurrentProvider = currentProvider;
+    const preservedPaidSessionToken = paidSessionToken;
+    console.log("🔒 Preserving wallet state during game init:", {
+      walletAddress: preservedWalletAddress,
+      currentProvider: !!preservedCurrentProvider,
+      paidSessionToken: !!preservedPaidSessionToken
+    });
+    
     // FORCE HUD VISIBLE WITH DEBUG STYLING
     hudVisible = true;
     hud.style.display = "block";
@@ -3176,6 +3369,28 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         if (lbOverlay && lbOverlay.style.display !== "none") renderLb();
       }, 5000);
     }
+    
+    // RESTORE WALLET STATE AFTER GAME INITIALIZATION
+    if (preservedWalletAddress && !walletAddress) {
+      console.log("🔄 Restoring wallet address after game init:", preservedWalletAddress);
+      walletAddress = preservedWalletAddress;
+    }
+    if (preservedCurrentProvider && !currentProvider) {
+      console.log("🔄 Restoring provider after game init");
+      currentProvider = preservedCurrentProvider;
+    }
+    if (preservedPaidSessionToken && !paidSessionToken) {
+      console.log("🔄 Restoring payment token after game init");
+      paidSessionToken = preservedPaidSessionToken;
+    }
+    console.log("✅ Final wallet state after startGame:", {
+      walletAddress,
+      currentProvider: !!currentProvider,
+      paidSessionToken: !!paidSessionToken
+    });
+    
+    // Start wallet state monitoring to detect disconnections during gameplay
+    startWalletStateMonitoring();
   }
   // MP overlay (P to toggle)
   let mpOverlay = null;
@@ -6419,7 +6634,21 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
     ensureStoreOverlay();
   }
-  function showStoreOverlay() {
+  async function showStoreOverlay() {
+    // Pre-emptively check wallet connection when store is opened
+    if (walletAddress) {
+      console.log("🛒 Store opened, verifying wallet connection...");
+      try {
+        const provider = await getDemosProvider();
+        if (provider) {
+          await ensureWalletReady(provider);
+        }
+      } catch (error) {
+        console.warn("⚠️ Wallet verification failed when opening store:", error.message);
+        // Don't block store opening, just log the issue
+      }
+    }
+    
     rebuildStoreOverlay();
     storeOverlay.style.display = "block";
   }
