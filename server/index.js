@@ -1017,7 +1017,7 @@ app.post("/pay/verify", async (req, res) => {
                 const [toAddr, amt] = args;
                 const tsOk =
                   Number(c.timestamp || 0) > Date.now() - 5 * 60 * 1000;
-                return toAddr === treasuryAddress && Number(amt) === 1 && tsOk;
+                return toAddr === treasuryAddress && Number(amt) === 2 && tsOk;
               } catch (_) {
                 return false;
               }
@@ -1039,7 +1039,7 @@ app.post("/pay/verify", async (req, res) => {
                 const [toAddr, amt] = args;
                 const tsOk =
                   Number(c.timestamp || 0) > Date.now() - 5 * 60 * 1000;
-                return toAddr === serverAddress && Number(amt) === 1 && tsOk;
+                return toAddr === serverAddress && Number(amt) === 2 && tsOk;
               } catch (_) {
                 return false;
               }
