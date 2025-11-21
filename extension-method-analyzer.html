@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demos Extension Method Analysis</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            background: #000;
+            color: #00ff00;
+            padding: 20px;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 10px;
+            border: 1px solid #00ff00;
+        }
+        .method-test {
+            margin: 10px 0;
+            padding: 5px;
+            background: #111;
+        }
+        .result {
+            color: #ffff00;
+            margin-left: 20px;
+        }
+        .error {
+            color: #ff0000;
+        }
+        .success {
+            color: #00ff00;
+        }
+        button {
+            background: #333;
+            color: #00ff00;
+            border: 1px solid #00ff00;
+            padding: 10px;
+            margin: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #555;
+        }
+        #console-output {
+            background: #111;
+            padding: 10px;
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #00ff00;
+        }
+    </style>
+</head>
+<body>
+    <h1>Demos Extension Method Analysis</h1>
+    
+    <div class="section">
+        <h2>Extension Detection</h2>
+        <button onclick="detectExtension()">Detect Extension</button>
+        <div id="detection-result"></div>
+    </div>
+
+    <div class="section">
+        <h2>Method Testing</h2>
+        <button onclick="testAllMethods()">Test All Methods</button>
+        <div id="method-results"></div>
+    </div>
+
+    <div class="section">
+        <h2>Live Console Output</h2>
+        <div id="console-output"></div>
+        <button onclick="clearConsole()">Clear Console</button>
+    </div>
+
+    <!-- Load the extension detector -->
+    <script src="demos-extension-detector-v2.js"></script>
+    
+    <script>
+        // Console logging redirection
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+        const consoleDiv = document.getElementById('console-output');
+        
+        function addToConsole(message, type = 'log') {
+            const div = document.createElement('div');
+            div.style.color = type === 'error' ? '#ff0000' : type === 'warn' ? '#ffff00' : '#00ff00';
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            consoleDiv.appendChild(div);
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+        }
+        
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            addToConsole(args.join(' '), 'log');
+        };
+        
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            addToConsole(args.join(' '), 'error');
+        };
+        
+        console.warn = function(...args) {
+            originalWarn.apply(console, args);
+            addToConsole(args.join(' '), 'warn');
+        };
+        
+        function clearConsole() {
+            consoleDiv.innerHTML = '';
+        }
+
+        let provider = null;
+
+        async function detectExtension() {
+            const resultDiv = document.getElementById('detection-result');
+            resultDiv.innerHTML = '<div class="result">Detecting extension...</div>';
+            
+            try {
+                console.log('🔍 Starting extension detection...');
+                
+                // Wait for extension to be ready
+                if (window.waitForDemosExtension) {
+                    console.log('⏳ Waiting for extension...');
+                    await window.waitForDemosExtension(5, 1000);
+                }
+                
+                // Detect providers
+                const providers = await window.detectDemosExtension();
+                console.log('📋 Detection complete. Found providers:', providers.length);
+                
+                if (providers.length > 0) {
+                    provider = providers[0].provider;
+                    console.log('✅ Using provider:', providers[0].info?.name || 'Unknown');
+                    console.log('🔍 Provider object:', provider);
+                    console.log('🔍 Provider methods:', Object.getOwnPropertyNames(provider).filter(name => typeof provider[name] === 'function'));
+                    console.log('🔍 Provider properties:', Object.getOwnPropertyNames(provider).filter(name => typeof provider[name] !== 'function'));
+                    
+                    resultDiv.innerHTML = `
+                        <div class="success">✅ Extension detected: ${providers[0].info?.name || 'Unknown'}</div>
+                        <div class="result">Provider methods: ${Object.getOwnPropertyNames(provider).filter(name => typeof provider[name] === 'function').join(', ')}</div>
+                        <div class="result">Provider properties: ${Object.getOwnPropertyNames(provider).filter(name => typeof provider[name] !== 'function').join(', ')}</div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = '<div class="error">❌ No extension detected</div>';
+                }
+                
+            } catch (error) {
+                console.error('❌ Detection failed:', error);
+                resultDiv.innerHTML = `<div class="error">❌ Detection failed: ${error.message}</div>`;
+            }
+        }
+
+        async function testAllMethods() {
+            const resultsDiv = document.getElementById('method-results');
+            resultsDiv.innerHTML = '<div class="result">Testing methods...</div>';
+            
+            if (!provider) {
+                await detectExtension();
+                if (!provider) {
+                    resultsDiv.innerHTML = '<div class="error">❌ No provider available for testing</div>';
+                    return;
+                }
+            }
+            
+            const methods = [
+                // Standard Ethereum methods
+                'eth_requestAccounts',
+                'eth_accounts', 
+                'eth_sendTransaction',
+                'eth_signTransaction',
+                'eth_sign',
+                'personal_sign',
+                'eth_signTypedData_v4',
+                'eth_getBalance',
+                'eth_getBlockNumber',
+                'eth_chainId',
+                
+                // Potential Demos-specific methods
+                'demos_requestAccounts',
+                'demos_accounts',
+                'demos_sendTransaction',
+                'demos_signTransaction',
+                'demos_sign',
+                'demos_getBalance',
+                'demos_store',
+                'demos_transfer',
+                'demos_pay',
+                
+                // Common wallet methods
+                'requestAccounts',
+                'getAccounts',
+                'signMessage',
+                'signTransaction',
+                'sendTransaction',
+                'getBalance'
+            ];
+            
+            console.log('🧪 Testing', methods.length, 'methods...');
+            
+            const results = [];
+            
+            for (const method of methods) {
+                try {
+                    console.log(`🧪 Testing method: ${method}`);
+                    
+                    // Test with different parameter formats
+                    const testFormats = [
+                        // EIP-1193 format
+                        { method, params: [] },
+                        { method, params: ['0x1234567890123456789012345678901234567890'] },
+                        { method, params: [{ from: '0x1234567890123456789012345678901234567890' }] },
+                        
+                        // Alternative formats
+                        { id: Date.now(), jsonrpc: '2.0', method, params: [] },
+                        { type: method, params: [] }
+                    ];
+                    
+                    let methodResult = '❌ Not supported';
+                    let errorDetails = '';
+                    
+                    for (const testFormat of testFormats) {
+                        try {
+                            if (typeof provider.request === 'function') {
+                                const result = await provider.request(testFormat);
+                                methodResult = `✅ Supported (result: ${typeof result})`;
+                                console.log(`✅ ${method} succeeded with format:`, testFormat, 'Result:', result);
+                                break;
+                            }
+                        } catch (error) {
+                            errorDetails = error.message;
+                            // Try next format
+                        }
+                    }
+                    
+                    // Also test if method exists as direct function
+                    if (typeof provider[method] === 'function') {
+                        try {
+                            const result = await provider[method]();
+                            methodResult = `✅ Direct method (result: ${typeof result})`;
+                            console.log(`✅ ${method} as direct method succeeded. Result:`, result);
+                        } catch (error) {
+                            console.log(`⚠️ ${method} as direct method failed:`, error.message);
+                        }
+                    }
+                    
+                    results.push({
+                        method,
+                        result: methodResult,
+                        error: errorDetails
+                    });
+                    
+                } catch (error) {
+                    console.error(`❌ ${method} test failed:`, error);
+                    results.push({
+                        method,
+                        result: '❌ Test failed',
+                        error: error.message
+                    });
+                }
+                
+                // Small delay to avoid overwhelming the extension
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+            
+            // Display results
+            let html = '<h3>Method Test Results:</h3>';
+            results.forEach(({ method, result, error }) => {
+                const cssClass = result.includes('✅') ? 'success' : 'error';
+                html += `<div class="method-test">
+                    <strong>${method}:</strong> 
+                    <span class="${cssClass}">${result}</span>
+                    ${error ? `<div class="result error">Error: ${error}</div>` : ''}
+                </div>`;
+            });
+            
+            resultsDiv.innerHTML = html;
+            console.log('🎯 Method testing complete!');
+        }
+
+        // Auto-detect on page load
+        window.addEventListener('load', () => {
+            setTimeout(detectExtension, 2000);
+        });
+    </script>
+</body>
+</html>

@@ -9,58 +9,6 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <!-- Instructions Overlay Modal -->
-    <div id="instructions-overlay" class="instructions-overlay">
-      <div class="instructions-modal">
-        <button id="close-instructions" class="close-btn">×</button>
-        <div class="instructions-content">
-          <h2>🚀 How to Play Orbit Runner</h2>
-          
-          <div class="instructions-section">
-            <ul>
-              <li>• Survive 3 minutes and become the top scorer to win</li>
-              <li>• Shoot orbs to earn points, gain abilities and improve your survival chances</li>
-              <li>• Destroy asteroids and enemy ships for bonus points</li>
-              <li>• Use WASD to move, control speed and mouse to aim and shoot</li>
-              <li>• Press J to toggle HUD visibility</li>
-            </ul>
-          </div>
-          
-          <div class="instructions-section">
-            <h3>✨ Orb Types & Effects</h3>
-            <ul>
-              <li>• <strong>🟢 Green (Shield)</strong> - Gain protective shield + 5x points</li>
-              <li>• <strong>🩷 Pink (Power)</strong> - Massive 10x point multiplier</li>
-              <li>• <strong>🔴 Red (Store)</strong> - Buy upgrade and extend your time</li>
-              <li>• <strong>🧬 Bullseye (Boost)</strong> - Speed boost + 5x points</li>
-              <li>• <strong>🟡 Golden (Fenix)</strong> - Ship upgrade (Faster, better, stronger)</li>
-              <li>• <strong>🔵 Blue (Hunter)</strong> - Double kill points for enemy ships</li>
-              <li>• <strong>🟤 Brown (Miner)</strong> - Double points for asteroid destruction</li>
-            </ul>
-          </div>
-          
-          <div class="instructions-section">
-            <h3>💰 Jackpot System</h3>
-            <ul>
-              <li>• Pay 2 DEM to start playing</li>
-              <li>• Top score wins the jackpot!</li>
-              <li>• Buy time extensions (60 seconds for 10 DEM) from the in-game store 🔴</li>
-              <li>• 90% of extension payments go to the jackpot, 10% to server</li>
-            </ul>
-          </div>
-          
-          <div class="instructions-section">
-            <h3>🎯 Tips</h3>
-            <ul>
-              <li>• Stay near asteroid fields for cover</li>
-              <li>• Collect orbs quickly - they boost your score multiplier</li>
-              <li>• Time extensions can be the difference between victory and defeat!</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <div id="welcome-screen" class="welcome-layout">
       <!-- Header Section -->
       <div class="welcome-header">
@@ -122,15 +70,6 @@
           
           <button id="launch-btn" class="launch-btn" disabled>
             <span>Launch Into Space</span>
-          </button>
-        </div>
-
-        <!-- Help Section -->
-        <div class="controls-section">
-          <h3 class="section-title">Game Guide</h3>
-          
-          <button id="how-to-play-btn" class="secondary-btn">
-            How to Play
           </button>
         </div>
       </div>
@@ -204,39 +143,6 @@
               banner.style.display = 'none';
             }, 300);
           }
-        }
-
-        // Instructions overlay functionality
-        const instructionsOverlay = document.getElementById('instructions-overlay');
-        const closeInstructionsBtn = document.getElementById('close-instructions');
-        const howToPlayBtn = document.getElementById('how-to-play-btn');
-        
-        // Hide instructions overlay initially
-        if (instructionsOverlay) {
-          instructionsOverlay.style.display = 'none';
-        }
-        
-        // Close instructions overlay
-        if (closeInstructionsBtn && instructionsOverlay) {
-          closeInstructionsBtn.addEventListener('click', () => {
-            instructionsOverlay.style.display = 'none';
-          });
-        }
-        
-        // Reopen instructions overlay when "How to Play" button is clicked
-        if (howToPlayBtn && instructionsOverlay) {
-          howToPlayBtn.addEventListener('click', () => {
-            instructionsOverlay.style.display = 'flex';
-          });
-        }
-        
-        // Close overlay when clicking outside the modal content
-        if (instructionsOverlay) {
-          instructionsOverlay.addEventListener('click', (e) => {
-            if (e.target === instructionsOverlay) {
-              instructionsOverlay.style.display = 'none';
-            }
-          });
         }
       });
     </script>

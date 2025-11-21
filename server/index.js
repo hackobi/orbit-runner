@@ -650,7 +650,7 @@ app.get("/pay/info", async (_req, res) => {
   }
 });
 
-// Verify a native transfer of exactly 10 DEM to server for time extension with 90%/10% split
+// Verify a native transfer of exactly 2 DEM to treasury for time extension
 app.post("/time/verify", async (req, res) => {
   try {
     const { txHash, playerAddress, validityData } = req.body || {};
@@ -794,11 +794,11 @@ app.post("/time/verify", async (req, res) => {
       !isNative ||
       !isSend ||
       toAddr !== serverAddress ||
-      Number(amount) !== 10
+      Number(amount) !== 2
     ) {
       return res
         .status(400)
-        .json({ ok: false, error: "Payment does not match required 10 DEM to server wallet" });
+        .json({ ok: false, error: "Payment does not match required 2 DEM to server wallet" });
     }
 
     // Check sender
@@ -812,24 +812,6 @@ app.post("/time/verify", async (req, res) => {
     const tsOk = Number(c.timestamp || 0) > Date.now() - 30 * 60 * 1000;
     if (!tsOk) {
       return res.status(400).json({ ok: false, error: "Payment too old" });
-    }
-
-    // Time extension payment successful - split 90% to jackpot, 10% to server
-    try {
-      console.log("💰 Splitting time extension payment: 9 DEM to jackpot, 1 DEM to server");
-      
-      // Connect treasury wallet to send 9 DEM to jackpot
-      const treasuryConnected = await connectTreasuryWallet();
-      if (treasuryConnected) {
-        // Send 9 DEM from server wallet to treasury wallet for jackpot
-        const transferResult = await demos.transfer(treasuryDemos.getAddress(), 9);
-        console.log("💰 Jackpot transfer successful:", transferResult?.hash);
-      } else {
-        console.warn("⚠️ Treasury wallet not connected - jackpot transfer skipped");
-      }
-    } catch (splitError) {
-      console.error("❌ Payment split failed:", splitError.message);
-      // Don't fail the time extension if split fails - just log the error
     }
 
     return res.json({ ok: true, verified: true });
