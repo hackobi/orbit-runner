@@ -25,7 +25,18 @@ const PORT = process.env.PORT || 8787;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
-app.use(cors());
+// Configure CORS to allow Netlify and other deployments
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:8787', 
+    'https://strong-centaur-2dae15.netlify.app',
+    'https://orbit-runner-production.up.railway.app',
+    /\.netlify\.app$/,
+    /\.railway\.app$/
+  ],
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.static("."));
 app.use("/node_modules", express.static("../node_modules"));
