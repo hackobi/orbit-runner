@@ -661,7 +661,7 @@ app.get("/pay/info", async (_req, res) => {
   }
 });
 
-// Verify a native transfer of exactly 2 DEM to treasury for time extension
+// Verify a native transfer of exactly 10 DEM to server for time extension
 app.post("/time/verify", async (req, res) => {
   try {
     const { txHash, playerAddress, validityData } = req.body || {};
@@ -1105,16 +1105,16 @@ app.post("/pay/verify", async (req, res) => {
       isSend && Array.isArray(nativePayload.args) ? nativePayload.args : [];
     const [toAddr, amount] = args;
 
-    // Check if this is the server transaction (2 DEM to server address)
+    // Check if this is the server transaction (10 DEM to server address)
     if (
       !isNative ||
       !isSend ||
       toAddr !== serverAddress ||
-      Number(amount) !== 2
+      Number(amount) !== 10
     ) {
       return res
         .status(400)
-        .json({ ok: false, error: "Payment does not match required 2 DEM to server wallet" });
+        .json({ ok: false, error: "Payment does not match required 10 DEM to server wallet" });
     }
     // Check sender
     if (String(c.from_ed25519_address) !== String(playerAddress)) {
