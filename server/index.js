@@ -27,17 +27,32 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
 // Configure CORS to allow Netlify and other deployments
 app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:8787', 
-    'https://strong-centaur-2dae15.netlify.app',
-    'https://orbit-runner-production.up.railway.app',
-    'https://orbit.demos.sh',
-    /\.netlify\.app$/,
-    /\.railway\.app$/,
-    /\.demos\.sh$/
-  ],
-  credentials: true
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) return callback(null, true);
+    
+    // List of allowed origins
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:8787',
+      'https://strong-centaur-2dae15.netlify.app',
+      'https://orbit-runner-production.up.railway.app',
+      'https://orbit.demos.sh'
+    ];
+    
+    // Check if origin is in the list or matches patterns
+    if (allowedOrigins.includes(origin) ||
+        /\.netlify\.app$/.test(origin) ||
+        /\.railway\.app$/.test(origin) ||
+        /\.demos\.sh$/.test(origin)) {
+      callback(null, true);
+    } else {
+      callback(null, false);
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
 app.use(express.static("."));
