@@ -32,8 +32,10 @@ app.use(cors({
     'http://localhost:8787', 
     'https://strong-centaur-2dae15.netlify.app',
     'https://orbit-runner-production.up.railway.app',
+    'https://orbit.demos.sh',
     /\.netlify\.app$/,
-    /\.railway\.app$/
+    /\.railway\.app$/,
+    /\.demos\.sh$/
   ],
   credentials: true
 }));
