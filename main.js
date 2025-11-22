@@ -430,6 +430,25 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       document.body.appendChild(d);
       return d;
     })();
+    
+  // Multiplayer minimap
+  const minimap = (() => {
+    const canvas = document.createElement("canvas");
+    canvas.id = "minimap";
+    canvas.width = 200;
+    canvas.height = 200;
+    canvas.style.position = "absolute";
+    canvas.style.bottom = "10px";
+    canvas.style.left = "10px";
+    canvas.style.border = "2px solid #00ffff";
+    canvas.style.backgroundColor = "rgba(0, 20, 40, 0.8)";
+    canvas.style.borderRadius = "4px";
+    canvas.style.display = "none"; // Initially hidden
+    canvas.style.zIndex = "1000";
+    document.body.appendChild(canvas);
+    return canvas;
+  })();
+    
   const help =
     document.getElementById("help") ||
     (() => {
@@ -3589,7 +3608,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   let targetSpeedUnitsPerSec = 20;
   const minSpeed = 5;
   const baseMaxSpeed = 60;
-  const DEV_TURBO_SPEED = 500;
+  const DEV_TURBO_SPEED = 2000; // Increased from 500 for MP testing
   const yawRate = 2.0; // rad/sec
   const pitchRate = 1.35; // rad/sec
   let yaw = 0,
@@ -5363,7 +5382,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       devTurboActive = !devTurboActive;
       if (devTurboActive) {
         targetSpeedUnitsPerSec = DEV_TURBO_SPEED;
-        spawnCenteredTextLabel("DEV 500", shipPosition, 0xffee88, 2.2, 1.4);
+        spawnCenteredTextLabel("TURBO 2000", shipPosition, 0xffee88, 2.2, 1.4);
       } else {
         targetSpeedUnitsPerSec = Math.min(targetSpeedUnitsPerSec, baseMaxSpeed);
         spawnCenteredTextLabel("DEV OFF", shipPosition, 0xff8888, 2.0, 1.2);
@@ -5564,6 +5583,213 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     hud.textContent = `Speed ${speedTxt}${timeText} | HP ${hp}% | Shield ${sh}% | Points ${score} | Kills ${killsCount} | Ast ${asteroidsDestroyed}${ax2}${kx2} | Bombs ${bombsAvailable} | Dist ${distFromOrigin} | Target ${distToTarget}${mp}`;
   }
 
+  function updateMinimap() {
+    // Only show minimap in multiplayer mode
+    if (!MP.active) {
+      minimap.style.display = "none";
+      return;
+    }
+    
+    minimap.style.display = "block";
+    const ctx = minimap.getContext("2d");
+    const width = minimap.width;
+    const height = minimap.height;
+    
+    // Clear canvas with darker background
+    ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+    ctx.fillRect(0, 0, width, height);
+    
+    // Dynamic scale based on nearest player distance
+    let mapScale = 0.01; // Default scale
+    let nearestDistance = Infinity;
+    
+    // Find nearest player for dynamic zoom
+    if (MP.remotes && MP.remotes.size > 0 && shipPosition) {
+      for (const [numId, remote] of MP.remotes) {
+        if (remote.mesh && remote.mesh.position) {
+          const dx = remote.mesh.position.x - shipPosition.x;
+          const dz = remote.mesh.position.z - shipPosition.z;
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          if (dist < nearestDistance) {
+            nearestDistance = dist;
+          }
+        }
+      }
+      
+      // Adjust scale based on distance
+      // Close: 0.02 (50 units/pixel), Far: 0.002 (500 units/pixel)
+      if (nearestDistance < 1000) {
+        mapScale = 0.02; // Very zoomed in when close
+      } else if (nearestDistance < 5000) {
+        mapScale = 0.01; // Medium zoom
+      } else if (nearestDistance < 10000) {
+        mapScale = 0.005; // Zoomed out
+      } else {
+        mapScale = 0.002; // Very zoomed out for far distances
+      }
+    }
+    
+    const centerX = width / 2;
+    const centerY = height / 2;
+    
+    // Center on YOUR ship position
+    const mapCenterX = shipPosition ? shipPosition.x : 0;
+    const mapCenterZ = shipPosition ? shipPosition.z : 0;
+    
+    // Draw grid lines for reference
+    ctx.strokeStyle = "#1a1a1a";
+    ctx.lineWidth = 1;
+    // Grid lines every 40 pixels
+    for (let x = 0; x < width; x += 40) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+    }
+    for (let y = 0; y < height; y += 40) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+    }
+    
+    // Draw self (player's ship) - ALWAYS at center
+    if (shipPosition) {
+      // Draw larger marker for YOU
+      ctx.fillStyle = "#00ffff";
+      ctx.fillRect(centerX - 4, centerY - 4, 8, 8);
+      
+      // White border
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(centerX - 4, centerY - 4, 8, 8);
+      
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "10px monospace";
+      ctx.fillText("YOU", centerX - 12, centerY - 8);
+    }
+    
+    // Draw remote players relative to YOUR position
+    if (MP.remotes && MP.remotes.size > 0) {
+      for (const [numId, remote] of MP.remotes) {
+        if (remote.mesh && remote.mesh.position) {
+          // Calculate position relative to YOUR ship
+          const relativeX = remote.mesh.position.x - mapCenterX;
+          const relativeZ = remote.mesh.position.z - mapCenterZ;
+          const remoteX = centerX + relativeX * mapScale;
+          const remoteY = centerY + relativeZ * mapScale;
+          
+          // Calculate distance for display
+          const distance = Math.sqrt(relativeX * relativeX + relativeZ * relativeZ);
+          
+          // Check if within canvas bounds
+          const isVisible = remoteX >= 0 && remoteX <= width && remoteY >= 0 && remoteY <= height;
+          
+          if (isVisible) {
+            // Check if this player's samples are stale (disconnected)
+            const isStale = remote.samples.length === 0 || 
+                          (remote.samples[remote.samples.length - 1].t < Date.now() - 5000);
+            
+            // Draw large red/white marker for remote players
+            ctx.fillStyle = isStale ? "#808080" : "#ff0000"; // Gray if disconnected
+            ctx.fillRect(remoteX - 6, remoteY - 6, 12, 12);
+            
+            // White border for maximum contrast
+            ctx.strokeStyle = isStale ? "#404040" : "#ffffff";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(remoteX - 6, remoteY - 6, 12, 12);
+            
+            // Player label with distance
+            ctx.fillStyle = isStale ? "#888888" : "#ffff00";
+            ctx.font = "bold 11px monospace";
+            ctx.fillText(`P${numId}${isStale ? " (DC)" : ""}`, remoteX - 10, remoteY - 10);
+            ctx.fillStyle = isStale ? "#666666" : "#ffffff";
+            ctx.font = "10px monospace";
+            ctx.fillText(`${Math.round(distance)}m`, remoteX - 18, remoteY + 20);
+          } else {
+            // Draw arrow pointing to off-screen player
+            const angle = Math.atan2(relativeZ, relativeX);
+            const margin = 15;
+            
+            // Calculate edge position
+            let edgeX = centerX + Math.cos(angle) * 1000;
+            let edgeY = centerY + Math.sin(angle) * 1000;
+            
+            // Clamp to canvas edges
+            if (edgeX < margin) edgeX = margin;
+            if (edgeX > width - margin) edgeX = width - margin;
+            if (edgeY < margin) edgeY = margin;
+            if (edgeY > height - margin) edgeY = height - margin;
+            
+            // Draw arrow
+            ctx.save();
+            ctx.translate(edgeX, edgeY);
+            ctx.rotate(angle);
+            ctx.fillStyle = "#ff0000";
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(-15, -7);
+            ctx.lineTo(-15, 7);
+            ctx.closePath();
+            ctx.fill();
+            
+            // White outline
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.restore();
+            
+            // Distance label
+            ctx.fillStyle = "#ffff00";
+            ctx.font = "bold 10px monospace";
+            const labelX = edgeX < width/2 ? edgeX + 5 : edgeX - 45;
+            const labelY = edgeY < height/2 ? edgeY + 15 : edgeY - 5;
+            ctx.fillText(`P${numId}:${Math.round(distance)}m`, labelX, labelY);
+          }
+          
+          // Log minimap positions only occasionally
+          if (Math.random() < 0.05) { // 5% chance
+            console.log(`🎯 Remote ${numId}: relative [${relativeX.toFixed(1)}, ${relativeZ.toFixed(1)}], distance ${distance.toFixed(1)}, visible: ${isVisible}`);
+          }
+        }
+      }
+    }
+    
+    // Draw compass directions
+    ctx.fillStyle = "#888888";
+    ctx.font = "10px monospace";
+    ctx.fillText("N", centerX - 3, 12);
+    ctx.fillText("S", centerX - 3, height - 4);
+    ctx.fillText("E", width - 10, centerY + 3);
+    ctx.fillText("W", 4, centerY + 3);
+    
+    // Draw minimap border
+    ctx.strokeStyle = "#00ffff";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(0, 0, width, height);
+    
+    // Status info
+    ctx.fillStyle = "#00ffff";
+    ctx.font = "12px monospace";
+    ctx.fillText(`MP: ${MP.remotes.size + 1} players`, 5, 15);
+    if (shipPosition) {
+      ctx.fillText(`Pos: ${Math.round(shipPosition.x)}, ${Math.round(shipPosition.z)}`, 5, 28);
+    }
+    
+    // Show zoom level
+    const zoomLevel = mapScale > 0.015 ? "Close" : mapScale > 0.007 ? "Medium" : mapScale > 0.003 ? "Far" : "Very Far";
+    ctx.fillText(`Zoom: ${zoomLevel}`, 5, 41);
+    
+    // Turbo hint
+    if (!devTurboActive) {
+      ctx.fillStyle = "#ffff00";
+      ctx.fillText("Press T for turbo!", 5, height - 5);
+    } else {
+      ctx.fillStyle = "#00ff00";
+      ctx.fillText("TURBO ACTIVE (2000)", 5, height - 5);
+    }
+  }
+
   function showGameOver() {
     gameOverEl.style.display = "block";
   }
@@ -5687,11 +5913,37 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   function createRemoteShip(numId) {
     const m = buildDefaultShip();
     m.matrixAutoUpdate = true;
+    // Make remote ships MUCH larger and more visible
+    m.scale.setScalar(15); // 15x larger than normal for visibility
+    // Make them red and white for high contrast
+    m.traverse((child) => {
+      if (child.isMesh) {
+        // Create alternating red and white pattern
+        const isRed = Math.random() > 0.5;
+        child.material = new THREE.MeshStandardMaterial({
+          color: isRed ? 0xff0000 : 0xffffff, // Red or white
+          emissive: isRed ? 0xff0000 : 0xffffff, // Self-illuminating
+          emissiveIntensity: 0.8, // Very bright
+          metalness: 0.5,
+          roughness: 0.2,
+        });
+      }
+    });
     scene.add(m);
+    m.visible = true; // Ensure visibility
+    m.frustumCulled = false; // Disable frustum culling to always render
+    
+    // Set initial position far but visible
+    m.position.set(0, 100, 0); // Start high up so it's visible
+    
+    console.log(`🏗️ Created remote ship ${numId} with 15x scale, red/white colors. Added to scene (${scene.children.length} children). Visible: ${m.visible}, Position will be set on first update.`);
     MP.remotes.set(numId, {
       mesh: m,
       samples: [],
-      lastRender: { p: new THREE.Vector3(), q: new THREE.Quaternion() },
+      lastRender: { 
+        p: new THREE.Vector3(0, 100, 0), 
+        q: new THREE.Quaternion() 
+      },
     });
   }
   function removeRemoteShipByNumId(numId) {
@@ -5715,6 +5967,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       const BYTES_PER = 2 + 4 + 12 + 16 + 12 + 1;
       const count = Math.floor(dv.byteLength / BYTES_PER);
       let off = 0;
+      // Multiplayer sync working correctly
       const nowLocal = Date.now();
       for (let i = 0; i < count; i++) {
         const numId = dv.getUint16(off);
@@ -5742,6 +5995,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         off += 12;
         const flags = dv.getUint8(off);
         off += 1;
+        
         // Do not update offset here (use ping/pong for more stable estimate)
         if (numId === MP.myNumId) {
           // Track authoritative self state for resync after tab visibility changes, but do not render from it in real-time
@@ -5751,6 +6005,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         }
         let r = MP.remotes.get(numId);
         if (!r) {
+          console.log(`✨ Creating remote ship for player ${numId}`);
           createRemoteShip(numId);
           r = MP.remotes.get(numId);
         }
@@ -5773,14 +6028,17 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         MP.myId = msg.playerId;
         MP.worldSeed = msg.worldSeed;
         // Build id->num and remote meshes
-        MP.idToNum.clear();
-        // Remove any prior remote meshes (fresh session)
-        for (const [nid, r] of MP.remotes) {
-          try {
-            scene.remove(r.mesh);
-          } catch (_) {}
-        }
-        MP.remotes.clear();
+        // TEMPORARILY keeping old ships for testing
+        console.log(`🔄 Reconnected - keeping ${MP.remotes.size} existing ships for testing`);
+        
+        // Don't clear existing ships for testing
+        // MP.idToNum.clear();
+        // for (const [nid, r] of MP.remotes) {
+        //   try {
+        //     scene.remove(r.mesh);
+        //   } catch (_) {}
+        // }
+        // MP.remotes.clear();
         for (const p of msg.players || []) {
           if (p.id === msg.playerId) {
             MP.myNumId = p.numId;
@@ -5827,10 +6085,25 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         return;
       }
       if (msg.type === "player-remove") {
+        // TEMPORARILY DISABLED for multiplayer testing
+        // Ships stay visible even when players disconnect
+        console.log(`📌 Player ${msg.id} disconnected but keeping ship visible for testing`);
         const numId = MP.idToNum.get(msg.id);
         if (numId != null) {
-          removeRemoteShipByNumId(numId);
-          MP.idToNum.delete(msg.id);
+          // Mark ship as disconnected but keep it visible
+          const r = MP.remotes.get(numId);
+          if (r && r.mesh) {
+            // Make disconnected ships semi-transparent
+            r.mesh.traverse((child) => {
+              if (child.isMesh && child.material) {
+                child.material.opacity = 0.5;
+                child.material.transparent = true;
+              }
+            });
+          }
+          // Don't actually remove the ship
+          // removeRemoteShipByNumId(numId);
+          // MP.idToNum.delete(msg.id);
         }
         return;
       }
@@ -8011,13 +8284,27 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     maintainPatches();
     keepFieldPopulated();
     updateHud();
+    
+    // Multiplayer minimap
+    updateMinimap();
 
     // Multiplayer: render remotes with 120ms interpolation buffer
     if (MP.active && MP.remotes.size) {
       const renderNow = Date.now() + (MP.serverOffsetEma || 0) - 200; // larger buffer for stability
       for (const [numId, r] of MP.remotes) {
         const s = r.samples;
-        if (!s || s.length === 0) continue;
+        
+        // ALWAYS render ship even without samples - use last position
+        if (!s || s.length === 0) {
+          // Keep last known position if we have it
+          if (r.lastRender && r.lastRender.p) {
+            r.mesh.position.copy(r.lastRender.p);
+            r.mesh.quaternion.copy(r.lastRender.q);
+            console.warn(`⚠️ Remote ${numId} has no samples, using last position`);
+          }
+          continue;
+        }
+        
         // find two samples around renderNow
         let a = null,
           b = null;
@@ -8030,6 +8317,31 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         }
         if (!a) a = s[0];
         if (!b) b = s[s.length - 1];
+        
+        // Check if samples are too old (more than 5 seconds)
+        const sampleAge = renderNow - b.t;
+        if (sampleAge > 5000) {
+          // Samples are very stale, just use last position with warning
+          const p = vec3From(b.p);
+          const q = quatFrom(b.q);
+          r.mesh.position.copy(p);
+          r.mesh.quaternion.copy(q);
+          
+          // Make ship flash to indicate stale data
+          if (Math.floor(Date.now() / 500) % 2 === 0) {
+            r.mesh.visible = true;
+          } else {
+            r.mesh.visible = false; // Flash to show stale
+          }
+          
+          console.warn(`⚠️ Remote ${numId} samples are ${Math.round(sampleAge/1000)}s old - showing last position with flashing`);
+          
+          // Store last render position
+          r.lastRender.p.copy(p);
+          r.lastRender.q.copy(q);
+          continue;
+        }
+        
         const ta = a.t,
           tb = Math.max(a.t + 1, b.t);
         let t = (renderNow - ta) / (tb - ta);
@@ -8041,15 +8353,42 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           qb = quatFrom(b.q);
         let p = pa.lerp(pb, t);
         let q = lerpQuat(qa, qb, t);
-        // If buffer underflow (renderNow beyond last sample), do a tiny capped extrapolation using last velocity
-        if (renderNow > b.t + 24) {
-          const dtEx = Math.min(0.06, (renderNow - b.t) / 1000);
+        
+        // If buffer underflow (renderNow beyond last sample), extrapolate with velocity
+        if (sampleAge > 24) {
+          const dtEx = Math.min(2.0, sampleAge / 1000); // Allow up to 2 seconds of extrapolation
           const vv = vec3From(b.v);
           p = vec3From(b.p).addScaledVector(vv, dtEx);
           q = qb; // keep last orientation
         }
+        
         r.mesh.position.copy(p);
         r.mesh.quaternion.copy(q);
+        r.mesh.visible = true; // Ensure visible for fresh samples
+        
+        // Store last render position
+        r.lastRender.p.copy(p);
+        r.lastRender.q.copy(q);
+        
+        // Ensure visibility
+        if (!r.mesh.visible) {
+          r.mesh.visible = true;
+          console.warn(`⚠️ Remote ${numId} was invisible, forcing visible`);
+        }
+        
+        // Add a bright point light to make remote ships more visible
+        if (!r.mesh.userData.light) {
+          const light = new THREE.PointLight(0xffff00, 3, 500);
+          light.position.set(0, 10, 0);
+          r.mesh.add(light);
+          r.mesh.userData.light = light;
+        }
+        
+        // Only log 3D position occasionally to reduce spam
+        if (numId && p && Math.random() < 0.01) { // 1% chance = ~once per second
+          const distance = ship.position.distanceTo(p);
+          console.log(`🚀 Remote ${numId}: 3D pos [${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}], distance ${distance.toFixed(1)}, visible: ${r.mesh.visible}`);
+        }
       }
     }
 

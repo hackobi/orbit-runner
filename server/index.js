@@ -1000,29 +1000,7 @@ app.post("/pay/verify", async (req, res) => {
                 .replace(/^0x/, "") === lower
           );
           if (!match) {
-            // heuristic: native send from player - check for both 1 DEM to treasury and 1 DEM to server within last 5 minutes
-            const treasuryTx = recent.find((t) => {
-              try {
-                const c = t?.content || {};
-                if (c?.type !== "native") return false;
-                if (String(c.from_ed25519_address) !== String(playerAddress))
-                  return false;
-                const data = Array.isArray(c.data) ? c.data : null;
-                const tag = data && data[0];
-                const payload = data && data[1];
-                const isSend =
-                  tag === "native" && payload?.nativeOperation === "send";
-                if (!isSend) return false;
-                const args = Array.isArray(payload.args) ? payload.args : [];
-                const [toAddr, amt] = args;
-                const tsOk =
-                  Number(c.timestamp || 0) > Date.now() - 5 * 60 * 1000;
-                return toAddr === treasuryAddress && Number(amt) === 1 && tsOk;
-              } catch (_) {
-                return false;
-              }
-            });
-            
+            // heuristic: native send from player - 2 DEM to server within last 5 minutes
             const serverTx = recent.find((t) => {
               try {
                 const c = t?.content || {};
@@ -1039,15 +1017,15 @@ app.post("/pay/verify", async (req, res) => {
                 const [toAddr, amt] = args;
                 const tsOk =
                   Number(c.timestamp || 0) > Date.now() - 5 * 60 * 1000;
-                return toAddr === serverAddress && Number(amt) === 1 && tsOk;
+                return toAddr === serverAddress && Number(amt) === 2 && tsOk;
               } catch (_) {
                 return false;
               }
             });
             
-            // Both transactions must exist for valid payment
-            if (treasuryTx && serverTx) {
-              match = serverTx; // Use server transaction for verification response
+            // Use server transaction if found
+            if (serverTx) {
+              match = serverTx;
             }
           }
           if (match) tx = match;
@@ -1105,16 +1083,16 @@ app.post("/pay/verify", async (req, res) => {
       isSend && Array.isArray(nativePayload.args) ? nativePayload.args : [];
     const [toAddr, amount] = args;
 
-    // Check if this is the server transaction (10 DEM to server address)
+    // Check if this is the server transaction (2 DEM to server address)
     if (
       !isNative ||
       !isSend ||
       toAddr !== serverAddress ||
-      Number(amount) !== 10
+      Number(amount) !== 2
     ) {
       return res
         .status(400)
-        .json({ ok: false, error: "Payment does not match required 10 DEM to server wallet" });
+        .json({ ok: false, error: "Payment does not match required 2 DEM to server wallet" });
     }
     // Check sender
     if (String(c.from_ed25519_address) !== String(playerAddress)) {
@@ -1670,6 +1648,7 @@ function now() {
 }
 
 mpWss.on("connection", (ws) => {
+  console.log("🔌 WebSocket connection established");
   ws.isAlive = true;
   ws.on("pong", () => {
     ws.isAlive = true;
@@ -1704,12 +1683,15 @@ mpWss.on("connection", (ws) => {
     if (!msg || typeof msg !== "object") return;
 
     if (msg.type === "hello" && !playerId) {
+      console.log("👋 Received hello message:", { paidToken: msg.paidToken, name: msg.name });
       // Enforce paid session token before allowing a player to join
       try {
         prunePaidSessions();
         const payToken = String(msg.paidToken || "");
         const rec = paidSessions.get(payToken);
+        console.log("🎟️ Token validation:", { payToken, found: !!rec, expired: rec ? rec.expiresAt <= Date.now() : 'N/A' });
         if (!rec || rec.expiresAt <= Date.now()) {
+          console.log("❌ Invalid/expired token, closing connection");
           try {
             ws.close();
           } catch (_) {}
@@ -1717,6 +1699,7 @@ mpWss.on("connection", (ws) => {
         }
         // One-time use token
         paidSessions.delete(payToken);
+        console.log("✅ Token validated, removing from session");
       } catch (_) {
         try {
           ws.close();
@@ -1727,8 +1710,10 @@ mpWss.on("connection", (ws) => {
       const name = String(msg.name || "").slice(0, 24) || "Anon";
       playerId = makePlayerId();
       ws.playerId = playerId;
+      console.log("🎮 Creating player:", { playerId, name });
       const color = 0x47e6ff; // same color for all players (per requirement)
       const spawn = pickSpawnPoint(mpRoom.worldSeed);
+      console.log("📍 Player spawn:", spawn.p);
       const state = {
         t: now(),
         p: spawn.p,
@@ -1773,6 +1758,7 @@ mpWss.on("connection", (ws) => {
         color: p.color,
         state: p.state,
       }));
+      console.log("📊 Sending welcome with snapshot:", { playerCount: snapshot.length, players: snapshot.map(p => ({ name: p.name, numId: p.numId })) });
       send({
         type: "welcome",
         playerId,
@@ -1784,6 +1770,7 @@ mpWss.on("connection", (ws) => {
       });
 
       // Notify others
+      console.log("📢 Broadcasting player-add to others:", { numId, name });
       broadcastToOthers({
         type: "player-add",
         id: playerId,
@@ -2209,7 +2196,7 @@ setInterval(() => {
     const pid = c.playerId;
     const rec = pid ? mpRoom.players.get(pid) : null;
     const center = rec ? rec.state.p : null;
-    const payload = buildStateBufferFor(center, INTEREST_RADIUS, pid);
+    const payload = buildStateBufferFor(center, INTEREST_RADIUS, null); // Don't exclude any player - all players need all data
     try {
       c.send(payload, { binary: true });
     } catch (_) {}
