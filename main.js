@@ -8281,6 +8281,72 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
     }
 
+    // Player bullets -> remote players (MULTIPLAYER PVP)
+    if (MP.active && MP.remotes.size > 0) {
+      for (const [numId, remote] of MP.remotes) {
+        if (!remote.mesh || !remote.mesh.position) continue;
+        
+        for (let i = bullets.length - 1; i >= 0; i--) {
+          const b = bullets[i];
+          if (b.kind === "player" || b.kind === "fenix") {
+            // Check collision between bullet and remote player ship
+            const shipRadius = 15; // Remote ships are 15x scale, so larger hit radius
+            if (
+              isWithinRadiusSquared(
+                b.mesh.position,
+                remote.mesh.position,
+                shipRadius + b.radius
+              )
+            ) {
+              // Create impact effect
+              spawnImpactBurst(remote.mesh.position, 0xff4444, 30);
+              cameraShake += 0.6;
+              
+              // Make remote ship flash red to show hit
+              remote.mesh.traverse((child) => {
+                if (child.isMesh && child.material) {
+                  const originalColor = child.material.color.getHex();
+                  child.material.color.setHex(0xff0000); // Flash red
+                  setTimeout(() => {
+                    if (child.material) {
+                      child.material.color.setHex(originalColor);
+                    }
+                  }, 150);
+                }
+              });
+              
+              // Remove bullet
+              scene.remove(b.mesh);
+              if (b.kind === "player") releasePlayerBulletMesh(b.mesh);
+              else if (b.kind === "fenix") releaseFenixBeamMesh(b.mesh);
+              bullets.splice(i, 1);
+              
+              // Award points for hitting player
+              if (roundActive) {
+                score += 500; // Higher score for hitting another player
+                spawnCenteredTextLabel("+500 PVP HIT!", remote.mesh.position, 0xff4444, 2.0, 1.5);
+              }
+              
+              // Send hit notification to server
+              if (MP.ws && MP.ws.readyState === 1) {
+                try {
+                  MP.ws.send(JSON.stringify({
+                    type: "player-hit",
+                    targetId: numId,
+                    damage: b.kind === "fenix" ? 30 : 15,
+                    position: [remote.mesh.position.x, remote.mesh.position.y, remote.mesh.position.z]
+                  }));
+                } catch (_) {}
+              }
+              
+              console.log(`🎯 HIT! Shot remote player ${numId} with ${b.kind} bullet for ${b.kind === "fenix" ? 30 : 15} damage`);
+              break;
+            }
+          }
+        }
+      }
+    }
+
     maintainPatches();
     keepFieldPopulated();
     updateHud();
