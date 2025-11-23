@@ -6618,8 +6618,29 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (!MP.ws || MP.ws.readyState !== 1) return;
     const yawKeys = (input.yawRight ? -1 : 0) + (input.yawLeft ? 1 : 0);
     const pitchKeys = (input.pitchUp ? 1 : 0) + (input.pitchDown ? -1 : 0);
-    const yawInput = yawKeys + (mouseDown ? mouseX * 0.6 : 0);
-    const pitchInput = pitchKeys + (mouseDown ? -mouseY * 0.6 : 0);
+    
+    // Calculate mouse input for multiplayer
+    let mouseYawInput = 0;
+    let mousePitchInput = 0;
+    
+    if (mouseControl.enabled) {
+      // Use trackpad/mouse position
+      const centerX = (mouseControl.x - 0.5) * 2;
+      const centerY = (mouseControl.y - 0.5) * 2;
+      if (Math.abs(centerX) > mouseControl.deadzone) {
+        mouseYawInput = -centerX * mouseControl.sensitivity * 0.6;
+      }
+      if (Math.abs(centerY) > mouseControl.deadzone) {
+        mousePitchInput = centerY * mouseControl.sensitivity * 0.6;
+      }
+    } else if (mouseDown) {
+      // Fallback to old click-and-drag
+      mouseYawInput = mouseX * 0.6;
+      mousePitchInput = -mouseY * 0.6;
+    }
+    
+    const yawInput = yawKeys + mouseYawInput;
+    const pitchInput = pitchKeys + mousePitchInput;
     const throttle = THREE.MathUtils.clamp(
       (targetSpeedUnitsPerSec - minSpeed) / (baseMaxSpeed - minSpeed),
       0,
@@ -7793,8 +7814,19 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         -Math.PI / 2 + 0.05,
         Math.PI / 2 - 0.05
       );
+      // Calculate roll based on turning
+      let rollFromMouse = 0;
+      if (mouseControl.enabled) {
+        const centerX = (mouseControl.smoothX - 0.5) * 2;
+        if (Math.abs(centerX) > mouseControl.deadzone) {
+          rollFromMouse = centerX * 0.5;
+        }
+      } else if (mouseDown) {
+        rollFromMouse = mouseX * 0.5;
+      }
+      
       const targetRoll = THREE.MathUtils.clamp(
-        -yawInput * 0.9 - (mouseDown ? mouseX * 0.5 : 0),
+        -yawInput * 0.9 - rollFromMouse,
         -0.7,
         0.7
       );
