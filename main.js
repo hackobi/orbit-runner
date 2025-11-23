@@ -880,48 +880,299 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
   }
 
-  // Fetch actual balance from Demos network
+  // Fetch actual balance from Demos network using SDK
   async function fetchDemosBalance(address, provider) {
-    if (!address || !provider) return 0;
+    if (!address) return 0;
 
     try {
-      // Use tryRequest wrapper for better error handling
-      const balance = await tryRequest(provider, "demos_getBalance", [
-        address,
-        "latest",
-      ]);
-
-      if (balance && typeof balance === "object") {
-        // Handle different balance response formats
-        return balance.toNumber ? balance.toNumber() : Number(balance);
+      // Since the wallet provider doesn't support balance queries,
+      // we need to use the Demos SDK directly to query the network
+      
+      // Check if we have the Demos SDK available
+      if (typeof window.demosSDK !== 'undefined' && window.demosSDK) {
+        // Use existing SDK connection
+        const balance = await window.demosSDK.getAddressInfo(address);
+        if (balance && balance.balance !== undefined) {
+          return parseFloat(balance.balance) || 0;
+        }
       }
-
-      // Fallback to eth_getBalance
-      const ethBalance = await tryRequest(provider, "eth_getBalance", [
-        address,
-        "latest",
-      ]);
-
-      if (ethBalance && typeof ethBalance === "object") {
-        return ethBalance.toNumber ? ethBalance.toNumber() : Number(ethBalance);
+      
+      // Fallback: Use direct RPC call to the network
+      const rpcUrl = 'https://demosnode.discus.sh/';
+      
+      try {
+        const response = await fetch(rpcUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'getAddressInfo',
+            params: [address],
+            id: 1
+          })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.result && data.result.balance !== undefined) {
+            return parseFloat(data.result.balance) || 0;
+          }
+        }
+      } catch (rpcError) {
+        console.log("RPC balance fetch failed:", rpcError);
       }
-
-      return Number(ethBalance) || 0;
+      
+      return 0;
     } catch (error) {
       console.warn("Failed to fetch balance:", error);
       return 0;
     }
   }
 
-  function updateConnectedWallet(address, balance = null) {
+  // Get social media username from wallet API
+  // Helper function to get current wallet provider
+  function getCurrentProvider() {
+    return currentProvider;
+  }
+
+  async function getSocialMediaUsername() {
+    try {
+      // Get the current provider
+      const provider = getCurrentProvider();
+      if (!provider) {
+        console.log("❌ No wallet provider available for social media check");
+        return null;
+      }
+
+      console.log("🔍 Attempting to get social media identities...");
+      console.log("🔍 Provider type:", typeof provider);
+      console.log("🔍 Provider methods available:", Object.getOwnPropertyNames(provider));
+      console.log("🔍 Has request method:", typeof provider.request === 'function');
+      console.log("🔍 Provider constructor:", provider.constructor?.name);
+
+      // Get Web2 identities (Twitter, Telegram, etc.)
+      let response;
+      try {
+        console.log("🚀 Making getWeb2Identities request...");
+        response = await safeProviderRequest(provider, "getWeb2Identities", []);
+        console.log("✅ getWeb2Identities request completed");
+      } catch (providerError) {
+        console.log("❌ getWeb2Identities request failed:", providerError);
+        console.log("❌ Error type:", typeof providerError);
+        console.log("❌ Error message:", providerError.message || 'No message');
+        console.log("❌ Error code:", providerError.code || 'No code');
+        throw providerError;
+      }
+      
+      console.log("📋 Raw getWeb2Identities response:", response);
+      console.log("📋 Response type:", typeof response);
+      console.log("📋 Response is array:", Array.isArray(response));
+      console.log("📋 Response keys:", response && typeof response === 'object' ? Object.keys(response) : 'N/A');
+      
+      // Handle the demosProviderResponse wrapper
+      let identities = null;
+      if (response && response.success && response.data) {
+        identities = response.data;
+        console.log("✅ Extracted data from response:", identities);
+        console.log("🔍 Data object keys:", typeof identities === 'object' ? Object.keys(identities) : 'N/A');
+        
+        // Check if identities are in the nested response property
+        if (identities.response) {
+          console.log("🔍 Found nested response property:", identities.response);
+          console.log("🔍 Nested response keys:", typeof identities.response === 'object' ? Object.keys(identities.response) : 'N/A');
+        }
+      } else if (response && Array.isArray(response)) {
+        identities = response;
+        console.log("✅ Using direct array response:", identities);
+      }
+      
+      if (identities && Array.isArray(identities)) {
+        console.log("✅ Found", identities.length, "identities:", identities);
+        
+        // Look for Twitter or Telegram usernames
+        const twitterIdentity = identities.find(identity => 
+          identity.context === 'twitter' || 
+          identity.platform === 'twitter' ||
+          identity.type === 'twitter'
+        );
+        
+        const telegramIdentity = identities.find(identity => 
+          identity.context === 'telegram' || 
+          identity.platform === 'telegram' ||
+          identity.type === 'telegram'
+        );
+        
+        console.log("🐦 Twitter identity found:", twitterIdentity);
+        console.log("📱 Telegram identity found:", telegramIdentity);
+        
+        // Prefer Twitter, fallback to Telegram
+        if (twitterIdentity && twitterIdentity.username) {
+          console.log("✅ Using Twitter username:", twitterIdentity.username);
+          return twitterIdentity.username;
+        }
+        if (telegramIdentity && telegramIdentity.username) {
+          console.log("✅ Using Telegram username:", telegramIdentity.username);
+          return telegramIdentity.username;
+        }
+        
+        // If no username field, try other possible field names
+        const anyIdentity = twitterIdentity || telegramIdentity || identities[0];
+        if (anyIdentity) {
+          console.log("🔄 Trying alternative fields for identity:", anyIdentity);
+          const altUsername = anyIdentity.handle || anyIdentity.name || anyIdentity.identifier;
+          if (altUsername) {
+            console.log("✅ Using alternative field:", altUsername);
+            return altUsername;
+          }
+        }
+        
+        console.log("⚠️ No username found in any identity");
+      } else {
+        console.log("❌ No valid identities found in response");
+        console.log("❌ Raw response was:", response);
+        console.log("❌ Expected array or object with success/data structure");
+        
+        // Try to handle other possible response formats
+        if (response && typeof response === 'object') {
+          console.log("🔄 Checking for alternative response formats...");
+          
+          // First check the original extracted data object
+          const dataObj = response.success ? response.data : response;
+          
+          // Check if identities are in the nested response property
+          if (dataObj && dataObj.response && typeof dataObj.response === 'object') {
+            console.log("🔄 Checking nested response object:", dataObj.response);
+            
+            // Check for identities in various possible properties of nested response
+            if (dataObj.response.identities) {
+              console.log("🔄 Found 'identities' in nested response:", dataObj.response.identities);
+              identities = dataObj.response.identities;
+            } else if (dataObj.response.web2Identities) {
+              console.log("🔄 Found 'web2Identities' in nested response:", dataObj.response.web2Identities);
+              identities = dataObj.response.web2Identities;
+            } else if (dataObj.response.socialIdentities) {
+              console.log("🔄 Found 'socialIdentities' in nested response:", dataObj.response.socialIdentities);
+              identities = dataObj.response.socialIdentities;
+            } else if (Array.isArray(dataObj.response)) {
+              console.log("🔄 Nested response is an array:", dataObj.response);
+              identities = dataObj.response;
+            } else {
+              console.log("🔄 Checking all properties in nested response:", Object.keys(dataObj.response));
+              // Try to find any array property in nested response
+              for (const key of Object.keys(dataObj.response)) {
+                if (Array.isArray(dataObj.response[key])) {
+                  console.log(`🔄 Found array property '${key}':`, dataObj.response[key]);
+                  identities = dataObj.response[key];
+                  break;
+                }
+              }
+            }
+          }
+          
+          // If still no identities found, check direct properties
+          if (!identities) {
+            // Check if response might have identities in a different structure
+            if (response.identities) {
+              console.log("🔄 Found 'identities' property:", response.identities);
+              identities = response.identities;
+            } else if (response.web2Identities) {
+              console.log("🔄 Found 'web2Identities' property:", response.web2Identities);
+              identities = response.web2Identities;
+            } else if (response.result) {
+              console.log("🔄 Found 'result' property:", response.result);
+              identities = response.result;
+            }
+          }
+          
+          // If we found identities in an alternative format, try processing them
+          if (identities && Array.isArray(identities) && identities.length > 0) {
+            console.log("🔄 Processing alternative format identities:", identities);
+            // Restart the identity processing logic
+            const twitterIdentity = identities.find(identity => 
+              identity.context === 'twitter' || 
+              identity.platform === 'twitter' ||
+              identity.type === 'twitter'
+            );
+            
+            if (twitterIdentity && twitterIdentity.username) {
+              console.log("✅ Found Twitter username in alternative format:", twitterIdentity.username);
+              return twitterIdentity.username;
+            }
+            
+            // Try other fields
+            const anyIdentity = identities[0];
+            if (anyIdentity) {
+              const altUsername = anyIdentity.username || anyIdentity.handle || anyIdentity.name || anyIdentity.identifier;
+              if (altUsername) {
+                console.log("✅ Found username in alternative format:", altUsername);
+                return altUsername;
+              }
+            }
+          }
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      console.log("❌ Error getting social media username:", error);
+      return null;
+    }
+  }
+
+  async function updateConnectedWallet(address, balance = null) {
+    console.log("🔗 updateConnectedWallet called with address:", address, "balance:", balance, "type:", typeof balance);
+    
+    // Prevent NaN by ensuring balance is either a valid number, null, or "Loading..."
+    if (balance !== null && balance !== undefined && isNaN(parseFloat(balance))) {
+      console.log("⚠️ Invalid balance detected, setting to null:", balance);
+      balance = null;
+    }
+    
     if (connectedAddress) {
-      connectedAddress.textContent = address
-        ? `${address.slice(0, 6)}...${address.slice(-4)}`
-        : "Not connected";
+      let displayText = "Not connected";
+      
+      if (address) {
+        console.log("🔗 updateConnectedWallet called with address:", address);
+        // Try to get social media username first
+        try {
+          console.log("🚀 Starting social media username lookup...");
+          const socialUsername = await getSocialMediaUsername();
+          console.log("📝 getSocialMediaUsername returned:", socialUsername);
+          
+          if (socialUsername) {
+            displayText = `Captain @${socialUsername}`;
+            console.log("✅ Display text set to:", displayText);
+          } else {
+            // Fallback to truncated address
+            displayText = `${address.slice(0, 6)}...${address.slice(-4)}`;
+            console.log("⚠️ No social username, using fallback:", displayText);
+          }
+        } catch (error) {
+          console.log("❌ Could not get social media username:", error);
+          // Fallback to truncated address
+          displayText = `${address.slice(0, 6)}...${address.slice(-4)}`;
+        }
+      }
+      
+      console.log("📺 Setting connectedAddress.textContent to:", displayText);
+      connectedAddress.textContent = displayText;
     }
     if (connectedBalance) {
-      const displayBalance = balance !== null ? balance : "Loading...";
+      console.log("💰 Balance debug - raw balance:", balance, "type:", typeof balance);
+      const displayBalance = (balance !== null && balance !== undefined && !isNaN(balance)) ? balance : "Loading...";
+      console.log("💰 Display balance:", displayBalance);
       connectedBalance.textContent = `Balance: ${displayBalance} DEMOS`;
+      
+      // Always fetch balance when wallet is connected
+      if (address && currentProvider && (balance === null || balance === undefined || balance === 0)) {
+        fetchDemosBalance(address, currentProvider).then(async (fetchedBalance) => {
+          if (connectedBalance && !isNaN(fetchedBalance)) {
+            connectedBalance.textContent = `Balance: ${fetchedBalance} DEMOS`;
+          }
+        });
+      }
     }
     if (connectedWallet) {
       connectedWallet.style.display = address ? "flex" : "none";
@@ -1027,7 +1278,17 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         if (accounts && accounts.length > 0) {
           walletAddress = accounts[0];
           console.log("✅ Wallet connected with address:", walletAddress);
-          updateConnectedWallet(walletAddress, null);
+          await updateConnectedWallet(walletAddress, null);
+          
+          // Fetch balance after successful connection
+          console.log("🚀 Starting balance fetch from ensureWalletReady...");
+          fetchDemosBalance(walletAddress, provider).then(async (balance) => {
+            console.log("💰 Balance fetch completed in ensureWalletReady:", balance);
+            await updateConnectedWallet(walletAddress, balance);
+          }).catch((error) => {
+            console.log("❌ Balance fetch failed in ensureWalletReady:", error);
+          });
+          
           updateLaunchButton();
         } else {
           console.warn("⚠️ Connection succeeded but no accounts returned");
@@ -1050,7 +1311,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         if (currentAddress !== walletAddress) {
           console.log("🔄 Wallet address changed from verification:", currentAddress);
           walletAddress = currentAddress;
-          updateConnectedWallet(currentAddress, null);
+          await updateConnectedWallet(currentAddress, null);
           updateLaunchButton();
         } else {
           console.log("✅ Wallet verification confirmed address:", walletAddress);
@@ -1100,7 +1361,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
               if (currentAccount !== walletAddress) {
                 console.log("🔄 Wallet account changed, updating:", currentAccount);
                 walletAddress = currentAccount;
-                updateConnectedWallet(currentAccount, null);
+                await updateConnectedWallet(currentAccount, null);
               }
             } else {
               console.warn("⚠️ Keepalive: No accounts returned, wallet may be disconnected");
@@ -2177,7 +2438,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       window.walletAddress = address;
 
       // Update UI
-      updateConnectedWallet(address, null);
+      await updateConnectedWallet(address, null);
       updateLaunchButton();
 
       // Set player name
@@ -2313,7 +2574,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       window.walletAddress = address;
 
       // Update UI
-      updateConnectedWallet(address, null);
+      await updateConnectedWallet(address, null);
       updateLaunchButton();
 
       // Set player name
@@ -2323,7 +2584,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
 
       // Fetch balance using extension-only method
-      fetchDemosBalanceFromExtension();
+      console.log("🚀 Starting balance fetch...");
+      try {
+        const fetchedBalance = await fetchDemosBalanceFromExtension();
+        console.log("💰 Balance fetch completed:", fetchedBalance);
+      } catch (balanceError) {
+        console.log("⚠️ Balance fetch failed:", balanceError);
+      }
 
       return address;
     } catch (error) {
@@ -2348,7 +2615,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         try {
           const balance = await demos.getBalance(walletAddress);
           console.log("✅ Balance fetched via SDK:", balance);
-          updateConnectedWallet(walletAddress, balance);
+          await updateConnectedWallet(walletAddress, balance);
           return balance;
         } catch (sdkError) {
           console.log(
@@ -2397,13 +2664,44 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             walletAddress,
             "latest",
           ]);
+          console.log("💰 Raw eth_getBalance response:", balance, "type:", typeof balance);
+          
+          // Handle demos provider response wrapper
+          if (balance && balance.success && balance.data) {
+            console.log("💰 Extracting balance from demos response:", balance.data);
+            balance = balance.data;
+            
+            // Check if data has nested structure like social identities
+            if (balance && typeof balance === 'object' && balance.response) {
+              console.log("💰 Found nested response in balance:", balance.response);
+              balance = balance.response;
+            }
+          }
+          
+          console.log("💰 Balance after extraction:", balance, "type:", typeof balance);
+          
           // Convert from hex to number if needed
           if (
             balance &&
             typeof balance === "string" &&
             balance.startsWith("0x")
           ) {
-            balance = parseInt(balance, 16).toString();
+            const convertedBalance = parseInt(balance, 16);
+            console.log("💰 Converting hex", balance, "to decimal:", convertedBalance);
+            balance = convertedBalance.toString();
+            console.log("💰 Final converted balance:", balance);
+          }
+          
+          // Ensure balance is a valid number
+          if (balance !== undefined && balance !== null) {
+            const numBalance = parseFloat(balance);
+            if (isNaN(numBalance)) {
+              console.log("⚠️ Balance conversion resulted in NaN:", balance);
+              balance = null;
+            } else {
+              balance = numBalance.toString();
+              console.log("💰 Final validated balance:", balance);
+            }
           }
         } catch (error) {
           console.log("⚠️ eth_getBalance failed:", error);
@@ -2430,7 +2728,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
       if (balance) {
         console.log("✅ Balance fetched via extension:", balance);
-        updateConnectedWallet(walletAddress, balance);
+        await updateConnectedWallet(walletAddress, balance);
         return balance;
       } else {
         console.log("⚠️ Could not fetch balance from extension");
@@ -3084,27 +3382,27 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         walletAddress = String(addr);
         console.log("🔗 Setting walletAddress to:", walletAddress);
         currentProvider = providerDetail;
-        updateConnectedWallet(walletAddress, null); // Start with loading state
+        await updateConnectedWallet(walletAddress, null); // Start with loading state
         updateLaunchButton();
         console.log("✅ Connected to real Demos provider:", walletAddress);
 
         // Fetch actual balance
-        fetchDemosBalance(walletAddress, prov).then((balance) => {
-          updateConnectedWallet(walletAddress, balance);
+        fetchDemosBalance(walletAddress, prov).then(async (balance) => {
+          await updateConnectedWallet(walletAddress, balance);
         });
 
         // Listen to account changes if supported
         try {
           prov.on &&
-            prov.on("accountsChanged", (accs) => {
+            prov.on("accountsChanged", async (accs) => {
               console.log("🔄 Accounts changed event:", accs);
               if (Array.isArray(accs) && accs[0]) {
                 // Wallet connected/account changed
                 console.log("✅ New wallet address:", accs[0]);
                 walletAddress = accs[0];
-                updateConnectedWallet(walletAddress, null);
-                fetchDemosBalance(walletAddress, prov).then((balance) => {
-                  updateConnectedWallet(walletAddress, balance);
+                await updateConnectedWallet(walletAddress, null);
+                fetchDemosBalance(walletAddress, prov).then(async (balance) => {
+                  await updateConnectedWallet(walletAddress, balance);
                 });
                 updateLaunchButton();
               } else {
@@ -3183,13 +3481,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           walletAddress
         );
         currentProvider = providerDetail;
-        updateConnectedWallet(walletAddress, null); // Start with loading state
+        await updateConnectedWallet(walletAddress, null); // Start with loading state
         updateLaunchButton();
         console.log("✅ Connected after connect/poll:", walletAddress);
 
         // Fetch actual balance
-        fetchDemosBalance(walletAddress, prov).then((balance) => {
-          updateConnectedWallet(walletAddress, balance);
+        fetchDemosBalance(walletAddress, prov).then(async (balance) => {
+          await updateConnectedWallet(walletAddress, balance);
         });
 
         return true;
@@ -3263,17 +3561,22 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
           if (response.success) {
             walletAddress = response.data.address;
+            currentProvider = provider;
             console.log(
               "🔗 Setting walletAddress (connect response):",
               walletAddress
             );
-            updateConnectedWallet(response.data.address, null);
+            await updateConnectedWallet(response.data.address, null);
             // Fetch actual balance
+            console.log("🚀 Starting fetchDemosBalance call...");
             fetchDemosBalance(response.data.address, provider).then(
-              (balance) => {
-                updateConnectedWallet(response.data.address, balance);
+              async (balance) => {
+                console.log("💰 fetchDemosBalance resolved with:", balance);
+                await updateConnectedWallet(response.data.address, balance);
               }
-            );
+            ).catch((error) => {
+              console.log("❌ fetchDemosBalance failed:", error);
+            });
             updateLaunchButton();
             return;
           } else {
@@ -3310,11 +3613,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Removed: Guest and Mnemonic login flows
 
   if (disconnectBtn) {
-    disconnectBtn.addEventListener("click", () => {
+    disconnectBtn.addEventListener("click", async () => {
       console.log("🔌 Disconnect button clicked");
       walletAddress = "";
       currentProvider = null;
-      updateConnectedWallet("");
+      await updateConnectedWallet("");
       updateLaunchButton();
 
       if (extensionIndicator) {
@@ -5481,7 +5784,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   
   // Mouse/trackpad control system
   const mouseControl = {
-    enabled: true,
+    enabled: false,  // Start disabled, press M to enable
     x: 0.5, // Normalized 0-1
     y: 0.5, // Normalized 0-1
     smoothX: 0.5,
@@ -5490,6 +5793,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     deadzone: 0.05,
     smoothing: 0.15
   };
+  
+  // Debug mouse control
+  console.log("Mouse control initialized:", mouseControl);
   function onKeyDown(e) {
     // Disable game controls while welcome screen is visible or when typing in inputs
     const active = document.activeElement;
@@ -6570,6 +6876,52 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           MP.serverOffsetEma == null
             ? estOffset
             : MP.serverOffsetEma * 0.8 + estOffset * 0.2;
+        return;
+      }
+      if (msg.type === "shoot") {
+        // Handle incoming bullets from other players
+        if (msg.playerId === MP.myId) return; // Don't spawn our own bullets
+        
+        console.log(`🔫 Received ${msg.fenix ? 'fenix' : 'bullet'} from player ${msg.playerId}`);
+        
+        const startPos = new THREE.Vector3(msg.p[0], msg.p[1], msg.p[2]);
+        const direction = new THREE.Vector3(msg.dir[0], msg.dir[1], msg.dir[2]);
+        
+        if (msg.fenix) {
+          // Create fenix beam from remote player
+          const beam = acquireFenixBeamMesh();
+          const alignQuat = new THREE.Quaternion().setFromUnitVectors(
+            new THREE.Vector3(0, 0, 1),
+            direction
+          );
+          beam.quaternion.copy(alignQuat);
+          const halfLen = 6;
+          beam.position.copy(startPos).add(direction.clone().multiplyScalar(halfLen));
+          if (!beam.parent) scene.add(beam);
+          
+          bullets.push({
+            mesh: beam,
+            velocity: direction.multiplyScalar(FENIX_BEAM_SPEED),
+            life: FENIX_BEAM_LIFE,
+            radius: 0.45,
+            kind: "remote-fenix",
+            owner: "remote",
+          });
+        } else {
+          // Create regular bullet from remote player
+          const bullet = acquirePlayerBulletMesh();
+          bullet.position.copy(startPos);
+          if (!bullet.parent) scene.add(bullet);
+          
+          bullets.push({
+            mesh: bullet,
+            velocity: direction.multiplyScalar(DEFAULT_BULLET_SPEED),
+            life: DEFAULT_BULLET_LIFE,
+            radius: 0.25,
+            kind: "remote-player",
+            owner: "remote",
+          });
+        }
         return;
       }
     } catch (_) {}
@@ -8780,6 +9132,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
     // Player bullets -> remote players (MULTIPLAYER PVP)
     if (MP.active && MP.remotes.size > 0) {
+      // Debug: log PVP state every 5 seconds
+      if (!window.lastPvpDebugTime || Date.now() - window.lastPvpDebugTime > 5000) {
+        console.log(`🔫 PVP Active: ${bullets.length} bullets, ${MP.remotes.size} remote players`);
+        window.lastPvpDebugTime = Date.now();
+      }
       for (const [numId, remote] of MP.remotes) {
         if (!remote.mesh || !remote.mesh.position) continue;
         
@@ -8788,6 +9145,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           if (b.kind === "player" || b.kind === "fenix") {
             // Check collision between bullet and remote player ship
             const shipRadius = 15; // Remote ships are 15x scale, so larger hit radius
+            const distance = b.mesh.position.distanceTo(remote.mesh.position);
+            const collisionDistance = shipRadius + b.radius;
+            
+            // Debug logging when bullets are near remote ships
+            if (distance < collisionDistance * 2) {
+              console.log(`🔥 PVP Debug: ${b.kind} bullet distance ${distance.toFixed(2)} to player ${numId}, collision at ${collisionDistance.toFixed(2)}`);
+            }
+            
             if (
               isWithinRadiusSquared(
                 b.mesh.position,
@@ -8839,6 +9204,37 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
               console.log(`🎯 HIT! Shot remote player ${numId} with ${b.kind} bullet for ${b.kind === "fenix" ? 30 : 15} damage`);
               break;
             }
+          }
+        }
+      }
+    }
+
+    // Remote bullets -> local player (receive damage)
+    if (MP.active && MP.remotes.size > 0) {
+      for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
+        if (b.kind === "remote-player" || b.kind === "remote-fenix") {
+          // Check collision between remote bullet and local player ship
+          const shipRadius = 2; // Local ship collision radius
+          const distance = b.mesh.position.distanceTo(shipPosition);
+          const collisionDistance = shipRadius + b.radius;
+          
+          if (distance < collisionDistance) {
+            console.log(`💥 HIT BY REMOTE! Took ${b.kind === "remote-fenix" ? 30 : 15} damage from ${b.kind}`);
+            
+            // Create impact effect on local ship
+            spawnImpactBurst(shipPosition, 0xff0000, 20);
+            cameraShake += 1.0;
+            
+            // Remove bullet
+            scene.remove(b.mesh);
+            if (b.kind === "remote-player") releasePlayerBulletMesh(b.mesh);
+            else if (b.kind === "remote-fenix") releaseFenixBeamMesh(b.mesh);
+            bullets.splice(i, 1);
+            
+            // Optional: reduce health, show damage
+            spawnCenteredTextLabel(`-${b.kind === "remote-fenix" ? 30 : 15} DMG`, shipPosition, 0xff0000, 1.5, 1.0);
+            break;
           }
         }
       }
