@@ -249,6 +249,16 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   let paidSessionToken = null;
   let providersDetected = false;
   let connecting = false;
+  
+  // Check for demo mode via URL parameter
+  const urlParams = new URLSearchParams(window.location.search);
+  const isDemoMode = urlParams.get('demo') === 'true' || urlParams.get('test') === 'true';
+  if (isDemoMode) {
+    console.log("🎮 DEMO MODE ENABLED - Bypassing wallet requirements");
+    // Set fake values for demo mode
+    walletAddress = "DEMO_PLAYER";
+    paidSessionToken = "DEMO_MODE";
+  }
   let detectionRetryTimer = null;
   let detectionInProgress = false;
   let lastStatus = "init"; // 'checking' | 'available' | 'unavailable'
@@ -833,10 +843,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
   // Wallet functions
   function updateLaunchButton() {
-    const isValid = (walletAddress && walletAddress.length > 0) && !!paidSessionToken;
+    // In demo mode, always allow launch
+    const isValid = isDemoMode || ((walletAddress && walletAddress.length > 0) && !!paidSessionToken);
     console.log("updateLaunchButton called:", {
       walletAddress,
       paidSessionToken: !!paidSessionToken,
+      isDemoMode,
       isValid,
       launchBtnDisabled: launchBtn?.disabled,
     });
@@ -845,7 +857,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       const hasWallet = walletAddress && walletAddress.length > 0;
       const needsPayment = hasWallet && !paidSessionToken;
       
-      // Only enable button when wallet is connected AND payment is made
+      // In demo mode or when wallet+payment valid, enable button
       launchBtn.disabled = !isValid;
       
       // Update button text based on state
@@ -3631,17 +3643,19 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   if (launchBtn) {
     launchBtn.addEventListener("click", () => {
-      if (!walletAddress) {
-        alert("Please connect your wallet first!");
-        return;
-      }
-      
-      if (!paidSessionToken) {
-        alert("Please pay 2 DEM to play first!");
-        return;
+      if (!isDemoMode) {
+        if (!walletAddress) {
+          alert("Please connect your wallet first!");
+          return;
+        }
+        
+        if (!paidSessionToken) {
+          alert("Please pay 2 DEM to play first!");
+          return;
+        }
       }
 
-      console.log("🚀 Launching with wallet address:", walletAddress, "and payment token:", !!paidSessionToken);
+      console.log("🚀 Launching " + (isDemoMode ? "in DEMO MODE" : "with wallet"), walletAddress, "and payment token:", !!paidSessionToken);
       console.log("🔍 Pre-launch wallet state check:", {
         walletAddress,
         currentProvider: !!currentProvider,
@@ -7075,7 +7089,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             type: "hello",
             name: ensurePlayerName(),
             clientVersion: "mp1",
-            paidToken: paidSessionToken || "",
+            paidToken: isDemoMode ? "DEMO_MODE" : (paidSessionToken || ""),
+            demoMode: isDemoMode,
           })
         );
       };

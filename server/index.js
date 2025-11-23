@@ -1742,28 +1742,36 @@ mpWss.on("connection", (ws) => {
     if (!msg || typeof msg !== "object") return;
 
     if (msg.type === "hello" && !playerId) {
-      console.log("👋 Received hello message:", { paidToken: msg.paidToken, name: msg.name });
-      // Enforce paid session token before allowing a player to join
-      try {
-        prunePaidSessions();
-        const payToken = String(msg.paidToken || "");
-        const rec = paidSessions.get(payToken);
-        console.log("🎟️ Token validation:", { payToken, found: !!rec, expired: rec ? rec.expiresAt <= Date.now() : 'N/A' });
-        if (!rec || rec.expiresAt <= Date.now()) {
-          console.log("❌ Invalid/expired token, closing connection");
+      console.log("👋 Received hello message:", { paidToken: msg.paidToken, name: msg.name, demoMode: msg.demoMode });
+      
+      // Check for demo mode bypass
+      const isDemoMode = msg.demoMode === true || msg.paidToken === "DEMO_MODE";
+      
+      if (!isDemoMode) {
+        // Enforce paid session token for non-demo players
+        try {
+          prunePaidSessions();
+          const payToken = String(msg.paidToken || "");
+          const rec = paidSessions.get(payToken);
+          console.log("🎟️ Token validation:", { payToken, found: !!rec, expired: rec ? rec.expiresAt <= Date.now() : 'N/A' });
+          if (!rec || rec.expiresAt <= Date.now()) {
+            console.log("❌ Invalid/expired token, closing connection");
+            try {
+              ws.close();
+            } catch (_) {}
+            return;
+          }
+          // One-time use token
+          paidSessions.delete(payToken);
+          console.log("✅ Token validated, removing from session");
+        } catch (_) {
           try {
             ws.close();
           } catch (_) {}
           return;
         }
-        // One-time use token
-        paidSessions.delete(payToken);
-        console.log("✅ Token validated, removing from session");
-      } catch (_) {
-        try {
-          ws.close();
-        } catch (_) {}
-        return;
+      } else {
+        console.log("🎮 Demo mode enabled - bypassing wallet requirement");
       }
 
       const name = String(msg.name || "").slice(0, 24) || "Anon";
