@@ -431,22 +431,191 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       return d;
     })();
     
-  // Multiplayer minimap
+  // Enhanced Multiplayer minimap
   const minimap = (() => {
+    // Create minimap state
+    const state = {
+      width: 250,
+      height: 250,
+      x: 10,
+      y: window.innerHeight - 270,
+      manualZoom: 0.01,
+      isDragging: false,
+      isResizing: false,
+      dragOffset: { x: 0, y: 0 },
+      targetPosition: null,
+      showTrails: true,
+      showGrid: false,
+      playerTrails: new Map()
+    };
+
+    // Create container
+    const container = document.createElement("div");
+    container.className = "minimap-container";
+    container.style.left = state.x + "px";
+    container.style.bottom = (window.innerHeight - state.y - state.height) + "px";
+    container.style.width = state.width + "px";
+    container.style.height = (state.height + 32) + "px"; // +32 for toolbar
+    container.style.display = "none";
+
+    // Create toolbar
+    const toolbar = document.createElement("div");
+    toolbar.className = "minimap-toolbar";
+    toolbar.innerHTML = `
+      <button id="minimap-zoom-in" title="Zoom In">+</button>
+      <button id="minimap-zoom-out" title="Zoom Out">-</button>
+      <button id="minimap-fit" title="Fit All Players">⌂</button>
+      <button id="minimap-trails" title="Toggle Trails">⟲</button>
+      <button id="minimap-grid" title="Toggle Grid">⊞</button>
+      <span class="zoom-info" id="minimap-zoom-info">1:500</span>
+    `;
+
+    // Create canvas
     const canvas = document.createElement("canvas");
-    canvas.id = "minimap";
-    canvas.width = 200;
-    canvas.height = 200;
-    canvas.style.position = "absolute";
-    canvas.style.bottom = "10px";
-    canvas.style.left = "10px";
-    canvas.style.border = "2px solid #00ffff";
-    canvas.style.backgroundColor = "rgba(0, 20, 40, 0.8)";
-    canvas.style.borderRadius = "4px";
-    canvas.style.display = "none"; // Initially hidden
-    canvas.style.zIndex = "1000";
-    document.body.appendChild(canvas);
-    return canvas;
+    canvas.className = "minimap-canvas";
+    canvas.width = state.width;
+    canvas.height = state.height;
+    canvas.style.display = "block";
+
+    // Create resize handle
+    const resizeHandle = document.createElement("div");
+    resizeHandle.className = "minimap-resize-handle";
+
+    // Assemble minimap
+    container.appendChild(toolbar);
+    container.appendChild(canvas);
+    container.appendChild(resizeHandle);
+    document.body.appendChild(container);
+
+    // Event handlers for zoom controls
+    document.getElementById("minimap-zoom-in").addEventListener("click", () => {
+      state.manualZoom = Math.min(state.manualZoom * 1.5, 0.1);
+      updateZoomInfo();
+    });
+
+    document.getElementById("minimap-zoom-out").addEventListener("click", () => {
+      state.manualZoom = Math.max(state.manualZoom / 1.5, 0.001);
+      updateZoomInfo();
+    });
+
+    document.getElementById("minimap-fit").addEventListener("click", () => {
+      if (MP.active && MP.remotes.size > 0) {
+        let maxDist = 1000;
+        for (const [numId, remote] of MP.remotes) {
+          if (remote.mesh && remote.mesh.position && shipPosition) {
+            const dist = shipPosition.distanceTo(remote.mesh.position);
+            maxDist = Math.max(maxDist, dist);
+          }
+        }
+        state.manualZoom = Math.min(0.05, state.width / (maxDist * 2.5));
+        updateZoomInfo();
+      }
+    });
+
+    document.getElementById("minimap-trails").addEventListener("click", () => {
+      state.showTrails = !state.showTrails;
+      document.getElementById("minimap-trails").style.background =
+        state.showTrails ? "rgba(0, 255, 255, 0.3)" : "rgba(0, 255, 255, 0.1)";
+    });
+
+    document.getElementById("minimap-grid").addEventListener("click", () => {
+      state.showGrid = !state.showGrid;
+      document.getElementById("minimap-grid").style.background =
+        state.showGrid ? "rgba(0, 255, 255, 0.3)" : "rgba(0, 255, 255, 0.1)";
+    });
+
+    // Update zoom info display
+    function updateZoomInfo() {
+      const scale = Math.round(1 / state.manualZoom);
+      document.getElementById("minimap-zoom-info").textContent = `1:${scale}`;
+    }
+
+    // Drag functionality for moving minimap
+    let isDragging = false;
+    let dragStart = { x: 0, y: 0 };
+
+    toolbar.addEventListener("mousedown", (e) => {
+      if (e.target.tagName !== "BUTTON") {
+        isDragging = true;
+        dragStart = { x: e.clientX - state.x, y: e.clientY - state.y };
+        container.classList.add("dragging");
+        e.preventDefault();
+      }
+    });
+
+    document.addEventListener("mousemove", (e) => {
+      if (isDragging) {
+        state.x = Math.max(0, Math.min(window.innerWidth - state.width, e.clientX - dragStart.x));
+        state.y = Math.max(32, Math.min(window.innerHeight - state.height - 32, e.clientY - dragStart.y));
+        container.style.left = state.x + "px";
+        container.style.bottom = (window.innerHeight - state.y - state.height - 32) + "px";
+      }
+    });
+
+    document.addEventListener("mouseup", () => {
+      if (isDragging) {
+        isDragging = false;
+        container.classList.remove("dragging");
+      }
+    });
+
+    // Click-to-navigate functionality
+    canvas.addEventListener("click", (e) => {
+      if (!MP.active || !shipPosition) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+
+      // Convert click position to world coordinates
+      const centerX = state.width / 2;
+      const centerY = state.height / 2;
+      const worldX = (clickX - centerX) / state.manualZoom + shipPosition.x;
+      const worldZ = (clickY - centerY) / state.manualZoom + shipPosition.z;
+
+      // Set navigation target
+      state.targetPosition = { x: worldX, z: worldZ };
+
+      // Visual feedback
+      console.log(`🎯 Navigation target set: [${Math.round(worldX)}, ${Math.round(worldZ)}]`);
+    });
+
+    // Resize functionality
+    let isResizing = false;
+    resizeHandle.addEventListener("mousedown", (e) => {
+      isResizing = true;
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    document.addEventListener("mousemove", (e) => {
+      if (isResizing) {
+        const newWidth = Math.max(150, Math.min(400, e.clientX - state.x));
+        const newHeight = Math.max(150, Math.min(400, e.clientY - state.y));
+
+        state.width = newWidth;
+        state.height = newHeight;
+
+        canvas.width = newWidth;
+        canvas.height = newHeight;
+        container.style.width = newWidth + "px";
+        container.style.height = (newHeight + 32) + "px";
+      }
+    });
+
+    document.addEventListener("mouseup", () => {
+      isResizing = false;
+    });
+
+    // Return enhanced minimap object
+    return {
+      container,
+      canvas,
+      state,
+      show: () => { container.style.display = "block"; },
+      hide: () => { container.style.display = "none"; },
+      getContext: () => canvas.getContext("2d")
+    };
   })();
     
   const help =
@@ -5586,87 +5755,188 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   function updateMinimap() {
     // Only show minimap in multiplayer mode
     if (!MP.active) {
-      minimap.style.display = "none";
+      minimap.hide();
       return;
     }
     
-    minimap.style.display = "block";
-    const ctx = minimap.getContext("2d");
-    const width = minimap.width;
-    const height = minimap.height;
+    minimap.show();
+    const ctx = minimap.getContext();
+    const { width, height, manualZoom, showGrid, showTrails, targetPosition, playerTrails } = minimap.state;
     
     // Clear canvas with darker background
-    ctx.fillStyle = "rgba(0, 0, 0, 0.8)";
+    ctx.fillStyle = "rgba(0, 10, 20, 0.95)";
     ctx.fillRect(0, 0, width, height);
-    
-    // Dynamic scale based on nearest player distance
-    let mapScale = 0.01; // Default scale
-    let nearestDistance = Infinity;
-    
-    // Find nearest player for dynamic zoom
-    if (MP.remotes && MP.remotes.size > 0 && shipPosition) {
-      for (const [numId, remote] of MP.remotes) {
-        if (remote.mesh && remote.mesh.position) {
-          const dx = remote.mesh.position.x - shipPosition.x;
-          const dz = remote.mesh.position.z - shipPosition.z;
-          const dist = Math.sqrt(dx * dx + dz * dz);
-          if (dist < nearestDistance) {
-            nearestDistance = dist;
-          }
-        }
-      }
-      
-      // Adjust scale based on distance
-      // Close: 0.02 (50 units/pixel), Far: 0.002 (500 units/pixel)
-      if (nearestDistance < 1000) {
-        mapScale = 0.02; // Very zoomed in when close
-      } else if (nearestDistance < 5000) {
-        mapScale = 0.01; // Medium zoom
-      } else if (nearestDistance < 10000) {
-        mapScale = 0.005; // Zoomed out
-      } else {
-        mapScale = 0.002; // Very zoomed out for far distances
-      }
-    }
     
     const centerX = width / 2;
     const centerY = height / 2;
+    const mapScale = manualZoom;
     
     // Center on YOUR ship position
     const mapCenterX = shipPosition ? shipPosition.x : 0;
     const mapCenterZ = shipPosition ? shipPosition.z : 0;
     
-    // Draw grid lines for reference
-    ctx.strokeStyle = "#1a1a1a";
-    ctx.lineWidth = 1;
-    // Grid lines every 40 pixels
-    for (let x = 0; x < width; x += 40) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
-      ctx.stroke();
+    // Draw grid if enabled
+    if (showGrid) {
+      ctx.strokeStyle = "rgba(0, 255, 255, 0.1)";
+      ctx.lineWidth = 1;
+      const gridSize = Math.max(20, 100 * mapScale);
+      
+      for (let x = centerX % gridSize; x < width; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, height);
+        ctx.stroke();
+      }
+      for (let y = centerY % gridSize; y < height; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
     }
-    for (let y = 0; y < height; y += 40) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
-      ctx.stroke();
+    
+    // Draw range circles
+    const ranges = [1000, 5000, 10000];
+    ranges.forEach((range, i) => {
+      const radius = range * mapScale;
+      if (radius > 10 && radius < width) {
+        ctx.beginPath();
+        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(0, 255, 255, ${0.05 + i * 0.02})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        
+        // Range label
+        ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
+        ctx.font = "10px monospace";
+        ctx.fillText(`${range/1000}km`, centerX + radius - 20, centerY + 5);
+      }
+    });
+    
+    // Update player trails
+    if (showTrails && shipPosition) {
+      const currentTime = Date.now();
+      
+      // Add current position to trails for remote players
+      if (MP.remotes && MP.remotes.size > 0) {
+        for (const [numId, remote] of MP.remotes) {
+          if (remote.mesh && remote.mesh.position) {
+            if (!playerTrails.has(numId)) {
+              playerTrails.set(numId, []);
+            }
+            const trail = playerTrails.get(numId);
+            trail.push({
+              x: remote.mesh.position.x,
+              z: remote.mesh.position.z,
+              time: currentTime
+            });
+            
+            // Keep only recent trail points (last 30 seconds)
+            while (trail.length > 0 && currentTime - trail[0].time > 30000) {
+              trail.shift();
+            }
+          }
+        }
+      }
+    }
+    
+    // Draw player trails
+    if (showTrails) {
+      for (const [numId, trail] of playerTrails) {
+        if (trail.length > 1) {
+          ctx.strokeStyle = `rgba(255, 255, 0, 0.3)`;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          
+          for (let i = 0; i < trail.length; i++) {
+            const point = trail[i];
+            const relativeX = point.x - mapCenterX;
+            const relativeZ = point.z - mapCenterZ;
+            const trailX = centerX + relativeX * mapScale;
+            const trailY = centerY + relativeZ * mapScale;
+            
+            if (i === 0) {
+              ctx.moveTo(trailX, trailY);
+            } else {
+              ctx.lineTo(trailX, trailY);
+            }
+          }
+          ctx.stroke();
+        }
+      }
+    }
+    
+    // Draw navigation target if set
+    if (targetPosition) {
+      const relativeX = targetPosition.x - mapCenterX;
+      const relativeZ = targetPosition.z - mapCenterZ;
+      const targetX = centerX + relativeX * mapScale;
+      const targetY = centerY + relativeZ * mapScale;
+      
+      if (targetX >= 0 && targetX < width && targetY >= 0 && targetY < height) {
+        // Pulsing target marker
+        const pulse = Math.sin(Date.now() / 200) * 0.5 + 0.5;
+        ctx.strokeStyle = `rgba(255, 255, 0, ${0.5 + pulse * 0.5})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(targetX, targetY, 8 + pulse * 4, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Target cross
+        ctx.beginPath();
+        ctx.moveTo(targetX - 12, targetY);
+        ctx.lineTo(targetX + 12, targetY);
+        ctx.moveTo(targetX, targetY - 12);
+        ctx.lineTo(targetX, targetY + 12);
+        ctx.stroke();
+      }
     }
     
     // Draw self (player's ship) - ALWAYS at center
     if (shipPosition) {
-      // Draw larger marker for YOU
+      // Ship orientation arrow (if velocity available)
+      if (velocity && (velocity.x !== 0 || velocity.z !== 0)) {
+        const velAngle = Math.atan2(velocity.z, velocity.x);
+        const arrowLength = 12;
+        const endX = centerX + Math.cos(velAngle) * arrowLength;
+        const endY = centerY + Math.sin(velAngle) * arrowLength;
+        
+        ctx.strokeStyle = "#00ffff";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.lineTo(endX, endY);
+        ctx.stroke();
+        
+        // Arrow head
+        const headLen = 4;
+        ctx.beginPath();
+        ctx.moveTo(endX, endY);
+        ctx.lineTo(endX - headLen * Math.cos(velAngle - Math.PI/6), endY - headLen * Math.sin(velAngle - Math.PI/6));
+        ctx.moveTo(endX, endY);
+        ctx.lineTo(endX - headLen * Math.cos(velAngle + Math.PI/6), endY - headLen * Math.sin(velAngle + Math.PI/6));
+        ctx.stroke();
+      }
+      
+      // Ship diamond marker
       ctx.fillStyle = "#00ffff";
-      ctx.fillRect(centerX - 4, centerY - 4, 8, 8);
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY - 6);
+      ctx.lineTo(centerX + 6, centerY);
+      ctx.lineTo(centerX, centerY + 6);
+      ctx.lineTo(centerX - 6, centerY);
+      ctx.closePath();
+      ctx.fill();
       
       // White border
       ctx.strokeStyle = "#ffffff";
       ctx.lineWidth = 1;
-      ctx.strokeRect(centerX - 4, centerY - 4, 8, 8);
+      ctx.stroke();
       
+      // Label
       ctx.fillStyle = "#ffffff";
-      ctx.font = "10px monospace";
-      ctx.fillText("YOU", centerX - 12, centerY - 8);
+      ctx.font = "bold 10px monospace";
+      ctx.fillText("YOU", centerX - 12, centerY - 10);
     }
     
     // Draw remote players relative to YOUR position
@@ -5682,112 +5952,145 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           // Calculate distance for display
           const distance = Math.sqrt(relativeX * relativeX + relativeZ * relativeZ);
           
-          // Check if within canvas bounds
-          const isVisible = remoteX >= 0 && remoteX <= width && remoteY >= 0 && remoteY <= height;
+          // Check if within canvas bounds (with buffer for better visibility)
+          const buffer = 20;
+          const isVisible = remoteX >= -buffer && remoteX <= width + buffer && 
+                           remoteY >= -buffer && remoteY <= height + buffer;
           
           if (isVisible) {
             // Check if this player's samples are stale (disconnected)
             const isStale = remote.samples.length === 0 || 
                           (remote.samples[remote.samples.length - 1].t < Date.now() - 5000);
             
-            // Draw large red/white marker for remote players
-            ctx.fillStyle = isStale ? "#808080" : "#ff0000"; // Gray if disconnected
-            ctx.fillRect(remoteX - 6, remoteY - 6, 12, 12);
+            // Enhanced ship orientation for remote players
+            const hasRotation = remote.samples && remote.samples.length > 0;
+            let shipAngle = 0;
+            if (hasRotation) {
+              const sample = remote.samples[remote.samples.length - 1];
+              shipAngle = sample.rY || 0;
+            }
             
-            // White border for maximum contrast
-            ctx.strokeStyle = isStale ? "#404040" : "#ffffff";
-            ctx.lineWidth = 2;
-            ctx.strokeRect(remoteX - 6, remoteY - 6, 12, 12);
-            
-            // Player label with distance
-            ctx.fillStyle = isStale ? "#888888" : "#ffff00";
-            ctx.font = "bold 11px monospace";
-            ctx.fillText(`P${numId}${isStale ? " (DC)" : ""}`, remoteX - 10, remoteY - 10);
-            ctx.fillStyle = isStale ? "#666666" : "#ffffff";
-            ctx.font = "10px monospace";
-            ctx.fillText(`${Math.round(distance)}m`, remoteX - 18, remoteY + 20);
-          } else {
-            // Draw arrow pointing to off-screen player
-            const angle = Math.atan2(relativeZ, relativeX);
-            const margin = 15;
-            
-            // Calculate edge position
-            let edgeX = centerX + Math.cos(angle) * 1000;
-            let edgeY = centerY + Math.sin(angle) * 1000;
-            
-            // Clamp to canvas edges
-            if (edgeX < margin) edgeX = margin;
-            if (edgeX > width - margin) edgeX = width - margin;
-            if (edgeY < margin) edgeY = margin;
-            if (edgeY > height - margin) edgeY = height - margin;
-            
-            // Draw arrow
+            // Draw ship triangle pointing in direction
             ctx.save();
-            ctx.translate(edgeX, edgeY);
-            ctx.rotate(angle);
-            ctx.fillStyle = "#ff0000";
+            ctx.translate(remoteX, remoteY);
+            ctx.rotate(shipAngle);
+            
+            // Ship triangle
+            ctx.fillStyle = isStale ? "#808080" : "#ff4444"; 
             ctx.beginPath();
-            ctx.moveTo(0, 0);
-            ctx.lineTo(-15, -7);
-            ctx.lineTo(-15, 7);
+            ctx.moveTo(8, 0);     // Point forward
+            ctx.lineTo(-6, -6);   // Back left
+            ctx.lineTo(-3, 0);    // Back center
+            ctx.lineTo(-6, 6);    // Back right
             ctx.closePath();
             ctx.fill();
             
-            // White outline
+            // White border for contrast
+            ctx.strokeStyle = isStale ? "#404040" : "#ffffff";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            ctx.restore();
+            
+            // Enhanced player status indicators
+            const statusSize = 4;
+            const statusY = remoteY - 12;
+            
+            // Connection status indicator
+            ctx.fillStyle = isStale ? "#ff0000" : "#00ff00";
+            ctx.fillRect(remoteX - statusSize/2, statusY, statusSize, statusSize);
+            
+            // Player label with enhanced info
+            ctx.fillStyle = isStale ? "#888888" : "#ffff00";
+            ctx.font = "bold 10px monospace";
+            const playerLabel = `P${numId}${isStale ? " ⚫" : " ⚪"}`;
+            ctx.fillText(playerLabel, remoteX - 15, remoteY - 15);
+            
+            // Distance with better formatting
+            ctx.fillStyle = isStale ? "#666666" : "#ffffff";
+            ctx.font = "9px monospace";
+            const distText = distance < 1000 ? `${Math.round(distance)}m` : 
+                            distance < 10000 ? `${(distance/1000).toFixed(1)}km` : 
+                                               `${Math.round(distance/1000)}km`;
+            ctx.fillText(distText, remoteX - 12, remoteY + 18);
+          } else {
+            // Enhanced off-screen indicators
+            const angle = Math.atan2(relativeZ, relativeX);
+            const margin = 20;
+            
+            // Calculate edge position more precisely
+            const maxRadius = Math.min((width - margin * 2) / 2, (height - margin * 2) / 2);
+            const edgeX = centerX + Math.cos(angle) * maxRadius;
+            const edgeY = centerY + Math.sin(angle) * maxRadius;
+            
+            // Draw enhanced directional arrow
+            ctx.save();
+            ctx.translate(edgeX, edgeY);
+            ctx.rotate(angle);
+            
+            // Gradient arrow for better visibility
+            const gradient = ctx.createLinearGradient(-10, 0, 10, 0);
+            gradient.addColorStop(0, isStale ? "#404040" : "#ff6666");
+            gradient.addColorStop(1, isStale ? "#808080" : "#ff0000");
+            ctx.fillStyle = gradient;
+            
+            ctx.beginPath();
+            ctx.moveTo(12, 0);    // Arrow tip
+            ctx.lineTo(-8, -6);   // Back left
+            ctx.lineTo(-5, 0);    // Back center notch
+            ctx.lineTo(-8, 6);    // Back right
+            ctx.closePath();
+            ctx.fill();
+            
+            // Enhanced outline
             ctx.strokeStyle = "#ffffff";
             ctx.lineWidth = 1;
             ctx.stroke();
             ctx.restore();
             
-            // Distance label
-            ctx.fillStyle = "#ffff00";
-            ctx.font = "bold 10px monospace";
-            const labelX = edgeX < width/2 ? edgeX + 5 : edgeX - 45;
-            const labelY = edgeY < height/2 ? edgeY + 15 : edgeY - 5;
-            ctx.fillText(`P${numId}:${Math.round(distance)}m`, labelX, labelY);
-          }
-          
-          // Log minimap positions only occasionally
-          if (Math.random() < 0.05) { // 5% chance
-            console.log(`🎯 Remote ${numId}: relative [${relativeX.toFixed(1)}, ${relativeZ.toFixed(1)}], distance ${distance.toFixed(1)}, visible: ${isVisible}`);
+            // Distance label with better positioning
+            ctx.fillStyle = isStale ? "#888888" : "#ffff00";
+            ctx.font = "bold 9px monospace";
+            const labelOffset = 15;
+            const labelX = edgeX + Math.cos(angle + Math.PI/2) * labelOffset;
+            const labelY = edgeY + Math.sin(angle + Math.PI/2) * labelOffset;
+            
+            const distText = distance < 1000 ? `P${numId}:${Math.round(distance)}m` : 
+                            distance < 10000 ? `P${numId}:${(distance/1000).toFixed(1)}km` : 
+                                               `P${numId}:${Math.round(distance/1000)}km`;
+            
+            // Background for text readability
+            const textWidth = ctx.measureText(distText).width;
+            ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+            ctx.fillRect(labelX - 2, labelY - 10, textWidth + 4, 12);
+            
+            ctx.fillStyle = isStale ? "#888888" : "#ffff00";
+            ctx.fillText(distText, labelX, labelY);
           }
         }
       }
     }
     
-    // Draw compass directions
-    ctx.fillStyle = "#888888";
-    ctx.font = "10px monospace";
-    ctx.fillText("N", centerX - 3, 12);
-    ctx.fillText("S", centerX - 3, height - 4);
-    ctx.fillText("E", width - 10, centerY + 3);
-    ctx.fillText("W", 4, centerY + 3);
-    
-    // Draw minimap border
-    ctx.strokeStyle = "#00ffff";
+    // Enhanced compass with better visibility
+    ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+    ctx.font = "bold 12px monospace";
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
     ctx.lineWidth = 2;
-    ctx.strokeRect(0, 0, width, height);
     
-    // Status info
-    ctx.fillStyle = "#00ffff";
-    ctx.font = "12px monospace";
-    ctx.fillText(`MP: ${MP.remotes.size + 1} players`, 5, 15);
-    if (shipPosition) {
-      ctx.fillText(`Pos: ${Math.round(shipPosition.x)}, ${Math.round(shipPosition.z)}`, 5, 28);
-    }
+    // North
+    ctx.strokeText("N", centerX - 6, 16);
+    ctx.fillText("N", centerX - 6, 16);
     
-    // Show zoom level
-    const zoomLevel = mapScale > 0.015 ? "Close" : mapScale > 0.007 ? "Medium" : mapScale > 0.003 ? "Far" : "Very Far";
-    ctx.fillText(`Zoom: ${zoomLevel}`, 5, 41);
+    // South  
+    ctx.strokeText("S", centerX - 6, height - 6);
+    ctx.fillText("S", centerX - 6, height - 6);
     
-    // Turbo hint
-    if (!devTurboActive) {
-      ctx.fillStyle = "#ffff00";
-      ctx.fillText("Press T for turbo!", 5, height - 5);
-    } else {
-      ctx.fillStyle = "#00ff00";
-      ctx.fillText("TURBO ACTIVE (2000)", 5, height - 5);
-    }
+    // East
+    ctx.strokeText("E", width - 16, centerY + 4);
+    ctx.fillText("E", width - 16, centerY + 4);
+    
+    // West
+    ctx.strokeText("W", 6, centerY + 4);
+    ctx.fillText("W", 6, centerY + 4);
   }
 
   function showGameOver() {
