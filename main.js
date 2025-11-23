@@ -6747,7 +6747,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         if (numId === MP.myNumId) {
           // Track authoritative self state for resync after tab visibility changes, but do not render from it in real-time
           MP.selfServerState = { t, p, q, v, flags };
-          if (i % 12 === 0) dbg("self-state", { t, p, v });
+          
+          // Debug: Log position differences
+          if (i % 30 === 0) { // Every ~1 second
+            const serverPos = vec3From(p);
+            const localError = shipPosition.distanceTo(serverPos);
+            console.log(`🎯 Sync check: Local error ${localError.toFixed(1)}u, Server pos [${p[0].toFixed(0)}, ${p[1].toFixed(0)}, ${p[2].toFixed(0)}]`);
+          }
           continue;
         }
         let r = MP.remotes.get(numId);
@@ -7141,7 +7147,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       throttle,
       yaw: THREE.MathUtils.clamp(yawInput, -1, 1),
       pitch: THREE.MathUtils.clamp(pitchInput, -1, 1),
-      roll: 0,
+      roll: roll, // Send actual roll angle to server
       boost: boostActive,
       fire: !!input.fire,
       fenix: !!fenixActive,
@@ -9552,10 +9558,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           r.mesh.userData.light = light;
         }
         
-        // Only log 3D position occasionally to reduce spam
+        // Debug log remote positions occasionally
         if (numId && p && Math.random() < 0.01) { // 1% chance = ~once per second
           const distance = ship.position.distanceTo(p);
-          console.log(`🚀 Remote ${numId}: 3D pos [${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)}], distance ${distance.toFixed(1)}, visible: ${r.mesh.visible}`);
+          const sampleCount = r.samples ? r.samples.length : 0;
+          console.log(`👥 Remote ${numId}: Distance ${distance.toFixed(1)}u, Samples: ${sampleCount}, Interpolating to [${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)}]`);
         }
       }
     }

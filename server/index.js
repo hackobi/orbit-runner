@@ -2157,6 +2157,8 @@ function integratePlayers(dt) {
     // Turn
     s.yaw += (i?.yaw || 0) * YAW_RATE * dt;
     s.pitch += (i?.pitch || 0) * PITCH_RATE * dt;
+    // Roll is the actual angle sent by client (not an input rate)
+    s.roll = i?.roll || 0;
     // Clamp pitch to avoid flips
     const HALF_PI = Math.PI / 2 - 0.05;
     if (s.pitch > HALF_PI) s.pitch = HALF_PI;
