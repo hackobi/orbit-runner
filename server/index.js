@@ -1636,9 +1636,67 @@ const mpRoom = {
   id: "default",
   worldSeed: Math.floor(Math.random() * 1e9),
   players: new Map(), // id -> { id, numId, name, color, lastSeen, state, input, hp, shield, invulnUntil, history:[] }
+  bots: new Map(), // botId -> { id, numId, pos: [x,y,z], yaw, pitch, roll, hp, fireCooldown, target }
   lastTick: Date.now(),
   nextNumericId: 1,
 };
+
+// Bot configuration
+const BOT_CONFIG = {
+  MAX_BOTS: 3,
+  SPAWN_RADIUS: 800,
+  SPEED: 12,
+  RANGE: 100,
+  FIRE_COOLDOWN: 1.0,
+  SHOT_SPREAD: 0.15,
+  HP: 100,
+};
+
+function spawnBot() {
+  const botId = `bot_${randomUUID().slice(0, 8)}`;
+  const angle = Math.random() * Math.PI * 2;
+  const radius = 400 + Math.random() * BOT_CONFIG.SPAWN_RADIUS;
+  
+  const bot = {
+    id: botId,
+    numId: (mpRoom.nextNumericId = (mpRoom.nextNumericId % 65534) + 1),
+    pos: [
+      Math.cos(angle) * radius,
+      (Math.random() - 0.5) * 100, // Some Y variation
+      Math.sin(angle) * radius
+    ],
+    yaw: angle + Math.PI, // Face roughly toward center
+    pitch: 0,
+    roll: 0,
+    hp: BOT_CONFIG.HP,
+    fireCooldown: 0,
+    target: null,
+    lastShot: 0,
+  };
+  
+  mpRoom.bots.set(botId, bot);
+  console.log(`🤖 Spawned bot ${botId} at position ${bot.pos.join(',')}`);
+  
+  // Broadcast bot spawn to all clients
+  const data = JSON.stringify({
+    type: "botSpawn",
+    bot: {
+      id: bot.id,
+      numId: bot.numId,
+      pos: bot.pos,
+      yaw: bot.yaw,
+      hp: bot.hp,
+    }
+  });
+  
+  mpWss.clients.forEach(c => {
+    if (c.readyState === 1) {
+      try { c.send(data); } catch(_) {}
+    }
+  });
+  
+  return bot;
+}
 
 function makePlayerId() {
   return randomUUID().slice(0, 8);
@@ -1920,6 +1978,149 @@ function forwardFromYawPitch(yaw, pitch) {
   return [Math.sin(yaw) * cp, Math.sin(pitch), Math.cos(yaw) * cp];
 }
 
+function updateBots(dt) {
+  const nowMs = Date.now();
+  
+  // Maintain bot population
+  if (mpRoom.bots.size < BOT_CONFIG.MAX_BOTS && mpRoom.players.size > 0) {
+    spawnBot();
+  }
+  
+  for (const [botId, bot] of mpRoom.bots) {
+    // Find nearest player to target
+    let nearestPlayer = null;
+    let nearestDistance = Infinity;
+    
+    for (const [playerId, player] of mpRoom.players) {
+      const dx = player.state.p[0] - bot.pos[0];
+      const dy = player.state.p[1] - bot.pos[1]; 
+      const dz = player.state.p[2] - bot.pos[2];
+      const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+      
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestPlayer = player;
+      }
+    }
+    
+    if (!nearestPlayer) continue;
+    
+    bot.target = nearestPlayer;
+    const dx = nearestPlayer.state.p[0] - bot.pos[0];
+    const dz = nearestPlayer.state.p[2] - bot.pos[2];
+    
+    // Update bot orientation to face player
+    const desiredYaw = Math.atan2(dx, dz);
+    const yawDiff = desiredYaw - bot.yaw;
+    
+    // Normalize angle difference
+    let normalizedDiff = yawDiff;
+    while (normalizedDiff > Math.PI) normalizedDiff -= 2 * Math.PI;
+    while (normalizedDiff < -Math.PI) normalizedDiff += 2 * Math.PI;
+    
+    // Smooth rotation
+    bot.yaw += normalizedDiff * 2.0 * dt; // Rotation speed
+    
+    // Move toward player
+    if (nearestDistance > BOT_CONFIG.RANGE * 0.8) {
+      const forward = [Math.sin(bot.yaw), 0, Math.cos(bot.yaw)];
+      bot.pos[0] += forward[0] * BOT_CONFIG.SPEED * dt;
+      bot.pos[1] += forward[1] * BOT_CONFIG.SPEED * dt;
+      bot.pos[2] += forward[2] * BOT_CONFIG.SPEED * dt;
+    }
+    
+    // Shooting logic
+    bot.fireCooldown -= dt;
+    
+    if (nearestDistance < BOT_CONFIG.RANGE && bot.fireCooldown <= 0) {
+      const forward = [Math.sin(bot.yaw), 0, Math.cos(bot.yaw)];
+      const aimDx = nearestPlayer.state.p[0] - bot.pos[0];
+      const aimDz = nearestPlayer.state.p[2] - bot.pos[2];
+      const aimNormalized = [aimDx, 0, aimDz];
+      const aimLength = Math.sqrt(aimDx*aimDx + aimDz*aimDz);
+      if (aimLength > 0) {
+        aimNormalized[0] /= aimLength;
+        aimNormalized[2] /= aimLength;
+      }
+      
+      // Check if bot is roughly facing player
+      const dotProduct = forward[0]*aimNormalized[0] + forward[2]*aimNormalized[2];
+      
+      if (dotProduct > 0.9) { // Facing player
+        // Shoot!
+        const shootPos = [
+          bot.pos[0] + forward[0] * 1.8,
+          bot.pos[1] + forward[1] * 1.8,
+          bot.pos[2] + forward[2] * 1.8
+        ];
+        
+        // Add spread
+        const spread = BOT_CONFIG.SHOT_SPREAD;
+        const spreadX = (Math.random() - 0.5) * spread;
+        const spreadZ = (Math.random() - 0.5) * spread;
+        
+        const shotDir = [
+          forward[0] + spreadX,
+          forward[1],
+          forward[2] + spreadZ
+        ];
+        
+        // Normalize direction
+        const dirLength = Math.sqrt(shotDir[0]*shotDir[0] + shotDir[1]*shotDir[1] + shotDir[2]*shotDir[2]);
+        if (dirLength > 0) {
+          shotDir[0] /= dirLength;
+          shotDir[1] /= dirLength;
+          shotDir[2] /= dirLength;
+        }
+        
+        // Broadcast bot shot to all clients
+        const shotData = JSON.stringify({
+          type: "botShoot",
+          botId: botId,
+          botNumId: bot.numId,
+          t: nowMs,
+          p: shootPos,
+          dir: shotDir,
+        });
+        
+        mpWss.clients.forEach(c => {
+          if (c.readyState === 1) {
+            try { c.send(shotData); } catch(_) {}
+          }
+        });
+        
+        bot.fireCooldown = BOT_CONFIG.FIRE_COOLDOWN + Math.random() * 0.2;
+        bot.lastShot = nowMs;
+        
+        console.log(`🤖 Bot ${botId} shot at player at distance ${nearestDistance.toFixed(1)}`);
+      }
+    }
+  }
+  
+  // Broadcast bot positions every tick
+  if (mpRoom.bots.size > 0) {
+    const botUpdates = Array.from(mpRoom.bots.values()).map(bot => ({
+      id: bot.id,
+      numId: bot.numId,
+      pos: bot.pos,
+      yaw: bot.yaw,
+      hp: bot.hp,
+    }));
+    
+    const updateData = JSON.stringify({
+      type: "botUpdate",
+      bots: botUpdates,
+      t: nowMs,
+    });
+    
+    mpWss.clients.forEach(c => {
+      if (c.readyState === 1) {
+        try { c.send(updateData); } catch(_) {}
+      }
+    });
+  }
+}
+
 function integratePlayers(dt) {
   for (const [id, rec] of mpRoom.players) {
     const i = rec.input;
@@ -2145,6 +2346,7 @@ setInterval(() => {
   const dt = Math.min(0.1, (nowMs - mpRoom.lastTick) / 1000);
   mpRoom.lastTick = nowMs;
   integratePlayers(dt);
+  updateBots(dt);
   // PvP collision check (pairwise naive for MVP)
   const players = Array.from(mpRoom.players.values());
   for (let i = 0; i < players.length; i++) {

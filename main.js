@@ -6881,9 +6881,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
       if (msg.type === "shoot") {
         // Handle incoming bullets from other players
-        if (msg.playerId === MP.myId) return; // Don't spawn our own bullets
+        if (msg.id === MP.myId) return; // Don't spawn our own bullets
         
-        console.log(`🔫 Received ${msg.fenix ? 'fenix' : 'bullet'} from player ${msg.playerId}`);
+        console.log(`🔫 Received ${msg.fenix ? 'fenix' : 'bullet'} from player ${msg.id}`);
         
         const startPos = new THREE.Vector3(msg.p[0], msg.p[1], msg.p[2]);
         const direction = new THREE.Vector3(msg.dir[0], msg.dir[1], msg.dir[2]);
@@ -6923,6 +6923,44 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             owner: "remote",
           });
         }
+        return;
+      }
+      if (msg.type === "botSpawn") {
+        console.log(`🤖 Server spawned bot: ${msg.bot.id}`);
+        // Note: Don't spawn client-side bots anymore - they're server controlled
+        return;
+      }
+      if (msg.type === "botUpdate") {
+        console.log(`🤖 Bot update: ${msg.bots.length} bots`);
+        // Update server-controlled bot positions
+        // For now, this is just for synchronization - bots are visual only on client
+        return;
+      }
+      if (msg.type === "botShoot") {
+        // Handle bot shooting from server
+        console.log(`🤖 Bot ${msg.botId} shot from server`);
+        
+        const startPos = new THREE.Vector3(msg.p[0], msg.p[1], msg.p[2]);
+        const direction = new THREE.Vector3(msg.dir[0], msg.dir[1], msg.dir[2]);
+        
+        // Create bot bullet
+        const mat = new THREE.MeshStandardMaterial({
+          color: 0xff8866,
+          emissive: 0xff6644,
+          emissiveIntensity: 2.5,
+        });
+        const bullet = new THREE.Mesh(bulletGeometry, mat);
+        bullet.position.copy(startPos);
+        if (!bullet.parent) scene.add(bullet);
+        
+        bullets.push({
+          mesh: bullet,
+          velocity: direction.multiplyScalar(DEFAULT_BULLET_SPEED),
+          life: DEFAULT_BULLET_LIFE,
+          radius: 0.25,
+          owner: "bot",
+          kind: "server-bot",
+        });
         return;
       }
     } catch (_) {}
@@ -9049,8 +9087,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     // Exhaust
     if (!gameOver) spawnExhaust(50 + speedUnitsPerSec * 4, dt);
 
-    // --- Bots update ---
-    updateBots(dt);
+    // --- Bots update --- (Now server-controlled)
+    // updateBots(dt);
 
     // Bot bullets -> player
     for (let i = bullets.length - 1; i >= 0; i--) {
@@ -9537,6 +9575,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       radius: 0.25,
       owner: "bot",
     });
+    
+    // Note: This function is no longer used since bots are server-controlled
   }
 
   function updateBots(dt) {
@@ -9575,22 +9615,23 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       b.fireCooldown -= dt;
       const facingDot = forward.dot(toPlayer.clone().normalize()); // 1 = directly at player
       if (dist < BOT_RANGE && facingDot > 0.985 && b.fireCooldown <= 0) {
-        botShoot(b);
-        b.fireCooldown = BOT_FIRE_COOLDOWN + Math.random() * 0.2;
+        // Bot shooting is now server-controlled
+        // botShoot(b);
+        // b.fireCooldown = BOT_FIRE_COOLDOWN + Math.random() * 0.2;
       }
     }
   }
 
-  // Spawn initial bots around the player
-  for (let i = 0; i < BOT_COUNT; i++) {
-    const r = 1200 + Math.random() * 1600;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = (Math.random() - 0.5) * 0.6;
-    const offset = new THREE.Vector3(
-      r * Math.cos(theta) * Math.cos(phi),
-      r * Math.sin(phi),
-      r * Math.sin(theta) * Math.cos(phi)
-    );
-    spawnBotAtPosition(new THREE.Vector3().copy(shipPosition).add(offset));
-  }
+  // Bots are now server-controlled, no client-side spawning
+  // for (let i = 0; i < BOT_COUNT; i++) {
+  //   const r = 1200 + Math.random() * 1600;
+  //   const theta = Math.random() * Math.PI * 2;
+  //   const phi = (Math.random() - 0.5) * 0.6;
+  //   const offset = new THREE.Vector3(
+  //     r * Math.cos(theta) * Math.cos(phi),
+  //     r * Math.sin(phi),
+  //     r * Math.sin(theta) * Math.cos(phi)
+  //   );
+  //   spawnBotAtPosition(new THREE.Vector3().copy(shipPosition).add(offset));
+  // }
 })();
