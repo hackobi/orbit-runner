@@ -6400,10 +6400,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           const isVisible = remoteX >= -buffer && remoteX <= width + buffer && 
                            remoteY >= -buffer && remoteY <= height + buffer;
           
+          // Check if this player's samples are stale (disconnected) - define outside if/else for both branches
+          const isStale = remote.samples.length === 0 || 
+                        (remote.samples[remote.samples.length - 1].t < Date.now() - 5000);
+          
           if (isVisible) {
-            // Check if this player's samples are stale (disconnected)
-            const isStale = remote.samples.length === 0 || 
-                          (remote.samples[remote.samples.length - 1].t < Date.now() - 5000);
             
             // Enhanced ship orientation for remote players
             const hasRotation = remote.samples && remote.samples.length > 0;
