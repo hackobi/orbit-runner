@@ -635,7 +635,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       d.style.borderRadius = "6px";
       d.style.display = "none";
       d.textContent =
-        "W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H target • N name • J toggle HUD • T dev 500 • R restart (2 DEM)";
+        "M toggle mouse • W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H target • N name • J toggle HUD • T dev 500 • R restart (2 DEM)";
       document.body.appendChild(d);
       return d;
     })();
@@ -5478,6 +5478,18 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     fire: false,
     toggleLb: false,
   };
+  
+  // Mouse/trackpad control system
+  const mouseControl = {
+    enabled: true,
+    x: 0.5, // Normalized 0-1
+    y: 0.5, // Normalized 0-1
+    smoothX: 0.5,
+    smoothY: 0.5,
+    sensitivity: 2.0,
+    deadzone: 0.05,
+    smoothing: 0.15
+  };
   function onKeyDown(e) {
     // Disable game controls while welcome screen is visible or when typing in inputs
     const active = document.activeElement;
@@ -5698,6 +5710,120 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     },
     { capture: true }
   );
+  
+  // Create mouse position indicator
+  const mouseIndicator = document.createElement("div");
+  mouseIndicator.id = "mouse-indicator";
+  mouseIndicator.style.cssText = `
+    position: fixed;
+    width: 40px;
+    height: 40px;
+    border: 2px solid rgba(0, 255, 255, 0.5);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 9998;
+    display: none;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 20px rgba(0, 255, 255, 0.3);
+  `;
+  
+  // Add crosshair in center
+  const mouseCrosshair = document.createElement("div");
+  mouseCrosshair.style.cssText = `
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 10px;
+    height: 10px;
+    transform: translate(-50%, -50%);
+  `;
+  mouseCrosshair.innerHTML = `
+    <div style="position: absolute; width: 10px; height: 2px; background: #00ffff; top: 4px; left: 0;"></div>
+    <div style="position: absolute; width: 2px; height: 10px; background: #00ffff; top: 0; left: 4px;"></div>
+  `;
+  mouseIndicator.appendChild(mouseCrosshair);
+  document.body.appendChild(mouseIndicator);
+  
+  // Add mouse/trackpad movement handler
+  window.addEventListener("mousemove", (e) => {
+    if (!mouseControl.enabled) return;
+    if (!gameStarted || gameOver) return;
+    
+    // Normalize mouse position to 0-1 range
+    mouseControl.x = e.clientX / window.innerWidth;
+    mouseControl.y = e.clientY / window.innerHeight;
+    
+    // Update visual indicator
+    if (mouseControl.showCursor && mouseIndicator) {
+      mouseIndicator.style.display = "block";
+      mouseIndicator.style.left = e.clientX + "px";
+      mouseIndicator.style.top = e.clientY + "px";
+      
+      // Change color based on distance from center
+      const centerDist = Math.sqrt(
+        Math.pow((mouseControl.x - 0.5) * 2, 2) + 
+        Math.pow((mouseControl.y - 0.5) * 2, 2)
+      );
+      const intensity = Math.min(1, centerDist);
+      mouseIndicator.style.borderColor = `rgba(0, 255, 255, ${0.3 + intensity * 0.7})`;
+    }
+  });
+  
+  // Add touch support for mobile
+  window.addEventListener("touchmove", (e) => {
+    if (!mouseControl.enabled) return;
+    if (!gameStarted || gameOver) return;
+    if (e.touches.length > 0) {
+      const touch = e.touches[0];
+      mouseControl.x = touch.clientX / window.innerWidth;
+      mouseControl.y = touch.clientY / window.innerHeight;
+    }
+  });
+  
+  // Toggle mouse control with 'M' key
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "KeyM" && !e.repeat) {
+      mouseControl.enabled = !mouseControl.enabled;
+      console.log("Mouse control:", mouseControl.enabled ? "ON" : "OFF");
+      
+      // Toggle indicator visibility
+      if (mouseIndicator) {
+        mouseIndicator.style.display = mouseControl.enabled ? "block" : "none";
+      }
+      
+      // Show notification
+      const notification = document.createElement("div");
+      notification.style.cssText = `
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.9);
+        color: #00ffff;
+        padding: 20px 30px;
+        border-radius: 8px;
+        border: 2px solid #00ffff;
+        font-family: monospace;
+        font-size: 18px;
+        z-index: 10000;
+        text-align: center;
+        box-shadow: 0 0 30px rgba(0, 255, 255, 0.5);
+      `;
+      notification.innerHTML = `
+        <div style="font-size: 24px; margin-bottom: 10px;">
+          🎮 Mouse Control: <span style="color: ${mouseControl.enabled ? '#00ff00' : '#ff4444'}">${mouseControl.enabled ? "ENABLED" : "DISABLED"}</span>
+        </div>
+        <div style="font-size: 14px; opacity: 0.8;">
+          ${mouseControl.enabled ? "Move mouse to steer • Center = straight" : "Use arrow keys or WASD to control"}
+        </div>
+      `;
+      document.body.appendChild(notification);
+      
+      setTimeout(() => {
+        document.body.removeChild(notification);
+      }, 2000);
+    }
+  });
   window.addEventListener("pointerup", () => {
     mouseDown = false;
   });
@@ -7631,8 +7757,33 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       const yawKeys = (input.yawRight ? -1 : 0) + (input.yawLeft ? 1 : 0);
       // Up/I -> positive pitch (nose up), Down/K -> negative pitch (nose down)
       const pitchKeys = (input.pitchUp ? 1 : 0) + (input.pitchDown ? -1 : 0);
-      const mouseYaw = mouseDown ? mouseX * 0.6 : 0;
-      const mousePitch = mouseDown ? -mouseY * 0.6 : 0;
+      
+      // Enhanced mouse/trackpad control
+      let mouseYaw = 0;
+      let mousePitch = 0;
+      
+      if (mouseControl.enabled) {
+        // Smooth the mouse input for better control
+        mouseControl.smoothX += (mouseControl.x - mouseControl.smoothX) * mouseControl.smoothing;
+        mouseControl.smoothY += (mouseControl.y - mouseControl.smoothY) * mouseControl.smoothing;
+        
+        // Convert to -1 to 1 range with center deadzone
+        const centerX = (mouseControl.smoothX - 0.5) * 2;
+        const centerY = (mouseControl.smoothY - 0.5) * 2;
+        
+        // Apply deadzone
+        if (Math.abs(centerX) > mouseControl.deadzone) {
+          mouseYaw = -centerX * mouseControl.sensitivity;
+        }
+        if (Math.abs(centerY) > mouseControl.deadzone) {
+          mousePitch = centerY * mouseControl.sensitivity;
+        }
+      } else {
+        // Original click-and-drag control
+        mouseYaw = mouseDown ? mouseX * 0.6 : 0;
+        mousePitch = mouseDown ? -mouseY * 0.6 : 0;
+      }
+      
       const devScale = devTurboActive ? 0.25 : 1; // damp mouse at dev speed
       const yawInput = yawKeys + mouseYaw * devScale;
       const pitchInput = pitchKeys + mousePitch * devScale;
