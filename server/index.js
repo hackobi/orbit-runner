@@ -2163,7 +2163,12 @@ function integratePlayers(dt) {
     if (s.pitch < -HALF_PI) s.pitch = -HALF_PI;
     // Target speed from throttle with boost/fenix multipliers to match client
     let effectiveMax = MAX_SPEED_BASE;
-    if (i?.fenix) effectiveMax *= FENIX_MULT;
+    if (i?.fenix) {
+      effectiveMax *= FENIX_MULT;
+      s.fenix = true; // Store fenix state for broadcasting
+    } else {
+      s.fenix = false;
+    }
     if (i?.boost) effectiveMax *= BOOST_MULT;
     const targetSp =
       MIN_SPEED +

@@ -8331,12 +8331,48 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         roll += -roll * Math.min(1, 1.2 * dt);
       }
 
+      // Always run local physics for immediate response
       const forward = new THREE.Vector3(0, 0, 1)
         .applyEuler(new THREE.Euler(pitch, yaw, roll, "YXZ"))
         .normalize();
       const speedMultiplier = fenixActive ? 1.05 : 1.0; // Fenix is 5% faster
       velocity.copy(forward).multiplyScalar(speedUnitsPerSec * speedMultiplier);
       shipPosition.addScaledVector(velocity, dt);
+
+      // In multiplayer, blend with server state for correction
+      if (MP.active && MP.selfServerState) {
+        const s = MP.selfServerState;
+        const serverPos = vec3From(s.p);
+        const serverQuat = quatFrom(s.q);
+        
+        // Calculate position error
+        const posError = shipPosition.distanceTo(serverPos);
+        
+        // Log significant errors occasionally
+        if (posError > 5 && Math.random() < 0.02) {
+          console.log(`📍 Position error: ${posError.toFixed(1)} units`);
+        }
+        
+        // If error is significant, gently correct towards server state
+        if (posError > 2) {
+          // Blend local prediction with server state
+          // Use a small factor to avoid jarring corrections
+          const correctionFactor = Math.min(0.05, dt * 2); 
+          shipPosition.lerp(serverPos, correctionFactor);
+          
+          // Also blend rotation
+          const localQuat = new THREE.Quaternion().setFromEuler(
+            new THREE.Euler(pitch, yaw, roll, "YXZ")
+          );
+          localQuat.slerp(serverQuat, correctionFactor);
+          
+          // Update yaw/pitch/roll from blended quaternion
+          const euler = new THREE.Euler().setFromQuaternion(localQuat, "YXZ");
+          yaw = euler.y;
+          pitch = euler.x;
+          roll = euler.z;
+        }
+      }
 
       ship.position.copy(shipPosition);
       ship.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, roll, "YXZ"));
@@ -9418,14 +9454,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     // Multiplayer minimap
     updateMinimap();
 
-    // Reconcile local player position with server state
-    if (MP.active) {
-      reconcileSelf(dt, false); // don't snap unless way off
-    }
-
-    // Multiplayer: render remotes with minimal interpolation buffer for better responsiveness
+    // Multiplayer: render remotes with appropriate interpolation buffer
     if (MP.active && MP.remotes.size) {
-      const renderNow = Date.now() + (MP.serverOffsetEma || 0) - 100; // reduced buffer for better sync
+      // Use 50ms buffer - enough for smooth interpolation but responsive
+      // Server sends at 30Hz (33ms), so 50ms gives us ~1.5 frames of buffer
+      const renderNow = Date.now() + (MP.serverOffsetEma || 0) - 50;
       for (const [numId, r] of MP.remotes) {
         const s = r.samples;
         
