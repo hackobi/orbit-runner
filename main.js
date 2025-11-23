@@ -5384,9 +5384,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
 
   function explodeBomb(bombPosition) {
-    // Create explosion effect
+    // Create explosion effect (reduced particles for performance)
     const explosionParticles = [];
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 15; i++) {  // Reduced from 30 to 15
       const particle = new THREE.Mesh(
         new THREE.SphereGeometry(0.5 + Math.random() * 0.5),
         new THREE.MeshBasicMaterial({ color: 0xff6600 + Math.random() * 0x009900 })
@@ -5719,7 +5719,18 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   let killMultTimer = 0; // seconds for x2 kill points
   let lastFireTimer = 0; // seconds since last shot
   let beltPassiveAccu = 0; // fractional accumulator for passive belt points
+  // Simple HUD throttling to improve performance
+  let lastHudUpdate = 0;
+  const HUD_UPDATE_INTERVAL = 100; // Update HUD at 10 FPS instead of 60 FPS
+  
   function updateHud() {
+    // Throttle HUD updates
+    const now = performance.now();
+    if (now - lastHudUpdate < HUD_UPDATE_INTERVAL) {
+      return;
+    }
+    lastHudUpdate = now;
+    
     const speedTxt = speedUnitsPerSec.toFixed(1);
     const distFromOrigin = shipPosition.length().toFixed(0);
     const distToTarget = shipPosition
@@ -7442,9 +7453,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
     damageCooldown = 0.6;
     if (health <= 0) {
-      // Ship explosion on death
+      // Ship explosion on death (reduced particles)
       const explodeAt = (hitPosition || shipPosition).clone();
-      for (let i = 0; i < 30; i++) {
+      for (let i = 0; i < 15; i++) {  // Reduced from 30 to 15
         const burst = acquireImpactMesh(0xff8855);
         burst.position.copy(explodeAt).add(randomVel(1.2));
         burst.scale.setScalar(0.9 + Math.random() * 1.2);
