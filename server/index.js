@@ -1975,8 +1975,17 @@ function eulerToQuatYXZ(pitch, yaw, roll) {
 }
 
 function forwardFromYawPitch(yaw, pitch) {
+  // Match client's THREE.Vector3(0,0,1).applyEuler(Euler(pitch,yaw,roll,"YXZ"))
+  // YXZ order: first Y (yaw), then X (pitch), then Z (roll)
+  const cy = Math.cos(yaw);
+  const sy = Math.sin(yaw);
   const cp = Math.cos(pitch);
-  return [Math.sin(yaw) * cp, Math.sin(pitch), Math.cos(yaw) * cp];
+  const sp = Math.sin(pitch);
+  
+  // Apply YXZ rotation to forward vector (0,0,1)
+  // After Y rotation: (sin(yaw), 0, cos(yaw))
+  // After X rotation: (sin(yaw)*cos(pitch), -sin(pitch), cos(yaw)*cos(pitch))
+  return [sy * cp, -sp, cy * cp];
 }
 
 function updateBots(dt) {

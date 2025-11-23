@@ -7243,20 +7243,24 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     const sp = vec3From(s.p);
     const sq = quatFrom(s.q);
     const posErr = shipPosition.distanceTo(sp);
-    if (allowSnap && posErr > 10) {
-      // snap if way off (disabled on focus)
+    
+    // Much larger threshold for snapping to avoid jarring corrections
+    if (allowSnap && posErr > 50) {
+      // Only snap if REALLY far off (50+ units)
       shipPosition.copy(sp);
       ship.position.copy(sp);
       ship.quaternion.copy(sq);
+      console.warn(`⚡ Snapped player position (error was ${posErr.toFixed(1)} units)`);
       return;
     }
-    if (posErr > 2) {
-      // gentle nudge toward server
-      const alpha = Math.min(0.5, dt * 0.8);
+    if (posErr > 5) {
+      // Very gentle correction for moderate errors
+      const alpha = Math.min(0.1, dt * 0.2); // Much slower lerp
       shipPosition.lerp(sp, alpha);
       ship.position.copy(shipPosition);
       ship.quaternion.slerp(sq, alpha);
     }
+    // If error is less than 5 units, don't correct at all to avoid jitter
   }
 
   // When tab visibility changes, perform a short soft reconciliation after focus (no hard snap)
@@ -9414,9 +9418,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     // Multiplayer minimap
     updateMinimap();
 
-    // Multiplayer: render remotes with 120ms interpolation buffer
+    // Reconcile local player position with server state
+    if (MP.active) {
+      reconcileSelf(dt, false); // don't snap unless way off
+    }
+
+    // Multiplayer: render remotes with minimal interpolation buffer for better responsiveness
     if (MP.active && MP.remotes.size) {
-      const renderNow = Date.now() + (MP.serverOffsetEma || 0) - 200; // larger buffer for stability
+      const renderNow = Date.now() + (MP.serverOffsetEma || 0) - 100; // reduced buffer for better sync
       for (const [numId, r] of MP.remotes) {
         const s = r.samples;
         
