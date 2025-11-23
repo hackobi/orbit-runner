@@ -1650,6 +1650,7 @@ const BOT_CONFIG = {
   FIRE_COOLDOWN: 1.0,
   SHOT_SPREAD: 0.15,
   HP: 100,
+  RESPAWN_TIME: 3000, // milliseconds
 };
 
 function spawnBot() {
@@ -1981,6 +1982,28 @@ function forwardFromYawPitch(yaw, pitch) {
 function updateBots(dt) {
   const nowMs = Date.now();
   
+  // Remove all bots if no players
+  if (mpRoom.players.size === 0) {
+    if (mpRoom.bots.size > 0) {
+      console.log("🤖 No players, removing all bots");
+      mpRoom.bots.clear();
+      
+      // Notify clients to remove bots
+      const removeData = JSON.stringify({
+        type: "botUpdate",
+        bots: [],
+        t: nowMs,
+      });
+      
+      mpWss.clients.forEach(c => {
+        if (c.readyState === 1) {
+          try { c.send(removeData); } catch(_) {}
+        }
+      });
+    }
+    return;
+  }
+  
   // Maintain bot population
   if (mpRoom.bots.size < BOT_CONFIG.MAX_BOTS && mpRoom.players.size > 0) {
     spawnBot();
@@ -2054,24 +2077,21 @@ function updateBots(dt) {
           bot.pos[2] + forward[2] * 1.8
         ];
         
-        // Add spread
+        // Create shot direction with spread
         const spread = BOT_CONFIG.SHOT_SPREAD;
-        const spreadX = (Math.random() - 0.5) * spread;
-        const spreadZ = (Math.random() - 0.5) * spread;
+        const yawSpread = (Math.random() - 0.5) * spread;
+        const pitchSpread = (Math.random() - 0.5) * spread;
         
+        // Apply spread to the shooting angle
+        const shotYaw = bot.yaw + yawSpread;
+        const shotPitch = pitchSpread; // Bots shoot roughly horizontally
+        
+        // Calculate shot direction from angles
         const shotDir = [
-          forward[0] + spreadX,
-          forward[1],
-          forward[2] + spreadZ
+          Math.sin(shotYaw) * Math.cos(shotPitch),
+          Math.sin(shotPitch),
+          Math.cos(shotYaw) * Math.cos(shotPitch)
         ];
-        
-        // Normalize direction
-        const dirLength = Math.sqrt(shotDir[0]*shotDir[0] + shotDir[1]*shotDir[1] + shotDir[2]*shotDir[2]);
-        if (dirLength > 0) {
-          shotDir[0] /= dirLength;
-          shotDir[1] /= dirLength;
-          shotDir[2] /= dirLength;
-        }
         
         // Broadcast bot shot to all clients
         const shotData = JSON.stringify({
@@ -2215,7 +2235,66 @@ function processHitscan(shooterId, origin, dir, shotT, fenix) {
   const maxRange = fenix ? 380 : 300; // meters
   const shooter = mpRoom.players.get(shooterId);
   if (!shooter) return;
-  // Test players only for MVP
+  
+  // Check hit on bots first
+  for (const [botId, bot] of mpRoom.bots) {
+    const dx = bot.pos[0] - origin[0];
+    const dy = bot.pos[1] - origin[1];
+    const dz = bot.pos[2] - origin[2];
+    
+    // Simple ray-sphere intersection
+    const dot = dx * dir[0] + dy * dir[1] + dz * dir[2];
+    if (dot > 0 && dot < maxRange) {
+      // Closest point on ray
+      const closestX = origin[0] + dir[0] * dot;
+      const closestY = origin[1] + dir[1] * dot;
+      const closestZ = origin[2] + dir[2] * dot;
+      
+      // Distance from closest point to bot center
+      const distX = closestX - bot.pos[0];
+      const distY = closestY - bot.pos[1];
+      const distZ = closestZ - bot.pos[2];
+      const distSq = distX * distX + distY * distY + distZ * distZ;
+      
+      const BOT_RADIUS = 2;
+      if (distSq <= BOT_RADIUS * BOT_RADIUS) {
+        // Hit!
+        const damage = fenix ? 50 : 34;
+        bot.hp -= damage;
+        console.log(`🎯 Player ${shooterId} hit bot ${botId} for ${damage} damage (${bot.hp} HP remaining)`);
+        
+        if (bot.hp <= 0) {
+          // Bot destroyed
+          console.log(`💀 Bot ${botId} destroyed by player ${shooterId}`);
+          mpRoom.bots.delete(botId);
+          
+          // Notify all clients
+          const deathData = JSON.stringify({
+            type: "botDeath",
+            botId: botId,
+            killerId: shooterId,
+          });
+          
+          mpWss.clients.forEach(c => {
+            if (c.readyState === 1) {
+              try { c.send(deathData); } catch(_) {}
+            }
+          });
+          
+          // Respawn bot after delay
+          setTimeout(() => {
+            if (mpRoom.players.size > 0 && mpRoom.bots.size < BOT_CONFIG.MAX_BOTS) {
+              spawnBot();
+            }
+          }, BOT_CONFIG.RESPAWN_TIME);
+        }
+        
+        return; // Only hit one target per shot
+      }
+    }
+  }
+  
+  // Test players
   let closest = null;
   let closestDist = Infinity;
   for (const [id, rec] of mpRoom.players) {

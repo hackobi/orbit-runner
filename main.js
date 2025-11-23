@@ -6927,13 +6927,77 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
       if (msg.type === "botSpawn") {
         console.log(`🤖 Server spawned bot: ${msg.bot.id}`);
-        // Note: Don't spawn client-side bots anymore - they're server controlled
+        
+        // Create visual representation for server bot
+        if (!MP.serverBots) MP.serverBots = new Map();
+        
+        if (!MP.serverBots.has(msg.bot.id)) {
+          const mesh = buildDefaultShip();
+          tintShip(mesh, 0xff6666); // Red tint for bots
+          mesh.position.set(msg.bot.pos[0], msg.bot.pos[1], msg.bot.pos[2]);
+          mesh.rotation.y = msg.bot.yaw;
+          mesh.scale.setScalar(15); // Bot scale
+          scene.add(mesh);
+          
+          MP.serverBots.set(msg.bot.id, {
+            id: msg.bot.id,
+            numId: msg.bot.numId,
+            mesh: mesh,
+            pos: new THREE.Vector3(msg.bot.pos[0], msg.bot.pos[1], msg.bot.pos[2]),
+            yaw: msg.bot.yaw,
+            hp: msg.bot.hp
+          });
+          
+          console.log(`🤖 Created visual for bot ${msg.bot.id}`);
+        }
         return;
       }
       if (msg.type === "botUpdate") {
-        console.log(`🤖 Bot update: ${msg.bots.length} bots`);
-        // Update server-controlled bot positions
-        // For now, this is just for synchronization - bots are visual only on client
+        // Update server-controlled bot positions and orientations
+        if (!MP.serverBots) MP.serverBots = new Map();
+        
+        // Update existing bots or create new ones
+        for (const botData of msg.bots) {
+          let bot = MP.serverBots.get(botData.id);
+          
+          if (!bot) {
+            // Bot doesn't exist yet, create it
+            const mesh = buildDefaultShip();
+            tintShip(mesh, 0xff6666);
+            mesh.scale.setScalar(15);
+            scene.add(mesh);
+            
+            bot = {
+              id: botData.id,
+              numId: botData.numId,
+              mesh: mesh,
+              pos: new THREE.Vector3(),
+              yaw: 0,
+              hp: 100
+            };
+            MP.serverBots.set(botData.id, bot);
+            console.log(`🤖 Created bot ${botData.id} from update`);
+          }
+          
+          // Update position and rotation
+          bot.pos.set(botData.pos[0], botData.pos[1], botData.pos[2]);
+          bot.yaw = botData.yaw;
+          bot.hp = botData.hp;
+          
+          // Apply to mesh
+          bot.mesh.position.copy(bot.pos);
+          bot.mesh.rotation.y = bot.yaw;
+        }
+        
+        // Remove bots that are no longer in the update
+        const serverBotIds = new Set(msg.bots.map(b => b.id));
+        for (const [botId, bot] of MP.serverBots) {
+          if (!serverBotIds.has(botId)) {
+            scene.remove(bot.mesh);
+            MP.serverBots.delete(botId);
+            console.log(`🤖 Removed bot ${botId}`);
+          }
+        }
         return;
       }
       if (msg.type === "botShoot") {
@@ -6963,6 +7027,30 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         });
         return;
       }
+      if (msg.type === "botDeath") {
+        // Handle bot death from server
+        console.log(`💀 Bot ${msg.botId} destroyed by ${msg.killerId}`);
+        
+        if (MP.serverBots && MP.serverBots.has(msg.botId)) {
+          const bot = MP.serverBots.get(msg.botId);
+          
+          // Visual effects for bot death
+          spawnImpactBurst(bot.pos);
+          
+          // Remove bot mesh
+          scene.remove(bot.mesh);
+          MP.serverBots.delete(msg.botId);
+          
+          // Add score if we killed it
+          if (msg.killerId === MP.myId) {
+            if (roundActive) {
+              score += getKillScore(330, bot.pos); // base 330 (3x asteroid)
+            }
+            killsCount++;
+          }
+        }
+        return;
+      }
     } catch (_) {}
   }
 
@@ -6990,6 +7078,16 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         dbg("ws-close");
         MP.ws = null;
         MP.active = false;
+        
+        // Clean up server bots on disconnect
+        if (MP.serverBots) {
+          for (const [botId, bot] of MP.serverBots) {
+            scene.remove(bot.mesh);
+          }
+          MP.serverBots.clear();
+          console.log("🤖 Cleaned up server bots on disconnect");
+        }
+        
         setTimeout(connectMP, 1500);
       };
       ws.onerror = (e) => {
@@ -9142,28 +9240,58 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
     }
 
-    // Player bullets -> bots
-    for (let bi = bots.length - 1; bi >= 0; bi--) {
-      const bot = bots[bi];
-      for (let i = bullets.length - 1; i >= 0; i--) {
-        const b = bullets[i];
-        if (b.owner !== "bot") {
-          // player's or fenix beams
-          if (
-            isWithinRadiusSquared(
-              b.mesh.position,
-              bot.pos,
-              bot.radius + b.radius
-            )
-          ) {
-            spawnImpactBurst(bot.pos);
-            scene.remove(bot.mesh);
-            bots.splice(bi, 1);
-            scene.remove(b.mesh);
-            bullets.splice(i, 1);
-            if (roundActive) score += getKillScore(330, bot.pos); // base 330 (3x asteroid); belt & multipliers apply
-            killsCount++;
-            break;
+    // Player bullets -> server bots (visual only, server handles actual damage)
+    if (MP.active && MP.serverBots) {
+      for (const [botId, bot] of MP.serverBots) {
+        for (let i = bullets.length - 1; i >= 0; i--) {
+          const b = bullets[i];
+          if (b.owner !== "bot" && b.kind !== "server-bot") {
+            // player's or fenix beams hitting server bots
+            const botRadius = 2; // Bot collision radius
+            if (
+              isWithinRadiusSquared(
+                b.mesh.position,
+                bot.pos,
+                botRadius + b.radius
+              )
+            ) {
+              // Visual feedback only - server handles actual damage
+              spawnImpactBurst(bot.pos);
+              scene.remove(b.mesh);
+              bullets.splice(i, 1);
+              // Note: Don't remove bot or add score - server will notify us if bot dies
+              console.log(`💥 Hit bot ${botId} (visual only, server validates)`);
+              break;
+            }
+          }
+        }
+      }
+    }
+    
+    // Legacy: Player bullets -> client-side bots (single player mode only)
+    if (!MP.active) {
+      for (let bi = bots.length - 1; bi >= 0; bi--) {
+        const bot = bots[bi];
+        for (let i = bullets.length - 1; i >= 0; i--) {
+          const b = bullets[i];
+          if (b.owner !== "bot") {
+            // player's or fenix beams
+            if (
+              isWithinRadiusSquared(
+                b.mesh.position,
+                bot.pos,
+                bot.radius + b.radius
+              )
+            ) {
+              spawnImpactBurst(bot.pos);
+              scene.remove(bot.mesh);
+              bots.splice(bi, 1);
+              scene.remove(b.mesh);
+              bullets.splice(i, 1);
+              if (roundActive) score += getKillScore(330, bot.pos); // base 330 (3x asteroid); belt & multipliers apply
+              killsCount++;
+              break;
+            }
           }
         }
       }
