@@ -16,10 +16,13 @@ const ALT_RPCS = [
   "http://mungaist.com:53550",
 ];
 const app = express();
-// Load environment variables from .env if present
+// Load environment variables from .env if present (optional)
 try {
-  require("dotenv").config();
-} catch (_) {}
+  const dotenv = require("dotenv");
+  dotenv.config();
+} catch (_) {
+  // dotenv is optional, continue without it
+}
 
 // Railway provides PORT dynamically, we must use it
 const PORT = process.env.PORT || 8787;
