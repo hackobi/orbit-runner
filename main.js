@@ -6027,9 +6027,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       // // console.log("🔍 TELEPORT: KeyG pressed in demo mode!");
       // console.log(`🩺 TELEPORT: Pre-teleport health=${health}, gameOver=${gameOver}, shield=${shield}`);
       
-      // Create close separation for PVP - random position in 3-unit radius around center  
+      // Teleport to bot spawn area for combat testing  
       const angle = Math.random() * Math.PI * 2;
-      const radius = 2 + Math.random() * 1; // 2-3 unit radius for collision testing
+      const radius = 400 + Math.random() * 400; // 400-800 unit radius where bots spawn
       const x = Math.cos(angle) * radius;
       const z = Math.sin(angle) * radius;
       
