@@ -33,8 +33,10 @@ app.use(cors({
     'http://localhost:8787', 
     'https://strong-centaur-2dae15.netlify.app',
     'https://orbit-runner-production.up.railway.app',
+    'https://terrific-warmth-production.up.railway.app', // New Railway frontend
     /\.netlify\.app$/,
-    /\.railway\.app$/
+    /\.railway\.app$/,
+    /\.vercel\.app$/  // Support Vercel deployments too
   ],
   credentials: true
 }));
