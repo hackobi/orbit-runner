@@ -202,11 +202,11 @@ async function sendTelegramMessage(text) {
   // console.log("📣 sendTelegramMessage called with text:", text?.substring(0, 100));
   try {
     // console.log("📣 Telegram config check:", {
-      hasToken: !!TELEGRAM_BOT_TOKEN,
-      tokenLength: TELEGRAM_BOT_TOKEN?.length || 0,
-      hasChatId: !!TELEGRAM_CHAT_ID,
-      chatId: TELEGRAM_CHAT_ID
-    });
+    //   hasToken: !!TELEGRAM_BOT_TOKEN,
+    //   tokenLength: TELEGRAM_BOT_TOKEN?.length || 0,
+    //   hasChatId: !!TELEGRAM_CHAT_ID,
+    //   chatId: TELEGRAM_CHAT_ID
+    // });
     
     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
       // console.log("📣 Skipping Telegram send (env not set)");
@@ -266,11 +266,11 @@ async function announcePointsRecordIfBeaten({
   previousRecord,
 }) {
   // console.log("📣 announcePointsRecordIfBeaten CALLED", {
-    playerAddress,
-    playerName,
-    points,
-    previousRecord
-  });
+  //  playerAddress,
+  //  playerName,
+  //  points,
+  //  previousRecord
+  //});
   
   try {
     // Debug: Send message for every score submission
@@ -278,20 +278,20 @@ async function announcePointsRecordIfBeaten({
     const debugText = `🎮 Someone just played Orbit Runner! ${who} scored ${points.toLocaleString()} points. Current record: ${previousRecord.toLocaleString()}`;
     
     // console.log("📣 Debug: Score submitted", {
-      player: who,
-      score: points,
-      previousRecord,
-      isNewRecord: points > previousRecord
-    });
+  //    player: who,
+  //    score: points,
+  //    previousRecord,
+  //    isNewRecord: points > previousRecord
+  //  });
     
     // Send debug message for every score
     await sendTelegramMessage(debugText);
     
     if (!(points > previousRecord)) {
       // console.log("📣 No announce: not a new record", {
-        previousRecord,
-        points,
-      });
+  //      previousRecord,
+  //      points,
+  //    });
       return;
     }
     
@@ -302,9 +302,9 @@ async function announcePointsRecordIfBeaten({
       if (uname && typeof uname === "string") {
         recordWho = uname.startsWith("@") ? uname : `@${uname}`;
         // console.log("📣 Username lookup: success", {
-          address: playerAddress,
-          username: recordWho,
-        });
+  //        address: playerAddress,
+  //        username: recordWho,
+  //      });
       } else {
         // console.log("📣 Username lookup: none", { address: playerAddress });
       }
@@ -524,14 +524,14 @@ async function payoutTreasuryAll(recipientAddress) {
 
     if (transferable < minPrize) {
       // console.log(
-        "🏦 Payout skipped: below minimum prize or reserve requirement",
-        {
-          balance: bal.toString(),
-          minReserve: minReserve.toString(),
-          gasReserve: gasReserve.toString(),
-          minPrize: minPrize.toString(),
-        }
-      );
+      //   "🏦 Payout skipped: below minimum prize or reserve requirement",
+      //   {
+      //     balance: bal.toString(),
+      //     minReserve: minReserve.toString(),
+      //     gasReserve: gasReserve.toString(),
+      //     minPrize: minPrize.toString(),
+      //   }
+      // );
       return { ok: false, reason: "below_min_prize" };
     }
 
@@ -541,9 +541,9 @@ async function payoutTreasuryAll(recipientAddress) {
         : BigInt(Number.MAX_SAFE_INTEGER)
     );
     // console.log("🏦 Preparing payout from treasury:", {
-      transferable: amountNum,
-      recipientAddress,
-    });
+  //    transferable: amountNum,
+  //    recipientAddress,
+  //  });
 
     const tx = await treasuryDemos.pay(recipientAddress, amountNum);
     const validity = await treasuryDemos.confirm(tx);
@@ -698,10 +698,10 @@ app.post("/time/verify", async (req, res) => {
   try {
     const { txHash, playerAddress, validityData } = req.body || {};
     // console.log("/time/verify", {
-      txHash,
-      playerAddress,
-      hasValidity: !!validityData,
-    });
+  //    txHash,
+  //    playerAddress,
+  //    hasValidity: !!validityData,
+  //  });
     if (!playerAddress) {
       return res
         .status(400)
@@ -869,11 +869,11 @@ app.post("/bomb/verify", async (req, res) => {
   try {
     const { txHash, playerAddress, validityData, amount: expectedAmount } = req.body || {};
     // console.log("/bomb/verify", {
-      txHash,
-      playerAddress,
-      expectedAmount,
-      hasValidity: !!validityData,
-    });
+  //    txHash,
+  //    playerAddress,
+  //    expectedAmount,
+  //    hasValidity: !!validityData,
+  //  });
 
     if (!txHash || !playerAddress || !expectedAmount) {
       return res
@@ -974,10 +974,10 @@ app.post("/pay/verify", async (req, res) => {
   try {
     const { txHash, playerAddress, validityData } = req.body || {};
     // console.log("/pay/verify", {
-      txHash,
-      playerAddress,
-      hasValidity: !!validityData,
-    });
+  //    txHash,
+  //    playerAddress,
+  //    hasValidity: !!validityData,
+  //  });
     if (!playerAddress) {
       return res
         .status(400)
@@ -1515,9 +1515,9 @@ app.post("/blockchain/submit", async (req, res) => {
             isLikelyDemosAddress(submission.uid)
           ) {
             // console.log(
-              "🏦 New record detected. Initiating payout to:",
-              submission.uid
-            );
+            //   "🏦 New record detected. Initiating payout to:",
+            //   submission.uid
+            // );
             const payoutRes = await payoutTreasuryAll(submission.uid);
             if (payoutRes?.ok) {
               // console.log("🏦 Payout success:", payoutRes.txHash);
