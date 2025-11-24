@@ -4,3 +4,28 @@ dist/
 npm-debug.log*
 .env
 server/leaderboards.json
+
+# Test files
+test-*.js
+test-*.md
+*-test.js
+debug-*.js
+*.test.js
+
+# Log files
+*.log
+server.log
+server_*.log
+final_*.log
+
+# Screenshots
+screenshot_*.png
+*.png
+
+# Temporary and backup files
+*-fixed.log
+*-test.log
+server-fixed.js
+server-simple.js
+server-minimal.js
+server-working.js
