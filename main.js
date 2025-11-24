@@ -3159,15 +3159,15 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
               walletAddress
             );
             updateConnectedWallet(walletAddress, null);
-            // Fetch actual balance
-            fetchDemosBalance(walletAddress, provider).then(
-              (balance) => {
-                updateConnectedWallet(walletAddress, balance);
-              }
-            );
+            // Skip balance fetch for older wallets to avoid crashes
+            // fetchDemosBalance(walletAddress, provider).then(
+            //   (balance) => {
+            //     updateConnectedWallet(walletAddress, balance);
+            //   }
+            // );
             updateLaunchButton();
             connectExtensionBtn.style.display = "none";
-            connectedWalletDiv.style.display = "block";
+            connectedWallet.style.display = "block";
             return;
           } else {
             console.error("Failed to connect with Demos Extension");
