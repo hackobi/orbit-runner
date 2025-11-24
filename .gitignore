@@ -4,3 +4,4 @@ dist/
 npm-debug.log*
 .env
 server/leaderboards.json
+.serena/
