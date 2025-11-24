@@ -47,7 +47,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
   };
 
-  // console.warn = function (...args) {
+  console.warn = function (...args) {
     const message = args.join(" ");
     if (!shouldSuppressError(message)) {
       originalConsoleWarn.apply(console, args);
@@ -408,16 +408,16 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         
         // Debug info
         // console.log("HUD element after toggle:", {
-          display: hudElement.style.display,
-          textContent: hudElement.textContent,
-          position: hudElement.style.position,
-          top: hudElement.style.top,
-          left: hudElement.style.left,
-          color: hudElement.style.color,
-          fontSize: hudElement.style.fontSize,
-          zIndex: hudElement.style.zIndex || 'auto',
-          bounds: hudElement.getBoundingClientRect()
-        });
+        //   display: hudElement.style.display,
+        //   textContent: hudElement.textContent,
+        //   position: hudElement.style.position,
+        //   top: hudElement.style.top,
+        //   left: hudElement.style.left,
+        //   color: hudElement.style.color,
+        //   fontSize: hudElement.style.fontSize,
+        //   zIndex: hudElement.style.zIndex || 'auto',
+        //   bounds: hudElement.getBoundingClientRect()
+        // });
       }
       
       // Update all elements with .hud-element class
