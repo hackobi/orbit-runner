@@ -401,10 +401,10 @@ async function connectToDemos() {
   if (demosConnected) return true;
 
   try {
-    // console.log("🔗 Connecting to Demos network...");
+    console.log("🔗 [connectToDemos] Starting connection to https://node2.demos.sh...");
     await demos.connect("https://node2.demos.sh");
     demosConnected = true;
-    // console.log("✅ Connected to Demos network");
+    console.log("✅ [connectToDemos] Successfully connected to Demos network");
     return true;
   } catch (error) {
     console.error("❌ Failed to connect to Demos network:", error);
@@ -1604,21 +1604,23 @@ const server = app.listen(PORT, "0.0.0.0", () => {
   }
 });
 
-// Connect to Demos after server starts (non-blocking)
-setTimeout(async () => {
+// Eagerly connect on boot to print the server wallet address
+(async () => {
   try {
+    console.log("🔗 Connecting to Demos network...");
     await connectToDemos();
+    console.log("✅ Connected to Demos network");
     const ok = await connectWallet();
     if (ok) {
       cachedServerAddress = demos.getAddress();
-      // console.log("💳 Server wallet ready. Address:", cachedServerAddress);
+      console.log("💳 Server wallet ready. Address:", cachedServerAddress);
     }
     const tOk = await connectTreasuryWallet();
     if (tOk) {
-      // console.log(
-      //   "🏦 Treasury wallet ready. Address:",
-      //   treasuryDemos.getAddress()
-      // );
+      console.log(
+        "🏦 Treasury wallet ready. Address:",
+        treasuryDemos.getAddress()
+      );
       
       // Debug: Check if treasury wallet connection interfered with server wallet
       const serverAddrAfterTreasury = demos.getAddress();
@@ -1638,7 +1640,7 @@ setTimeout(async () => {
   } catch (e) {
     console.warn("⚠️ Server wallet not connected at boot:", e?.message || e);
   }
-}, 1000); // Delay 1 second to let server start first
+})();
 
 // Leaderboards WS on root path; Multiplayer WS on /mp
 const lbWss = new WebSocketServer({ noServer: true });
