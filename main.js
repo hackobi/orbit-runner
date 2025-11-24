@@ -225,6 +225,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Welcome DOM
   const welcomeScreen = document.getElementById("welcome-screen");
   const launchBtn = document.getElementById("launch-btn");
+  const demoBtnElement = document.getElementById("demo-mode-btn");
   const howToPlayBtn = document.getElementById("how-to-play-btn");
   const testBlockchainBtn = document.getElementById("test-blockchain-btn");
   const blockchainTestResults = document.getElementById(
@@ -258,6 +259,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     // Set fake values for demo mode
     walletAddress = "DEMO_PLAYER";
     paidSessionToken = "DEMO_MODE";
+    // Update launch button state for demo mode
+    setTimeout(() => updateLaunchButton(), 100);
   }
   let detectionRetryTimer = null;
   let detectionInProgress = false;
@@ -645,7 +648,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       d.style.borderRadius = "6px";
       d.style.display = "none";
       d.textContent =
-        "M toggle mouse • W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H target • N name • J toggle HUD • T dev 500 • R restart (2 DEM)";
+        "M toggle mouse • W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H target • N name • J toggle HUD • T dev 5000 • R restart (2 DEM)";
       document.body.appendChild(d);
       return d;
     })();
@@ -3684,6 +3687,17 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     });
   }
 
+  // Demo Mode button functionality
+  if (demoBtnElement) {
+    demoBtnElement.addEventListener("click", () => {
+      // Enable demo mode by reloading with URL parameter
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.set('demo', 'true');
+      console.log("🎮 Switching to demo mode...");
+      window.location.href = currentUrl.toString();
+    });
+  }
+
   // How to Play button functionality
   if (howToPlayBtn) {
     howToPlayBtn.addEventListener("click", () => {
@@ -3871,6 +3885,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (gameInitialized) return;
     gameInitialized = true;
     
+    // Show health display when game starts
+    updateHealthDisplay();
+    
     // PRESERVE WALLET STATE DURING GAME INITIALIZATION
     const preservedWalletAddress = walletAddress;
     const preservedCurrentProvider = currentProvider;
@@ -3898,7 +3915,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     updateHud(); // Ensure HUD has content when game starts
     console.log("🚨 HUD FORCED VISIBLE ON GAME START");
     help.style.display = "block";
-    connectMP();
+    console.log("🌐 Calling connectMP()...");
+    connectMP().then(() => {
+      console.log("✅ connectMP() completed");
+    }).catch(err => {
+      console.error("❌ connectMP() failed:", err);
+    });
     // Hide leaderboard overlay by default (user can toggle with L key)
     ensureLbOverlay().style.display = "none";
     renderLb();
@@ -4088,13 +4110,101 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   let gameOver = false;
   let damageCooldown = 0; // sec i‑frames after a hit
   let fenixActive = false;
+  
+  // Demo mode teleport state
+  let pendingTeleport = null;
+  let graceStartTime = null; // Track grace period start time
+  
+  // Create health display HUD
+  function createHealthDisplay() {
+    const healthBar = document.createElement('div');
+    healthBar.id = 'health-bar-container';
+    healthBar.style.position = 'fixed';
+    healthBar.style.top = '20px';
+    healthBar.style.left = '20px';
+    healthBar.style.width = '300px';
+    healthBar.style.height = '30px';
+    healthBar.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    healthBar.style.border = '2px solid #fff';
+    healthBar.style.borderRadius = '5px';
+    healthBar.style.zIndex = '1000';
+    healthBar.style.display = 'none'; // Hidden until game starts
+    
+    const healthBarFill = document.createElement('div');
+    healthBarFill.id = 'health-bar-fill';
+    healthBarFill.style.width = '100%';
+    healthBarFill.style.height = '100%';
+    healthBarFill.style.backgroundColor = '#00ff00';
+    healthBarFill.style.borderRadius = '3px';
+    healthBarFill.style.transition = 'width 0.3s, background-color 0.3s';
+    
+    const healthText = document.createElement('div');
+    healthText.id = 'health-text';
+    healthText.style.position = 'absolute';
+    healthText.style.top = '50%';
+    healthText.style.left = '50%';
+    healthText.style.transform = 'translate(-50%, -50%)';
+    healthText.style.color = '#fff';
+    healthText.style.fontFamily = 'monospace';
+    healthText.style.fontSize = '16px';
+    healthText.style.fontWeight = 'bold';
+    healthText.textContent = 'HP: 100';
+    
+    healthBar.appendChild(healthBarFill);
+    healthBar.appendChild(healthText);
+    document.body.appendChild(healthBar);
+  }
+  
+  // Update health display
+  function updateHealthDisplay() {
+    const healthBar = document.getElementById('health-bar-container');
+    const healthBarFill = document.getElementById('health-bar-fill');
+    const healthText = document.getElementById('health-text');
+    
+    if (healthBar && healthBarFill && healthText) {
+      healthBar.style.display = 'block';
+      healthBarFill.style.width = `${Math.max(0, health)}%`;
+      healthText.textContent = `HP: ${Math.round(health)}`;
+      
+      // Change color based on health level
+      if (health > 60) {
+        healthBarFill.style.backgroundColor = '#00ff00'; // Green
+      } else if (health > 30) {
+        healthBarFill.style.backgroundColor = '#ffaa00'; // Orange
+      } else {
+        healthBarFill.style.backgroundColor = '#ff0000'; // Red
+      }
+      
+      // Flash when taking damage
+      if (health < 100) {
+        healthBar.style.animation = 'flash 0.1s';
+        setTimeout(() => {
+          healthBar.style.animation = '';
+        }, 100);
+      }
+    }
+  }
+  
+  // Create the health display on startup
+  createHealthDisplay();
+  
+  // Add CSS for health bar flash animation
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes flash {
+      0% { border-color: #fff; }
+      50% { border-color: #ff0000; box-shadow: 0 0 20px #ff0000; }
+      100% { border-color: #fff; }
+    }
+  `;
+  document.head.appendChild(style);
 
   // Movement state
   let speedUnitsPerSec = 20;
   let targetSpeedUnitsPerSec = 20;
   const minSpeed = 5;
   const baseMaxSpeed = 60;
-  const DEV_TURBO_SPEED = 2000; // Increased from 500 for MP testing
+  const DEV_TURBO_SPEED = 5000; // Increased for demo mode testing
   const yawRate = 2.0; // rad/sec
   const pitchRate = 1.35; // rad/sec
   let yaw = 0,
@@ -4107,6 +4217,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   const shipPosition = new THREE.Vector3();
   const velocity = new THREE.Vector3();
+  
+  // TEMP: Expose shipPosition for debugging teleport
+  window.debugShipPosition = shipPosition;
+  
+  // TEMP: Expose health for debugging
+  window.debugHealth = () => health;
   const shipHitRadius = 1.8; // generous to make crashes easier
   const pickupHitRadius = 2.2;
 
@@ -5464,6 +5580,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   const particles = []; // { mesh, velocity, life } - for explosion effects
   const bulletGeometry = new THREE.SphereGeometry(0.25, 8, 8);
   const beamGeometry = new THREE.CylinderGeometry(0.06, 0.06, 12, 8, 1, true); // thinner Fenix beam
+  
+  // Expose for testing (after variables are defined)
+  window.health = health;
+  window.bullets = bullets;
+  window.scene = scene;
 
   // Bullet pools (player + fenix only; bots unchanged for now)
   const playerBulletPool = [];
@@ -5587,7 +5708,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       const vel = randomVel(20);
       impactParticles.push({ mesh: p, vel, life: 0.6 + Math.random() * 0.2 });
     }
-    cameraShake += 0.6;
+    // Reduced impact burst shake to minimize unwanted shooter shake
+    cameraShake += 0.2;
   }
 
   // Shield-specific explosion (green variants for pickup/shot)
@@ -5651,19 +5773,20 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         kind: "player",
       });
     }
-    cameraShake += 0.05;
+    // Remove shooter screen shake - only victim should shake
+    // cameraShake += 0.05;
     // Notify server for authoritative hitscan
     if (MP.ws && MP.ws.readyState === 1) {
       try {
-        MP.ws.send(
-          JSON.stringify({
-            type: "shoot",
-            t: Date.now(),
-            p: [tipWorld.x, tipWorld.y, tipWorld.z],
-            dir: [dir.x, dir.y, dir.z],
-            fenix: !!fenixActive,
-          })
-        );
+        const shootMsg = {
+          type: "shoot",
+          t: Date.now(),
+          p: [tipWorld.x, tipWorld.y, tipWorld.z],
+          dir: [dir.x, dir.y, dir.z],
+          fenix: !!fenixActive,
+        };
+        console.log(`📤 Sending ${fenixActive ? 'fenix' : 'bullet'} to server: pos [${tipWorld.x.toFixed(1)}, ${tipWorld.y.toFixed(1)}, ${tipWorld.z.toFixed(1)}]`);
+        MP.ws.send(JSON.stringify(shootMsg));
       } catch (_) {}
     }
   }
@@ -5883,11 +6006,48 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       devTurboActive = !devTurboActive;
       if (devTurboActive) {
         targetSpeedUnitsPerSec = DEV_TURBO_SPEED;
-        spawnCenteredTextLabel("TURBO 2000", shipPosition, 0xffee88, 2.2, 1.4);
+        spawnCenteredTextLabel("TURBO 5000", shipPosition, 0xffee88, 2.2, 1.4);
       } else {
         targetSpeedUnitsPerSec = Math.min(targetSpeedUnitsPerSec, baseMaxSpeed);
         spawnCenteredTextLabel("DEV OFF", shipPosition, 0xff8888, 2.0, 1.2);
       }
+    }
+    // Demo mode teleport for PVP testing
+    if (c === "KeyG" && isDemoMode) {
+      console.log("🔍 TELEPORT: KeyG pressed in demo mode!");
+      console.log(`🩺 TELEPORT: Pre-teleport health=${health}, gameOver=${gameOver}, shield=${shield}`);
+      
+      // Create close separation for PVP - random position in 3-unit radius around center  
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 2 + Math.random() * 1; // 2-3 unit radius for collision testing
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      
+      // Teleport to separated position for close-range PVP testing
+      shipPosition.set(x, 0, z);
+      targetSpeedUnitsPerSec = 0; // Stop movement
+      
+      // Reset health and game state for demo teleporting
+      health = 100;
+      gameOver = false;
+      shield = 0;
+      damageCooldown = 2.0; // 2-second grace period
+      
+      console.log(`🩺 TELEPORT: Post-reset health=${health}, gameOver=${gameOver}, pos=[${x.toFixed(1)}, 0, ${z.toFixed(1)}]`);
+      spawnCenteredTextLabel("TELEPORT TO COMBAT", shipPosition, 0x00ff00, 2.5, 1.8);
+      console.log(`🎯 DEMO MODE: Teleported to combat position [${x.toFixed(1)}, 0, ${z.toFixed(1)}] for PVP testing`);
+      
+      // Set teleport state to be included in next regular input message
+      pendingTeleport = {
+        pos: [shipPosition.x, shipPosition.y, shipPosition.z],
+        timestamp: Date.now()
+      };
+      
+      // Start grace period tracking
+      graceStartTime = Date.now();
+      console.log("🛡️ GRACE PERIOD: Started 5-second physics grace period");
+      
+      console.log("📡 TELEPORT: Set pending teleport state", pendingTeleport);
     }
     if (c === "KeyL") {
       input.toggleLb = true;
@@ -6172,7 +6332,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   function updateHud() {
     // Throttle HUD updates
     const now = performance.now();
-    if (now - lastHudUpdate < HUD_UPDATE_INTERVAL) {
+    if (typeof lastHudUpdate !== 'undefined' && now - lastHudUpdate < HUD_UPDATE_INTERVAL) {
       return;
     }
     lastHudUpdate = now;
@@ -6674,8 +6834,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   function createRemoteShip(numId) {
     const m = buildDefaultShip();
     m.matrixAutoUpdate = true;
-    // Make remote ships MUCH larger and more visible
-    m.scale.setScalar(15); // 15x larger than normal for visibility
+    // Use normal scale for accurate collision detection
+    m.scale.setScalar(1); // Normal size for realistic combat
     // Make them red and white for high contrast
     m.traverse((child) => {
       if (child.isMesh) {
@@ -6697,7 +6857,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     // Set initial position far but visible
     m.position.set(0, 100, 0); // Start high up so it's visible
     
-    console.log(`🏗️ Created remote ship ${numId} with 15x scale, red/white colors. Added to scene (${scene.children.length} children). Visible: ${m.visible}, Position will be set on first update.`);
+    console.log(`🏗️ Created remote ship ${numId} with normal scale, red/white colors. Added to scene (${scene.children.length} children). Visible: ${m.visible}, Position will be set on first update.`);
     MP.remotes.set(numId, {
       mesh: m,
       samples: [],
@@ -6734,6 +6894,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         const numId = dv.getUint16(off);
         off += 2;
         const t = dv.getUint32(off);
+        // Convert relative timestamp back to absolute time for consistent handling
+        const absT = t + (MP.serverStartTime || Date.now());
         off += 4;
         const p = [
           dv.getFloat32(off),
@@ -6777,7 +6939,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           r = MP.remotes.get(numId);
         }
         const MAX_BUF = 30;
-        r.samples.push({ t, p, q, v, flags });
+        r.samples.push({ t: absT, p, q, v, flags });
         if (r.samples.length > MAX_BUF) r.samples.shift();
       }
       return;
@@ -6785,6 +6947,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     // JSON control/event message
     try {
       const msg = JSON.parse(ev.data);
+      console.log(`📨 WS Message type: ${msg.type}`);
       if (msg.type === "welcome") {
         dbg("welcome", {
           you: msg.playerId,
@@ -6794,6 +6957,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         MP.active = true;
         MP.myId = msg.playerId;
         MP.worldSeed = msg.worldSeed;
+        MP.serverStartTime = Date.now() - (MP.serverOffsetEma || 0); // Initialize relative timestamp base
         // Build id->num and remote meshes
         // TEMPORARILY keeping old ships for testing
         console.log(`🔄 Reconnected - keeping ${MP.remotes.size} existing ships for testing`);
@@ -6901,12 +7065,17 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
       if (msg.type === "shoot") {
         // Handle incoming bullets from other players
-        if (msg.id === MP.myId) return; // Don't spawn our own bullets
+        console.log(`🔫 SHOOT MESSAGE RECEIVED! From: ${msg.id}, My ID: ${MP.myId}`);
+        if (msg.id === MP.myId) {
+          console.log(`⏭️ Skipping own bullet`);
+          return; // Don't spawn our own bullets
+        }
         
-        console.log(`🔫 Received ${msg.fenix ? 'fenix' : 'bullet'} from player ${msg.id}`);
+        console.log(`🔫 Spawning ${msg.fenix ? 'fenix' : 'bullet'} from player ${msg.id}`);
+        console.log(`📍 Bullet spawn: pos [${msg.p[0].toFixed(1)}, ${msg.p[1].toFixed(1)}, ${msg.p[2].toFixed(1)}], dir [${msg.dir[0].toFixed(2)}, ${msg.dir[1].toFixed(2)}, ${msg.dir[2].toFixed(2)}]`);
         
         const startPos = new THREE.Vector3(msg.p[0], msg.p[1], msg.p[2]);
-        const direction = new THREE.Vector3(msg.dir[0], msg.dir[1], msg.dir[2]);
+        const direction = new THREE.Vector3(msg.dir[0], msg.dir[1], msg.dir[2]).normalize();
         
         if (msg.fenix) {
           // Create fenix beam from remote player
@@ -6922,26 +7091,41 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           
           bullets.push({
             mesh: beam,
-            velocity: direction.multiplyScalar(FENIX_BEAM_SPEED),
-            life: FENIX_BEAM_LIFE,
+            velocity: direction.clone().multiplyScalar(FENIX_BEAM_SPEED),
+            life: FENIX_BEAM_LIFE * 1.5, // Longer life for remote fenix beams
             radius: 0.45,
             kind: "remote-fenix",
             owner: "remote",
+            shooterId: msg.id // Track who shot this beam
           });
+          console.log(`✅ Added remote fenix beam to scene, total bullets: ${bullets.length}`);
         } else {
           // Create regular bullet from remote player
           const bullet = acquirePlayerBulletMesh();
           bullet.position.copy(startPos);
+          
+          // Make remote bullets SUPER visible - use bright orange for maximum visibility
+          bullet.scale.setScalar(5); // 5x larger for much better visibility
+          bullet.material = new THREE.MeshStandardMaterial({
+            color: 0xffaa00,        // Bright orange-yellow
+            emissive: 0xffaa00,     // Self-illuminating orange
+            emissiveIntensity: 4.0, // EXTREMELY bright
+            metalness: 0.1,
+            roughness: 0.1
+          });
+          
           if (!bullet.parent) scene.add(bullet);
           
           bullets.push({
             mesh: bullet,
-            velocity: direction.multiplyScalar(DEFAULT_BULLET_SPEED),
-            life: DEFAULT_BULLET_LIFE,
-            radius: 0.25,
+            velocity: direction.clone().multiplyScalar(DEFAULT_BULLET_SPEED),
+            life: DEFAULT_BULLET_LIFE * 1.5, // Give remote bullets longer life to ensure visibility
+            radius: 0.35, // Slightly larger hit radius
             kind: "remote-player",
             owner: "remote",
+            shooterId: msg.id // Track who shot this bullet
           });
+          console.log(`✅ Added remote player bullet to scene, total bullets: ${bullets.length}`);
         }
         return;
       }
@@ -7025,7 +7209,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         console.log(`🤖 Bot ${msg.botId} shot from server`);
         
         const startPos = new THREE.Vector3(msg.p[0], msg.p[1], msg.p[2]);
-        const direction = new THREE.Vector3(msg.dir[0], msg.dir[1], msg.dir[2]);
+        const direction = new THREE.Vector3(msg.dir[0], msg.dir[1], msg.dir[2]).normalize();
         
         // Create bot bullet
         const mat = new THREE.MeshStandardMaterial({
@@ -7071,11 +7255,78 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         }
         return;
       }
+      if (msg.type === "kill-credit") {
+        // Handle kill credit from server
+        console.log(`🏆 Kill credit received: ${msg.kills} total kills`);
+        killsCount = msg.kills;
+        
+        // Show kill notification
+        spawnCenteredTextLabel("💀 KILL!", shipPosition, 0x00ff00, 2.0, 1.5);
+        return;
+      }
+      if (msg.type === "health-update") {
+        // Health update is broadcast to all - only apply if it's for us
+        if (msg.targetId !== MP.playerId) {
+          // This health update is for another player, ignore it
+          return;
+        }
+        
+        console.log(`🩹 Health update received: health=${msg.health}, damage=${msg.damage} from ${msg.attackerId}`);
+        
+        // Apply the health update (server is authoritative)
+        health = msg.health;
+        window.health = health; // Update global for testing
+        updateHealthDisplay();
+        
+        // Show damage taken if health decreased
+        if (msg.damage) {
+          spawnCenteredTextLabel(`-${msg.damage} HP`, shipPosition, 0xff0000, 1.5, 1.0);
+          cameraShake += 0.8;
+        }
+        return;
+      }
+      if (msg.type === "killed-by") {
+        // Check if this message is for us
+        if (msg.targetId && msg.targetId !== MP.playerId) {
+          return; // Message is for another player
+        }
+        // Handle being killed by another player
+        console.log(`💀 You were killed by ${msg.killerId}`);
+        
+        // Show death notification
+        spawnCenteredTextLabel(`💀 KILLED BY ${msg.killerId}`, shipPosition, 0xff0000, 2.5, 2.0);
+        return;
+      }
+      if (msg.type === "player-kill") {
+        // Handle notification of another player's kill
+        console.log(`📢 ${msg.killerId} killed ${msg.victimId}`);
+        
+        // Show kill feed notification in top right
+        const killFeedText = `${msg.killerId} ➤ ${msg.victimId}`;
+        spawnCenteredTextLabel(killFeedText, new THREE.Vector3(shipPosition.x + 50, shipPosition.y + 30, shipPosition.z), 0xffff00, 1.5, 3.0);
+        return;
+      }
     } catch (_) {}
   }
 
-  function connectMP() {
-    if (!serverAvailable || MP.ws) return;
+  async function connectMP() {
+    console.log("📡 connectMP() called, serverAvailable:", serverAvailable, "MP.ws:", !!MP.ws);
+    
+    // Wait for server detection if not yet available
+    if (!serverAvailable) {
+      console.log("⏳ Waiting for server detection...");
+      await detectServer();
+      console.log("📡 After detectServer, serverAvailable:", serverAvailable);
+    }
+    
+    if (!serverAvailable) {
+      console.log("❌ Server not available, aborting MP connection");
+      return;
+    }
+    if (MP.ws) {
+      console.log("⚠️ WebSocket already exists, aborting");
+      return;
+    }
     try {
       const httpBase =
         window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
@@ -7167,6 +7418,26 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       fire: !!input.fire,
       fenix: !!fenixActive,
     };
+    
+    // Include teleport data if pending (demo mode only)
+    if (pendingTeleport && isDemoMode) {
+      msg.demoTeleport = true;
+      msg.teleportPos = pendingTeleport.pos;
+      console.log("🎯 TELEPORT: Including teleport data in input message", pendingTeleport);
+      
+      // Send teleport data multiple times to ensure delivery (clear after 10 attempts)
+      pendingTeleport.attempts = (pendingTeleport.attempts || 0) + 1;
+      if (pendingTeleport.attempts >= 10) {
+        console.log("🎯 TELEPORT: Clearing after 10 attempts");
+        pendingTeleport = null;
+      }
+    }
+    
+    // Debug: Log message content when teleport is included
+    if (msg.demoTeleport) {
+      console.log("📡 SENDING TELEPORT MESSAGE:", JSON.stringify(msg));
+    }
+    
     try {
       MP.ws.send(JSON.stringify(msg));
     } catch (_) {}
@@ -7297,7 +7568,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
     } else {
       dbg("hidden");
-      input.fire = false;
+      // In demo mode, don't stop firing when tab loses focus (for testing)
+      if (!isDemoMode) {
+        input.fire = false;
+      }
     }
   });
   function getSessionStats() {
@@ -8243,6 +8517,53 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
     if (!gameOver) {
       if (damageCooldown > 0) damageCooldown -= dt;
+      
+      // Grace period notification (5 seconds after teleport)
+      if (graceStartTime) {
+        const graceElapsed = (Date.now() - graceStartTime) / 1000;
+        const graceRemaining = Math.max(0, 5 - graceElapsed);
+        
+        if (graceRemaining > 0) {
+          // Show grace period indicator every frame
+          const overlayElement = document.getElementById("mp-overlay");
+          if (overlayElement) {
+            // Find or create grace period indicator
+            let graceIndicator = document.getElementById("grace-indicator");
+            if (!graceIndicator) {
+              graceIndicator = document.createElement("div");
+              graceIndicator.id = "grace-indicator";
+              graceIndicator.style.cssText = `
+                position: absolute;
+                top: 150px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(255, 140, 0, 0.9);
+                color: white;
+                padding: 8px 16px;
+                border-radius: 20px;
+                font-family: 'Orbitron', monospace;
+                font-size: 14px;
+                font-weight: bold;
+                z-index: 1000;
+                border: 2px solid #ff8c00;
+                text-align: center;
+                box-shadow: 0 0 20px rgba(255, 140, 0, 0.6);
+              `;
+              overlayElement.appendChild(graceIndicator);
+            }
+            graceIndicator.textContent = `🛡️ GRACE PERIOD: ${graceRemaining.toFixed(1)}s - Physics Disabled`;
+            graceIndicator.style.display = "block";
+          }
+        } else {
+          // Grace period ended, remove indicator and clear tracking
+          const graceIndicator = document.getElementById("grace-indicator");
+          if (graceIndicator) {
+            graceIndicator.remove();
+          }
+          graceStartTime = null;
+          console.log("🛡️ GRACE PERIOD: Ended - Physics re-enabled");
+        }
+      }
       if (boostActive) {
         boostTimer -= dt;
         if (boostTimer <= 0) {
@@ -8449,8 +8770,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         }
         
         scene.remove(b.mesh);
-        if (b.kind === "player" || b.kind === "bomb") releasePlayerBulletMesh(b.mesh);
-        else if (b.kind === "fenix") releaseFenixBeamMesh(b.mesh);
+        if (b.kind === "player" || b.kind === "bomb" || b.kind === "remote-player") releasePlayerBulletMesh(b.mesh);
+        else if (b.kind === "fenix" || b.kind === "remote-fenix") releaseFenixBeamMesh(b.mesh);
         bullets.splice(i, 1);
         continue;
       }
@@ -9372,7 +9693,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           const b = bullets[i];
           if (b.kind === "player" || b.kind === "fenix") {
             // Check collision between bullet and remote player ship
-            const shipRadius = 15; // Remote ships are 15x scale, so larger hit radius
+            const shipRadius = 2; // Normal ship collision radius
             const distance = b.mesh.position.distanceTo(remote.mesh.position);
             const collisionDistance = shipRadius + b.radius;
             
@@ -9420,16 +9741,28 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
               // Send hit notification to server
               if (MP.ws && MP.ws.readyState === 1) {
                 try {
-                  MP.ws.send(JSON.stringify({
-                    type: "player-hit",
-                    targetId: numId,
-                    damage: b.kind === "fenix" ? 30 : 15,
-                    position: [remote.mesh.position.x, remote.mesh.position.y, remote.mesh.position.z]
-                  }));
+                  // Find the actual player ID from numId
+                  let targetPlayerId = null;
+                  for (const [id, nid] of MP.idToNum.entries()) {
+                    if (nid === numId) {
+                      targetPlayerId = id;
+                      break;
+                    }
+                  }
+                  
+                  if (targetPlayerId) {
+                    MP.ws.send(JSON.stringify({
+                      type: "player-hit",
+                      targetId: targetPlayerId,
+                      damage: b.kind === "fenix" ? 30 : 15,
+                      position: [remote.mesh.position.x, remote.mesh.position.y, remote.mesh.position.z]
+                    }));
+                    console.log(`🎯 HIT! Shot remote player ${targetPlayerId} with ${b.kind} bullet for ${b.kind === "fenix" ? 30 : 15} damage`);
+                  } else {
+                    console.warn(`⚠️ Could not find player ID for numId ${numId}`);
+                  }
                 } catch (_) {}
               }
-              
-              console.log(`🎯 HIT! Shot remote player ${numId} with ${b.kind} bullet for ${b.kind === "fenix" ? 30 : 15} damage`);
               break;
             }
           }
@@ -9448,7 +9781,24 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           const collisionDistance = shipRadius + b.radius;
           
           if (distance < collisionDistance) {
-            console.log(`💥 HIT BY REMOTE! Took ${b.kind === "remote-fenix" ? 30 : 15} damage from ${b.kind}`);
+            const damage = b.kind === "remote-fenix" ? 30 : 15;
+            console.log(`💥 HIT BY REMOTE! Took ${damage} damage from ${b.kind}`);
+            console.log(`🩸 Health: ${health} -> ${Math.max(0, health - damage)}`);
+            
+            // Apply damage and show damage label
+            health = Math.max(0, health - damage);
+            spawnCenteredTextLabel(`-${damage} DMG`, shipPosition, 0xff0000, 2.0, 1.5);
+            updateHealthDisplay(); // Update HUD immediately
+            
+            // Check if player was killed
+            if (health <= 0) {
+              console.log(`💀 KILLED BY REMOTE PLAYER! Health reduced to 0`);
+              gameOver = true;
+              if (roundActive) {
+                roundActive = false;
+                showGameOverRestart();
+              }
+            }
             
             // Create impact effect on local ship
             spawnImpactBurst(shipPosition, 0xff0000, 20);
@@ -9459,9 +9809,17 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             if (b.kind === "remote-player") releasePlayerBulletMesh(b.mesh);
             else if (b.kind === "remote-fenix") releaseFenixBeamMesh(b.mesh);
             bullets.splice(i, 1);
+            if (health <= 0) {
+              console.log(`💀 KILLED BY REMOTE PLAYER! Taking damage from ${b.kind}`);
+              gameOver = true;
+              // Stop the round and show end overlay
+              if (roundActive) {
+                roundActive = false;
+                showGameOverRestart();
+              }
+            }
             
-            // Optional: reduce health, show damage
-            spawnCenteredTextLabel(`-${b.kind === "remote-fenix" ? 30 : 15} DMG`, shipPosition, 0xff0000, 1.5, 1.0);
+            console.log(`💔 Health reduced to ${health}% by remote ${b.kind} bullet`);
             break;
           }
         }
@@ -9611,6 +9969,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         remotes: MP.remotes.size,
       });
     }
+    
+    // Update health display every few frames
+    if (frameCounter % 10 === 0) {
+      updateHealthDisplay();
+    }
+    
     requestAnimationFrame(animate);
     frameCounter++;
 

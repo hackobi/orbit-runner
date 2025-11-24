@@ -328,6 +328,33 @@ body::before {
   border-color: rgba(255, 255, 255, 0.15);
 }
 
+.demo-btn {
+  background: linear-gradient(135deg, var(--accent-purple), var(--accent-blue));
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-weight: 600;
+  margin-top: 16px;
+}
+
+.demo-btn:hover {
+  background: linear-gradient(135deg, #9333ea, #0066ff);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4);
+}
+
+.demo-mode-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--glass-border);
+}
+
+.demo-description {
+  font-size: 0.875rem;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 8px 0 0 0;
+  text-align: center;
+}
+
 .btn-icon {
   font-size: 1.25rem;
 }

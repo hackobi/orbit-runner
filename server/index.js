@@ -29,6 +29,7 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 app.use(cors({
   origin: [
     'http://localhost:3000',
+    'http://localhost:8000',  // Added for local testing
     'http://localhost:8787', 
     'https://strong-centaur-2dae15.netlify.app',
     'https://orbit-runner-production.up.railway.app',
@@ -1638,7 +1639,9 @@ const mpRoom = {
   players: new Map(), // id -> { id, numId, name, color, lastSeen, state, input, hp, shield, invulnUntil, history:[] }
   bots: new Map(), // botId -> { id, numId, pos: [x,y,z], yaw, pitch, roll, hp, fireCooldown, target }
   lastTick: Date.now(),
+  startTime: Date.now(), // Reference time for relative timestamps
   nextNumericId: 1,
+  demoMode: false, // Track if any players are in demo mode
 };
 
 // Bot configuration
@@ -1736,6 +1739,13 @@ mpWss.on("connection", (ws) => {
     let msg = null;
     try {
       msg = JSON.parse(String(data));
+      
+      // Debug: Log raw incoming message if it contains teleport data
+      if (String(data).includes('demoTeleport')) {
+        console.log("🔍 RAW TELEPORT MESSAGE RECEIVED:", String(data));
+        console.log("🔍 PARSED TELEPORT MESSAGE:", JSON.stringify(msg));
+      }
+      
     } catch (_) {
       return;
     }
@@ -1746,6 +1756,34 @@ mpWss.on("connection", (ws) => {
       
       // Check for demo mode bypass
       const isDemoMode = msg.demoMode === true || msg.paidToken === "DEMO_MODE";
+      
+      // Track demo mode in room
+      if (isDemoMode) {
+        mpRoom.demoMode = true;
+        console.log("🎮 Demo mode detected - bots will be disabled");
+        
+        // Remove all existing bots in demo mode
+        if (mpRoom.bots.size > 0) {
+          console.log(`🧹 Removing ${mpRoom.bots.size} existing bots for demo mode`);
+          
+          // Send bot death messages for each bot
+          for (const [botId, bot] of mpRoom.bots) {
+            const deathData = JSON.stringify({
+              type: "botDeath", 
+              botId: bot.id,
+              numId: bot.numId
+            });
+            
+            mpWss.clients.forEach(c => {
+              if (c.readyState === 1) {
+                try { c.send(deathData); } catch(_) {}
+              }
+            });
+          }
+          
+          mpRoom.bots.clear();
+        }
+      }
       
       if (!isDemoMode) {
         // Enforce paid session token for non-demo players
@@ -1867,8 +1905,41 @@ mpWss.on("connection", (ws) => {
     if (msg.type === "input") {
       const rec = mpRoom.players.get(playerId);
       if (rec) {
-        rec.input = sanitizeInput(msg, nowMs);
+        // Debug: Log ALL incoming input messages  
+        console.log(`📥 INPUT MESSAGE from ${playerId}: demoTeleport=${msg.demoTeleport}, teleportPos=${JSON.stringify(msg.teleportPos)}`);
+        console.log(`📥 FULL MESSAGE from ${playerId}:`, JSON.stringify(msg));
+        
+        // Sanitize input first (now preserves teleport fields)
+        const sanitizedInput = sanitizeInput(msg, nowMs);
+        rec.input = sanitizedInput;
         rec.lastSeen = nowMs;
+        
+        // Handle demo teleport using sanitized input
+        if (sanitizedInput.demoTeleport && sanitizedInput.teleportPos && Array.isArray(sanitizedInput.teleportPos)) {
+          console.log(`🎯 TELEPORT REQUEST: ${playerId} to [${sanitizedInput.teleportPos[0]}, ${sanitizedInput.teleportPos[1]}, ${sanitizedInput.teleportPos[2]}]`);
+          
+          // Initialize state if it doesn't exist
+          if (!rec.state) {
+            rec.state = {
+              p: [0, 0, 0],
+              q: [0, 0, 0, 1],
+              v: [0, 0, 0],
+              yaw: 0, pitch: 0, roll: 0,
+              sp: 0, t: nowMs
+            };
+          }
+          
+          // Force position update and stop all movement
+          rec.state.p = [sanitizedInput.teleportPos[0], sanitizedInput.teleportPos[1], sanitizedInput.teleportPos[2]];
+          rec.state.v = [0, 0, 0]; // Stop velocity
+          rec.state.sp = 0; // Stop speed
+          rec.state.t = nowMs;
+          
+          // Mark as teleported to prevent physics override
+          rec.teleportedAt = nowMs;
+          
+          console.log(`✅ TELEPORT APPLIED: ${playerId} state now [${rec.state.p[0]}, ${rec.state.p[1]}, ${rec.state.p[2]}]`);
+        }
       }
       return;
     }
@@ -1888,6 +1959,10 @@ mpWss.on("connection", (ws) => {
       const dir = toVec3(msg.dir);
       const fenix = !!msg.fenix;
       const shotT = clampNum(msg.t, nowMs - 500, nowMs + 100);
+      
+      console.log(`🔫 Server: Player ${playerId} shot ${fenix ? 'fenix' : 'bullet'} at [${p[0].toFixed(1)}, ${p[1].toFixed(1)}, ${p[2].toFixed(1)}]`);
+      console.log(`📡 Broadcasting to ${mpRoom.players.size - 1} other players`);
+      
       // Visuals for others
       broadcastToOthers({
         type: "shoot",
@@ -1899,6 +1974,85 @@ mpWss.on("connection", (ws) => {
       });
       // Authoritative hitscan against players
       processHitscan(playerId, p, dir, shotT, fenix);
+      return;
+    }
+
+    if (msg.type === "player-hit") {
+      // Handle player vs player damage
+      const targetId = msg.targetId;
+      const damage = clampNum(msg.damage, 1, 50); // 15 for normal bullets, 30 for fenix
+      const shooter = mpRoom.players.get(playerId);
+      const target = mpRoom.players.get(targetId);
+      
+      if (shooter && target) {
+        // Initialize health if not set
+        if (!target.health) target.health = 100;
+        if (!shooter.kills) shooter.kills = 0;
+        
+        // Apply damage
+        target.health = Math.max(0, target.health - damage);
+        
+        console.log(`🎯 PVP: ${playerId} hit ${targetId} for ${damage} damage (${target.health} HP remaining)`);
+        
+        // Send health update to the target player
+        // Find the WebSocket for the target player
+        const healthUpdateMsg = JSON.stringify({ 
+          type: "health-update", 
+          health: target.health,
+          damage: damage,
+          attackerId: playerId,
+          targetId: targetId  // Include target ID so clients can filter
+        });
+        
+        // Broadcast to all clients and let them filter by ID
+        mpWss.clients.forEach((client) => {
+          if (client.readyState === 1) {
+            try {
+              // Send to all clients - they'll filter based on their own ID
+              client.send(healthUpdateMsg);
+            } catch (_) {}
+          }
+        });
+        
+        // Check if target was killed
+        if (target.health <= 0) {
+          shooter.kills++;
+          target.health = 100; // Respawn with full health
+          console.log(`💀 PVP KILL: ${playerId} killed ${targetId} (Killer now has ${shooter.kills} kills)`);
+          
+          // Notify both players about the kill
+          send({ type: "kill-credit", kills: shooter.kills });
+          
+          // Notify the target they were killed
+          const killedByMsg = JSON.stringify({ 
+            type: "killed-by", 
+            targetId: targetId,  // Include targetId so client can filter
+            killerId: playerId, 
+            killerName: shooter.name 
+          });
+          
+          mpWss.clients.forEach((client) => {
+            if (client.readyState === 1) {
+              try {
+                client.send(killedByMsg);
+              } catch (_) {}
+            }
+          });
+          
+          // Broadcast kill event to all players
+          const killEvent = {
+            type: "player-kill",
+            killerId: playerId,
+            killerName: shooter.name,
+            victimId: targetId,
+            victimName: target.name
+          };
+          send(killEvent); // Send to killer
+          broadcastToOthers(killEvent); // Send to others
+        }
+        
+        broadcastRoomStats();
+      }
       return;
     }
 
@@ -1944,7 +2098,7 @@ function toQuat(a) {
 }
 
 function sanitizeInput(msg, nowMs) {
-  return {
+  const sanitized = {
     t: Number(msg.t) || nowMs,
     throttle: clampNum(msg.throttle, 0, 1),
     yaw: clampNum(msg.yaw, -1, 1),
@@ -1954,6 +2108,16 @@ function sanitizeInput(msg, nowMs) {
     fire: !!msg.fire,
     fenix: !!msg.fenix,
   };
+  
+  // Preserve teleport fields for demo mode
+  if (msg.demoTeleport !== undefined) {
+    sanitized.demoTeleport = !!msg.demoTeleport;
+  }
+  if (msg.teleportPos && Array.isArray(msg.teleportPos)) {
+    sanitized.teleportPos = toVec3(msg.teleportPos);
+  }
+  
+  return sanitized;
 }
 
 // Kinematic integration (minimal flight model)
@@ -2021,8 +2185,8 @@ function updateBots(dt) {
     return;
   }
   
-  // Maintain bot population
-  if (mpRoom.bots.size < BOT_CONFIG.MAX_BOTS && mpRoom.players.size > 0) {
+  // Maintain bot population (disabled in demo mode)
+  if (!mpRoom.demoMode && mpRoom.bots.size < BOT_CONFIG.MAX_BOTS && mpRoom.players.size > 0) {
     spawnBot();
   }
   
@@ -2159,7 +2323,14 @@ function updateBots(dt) {
 }
 
 function integratePlayers(dt) {
+  const nowMs = Date.now();
   for (const [id, rec] of mpRoom.players) {
+    // Skip physics for recently teleported players (5 second grace period)
+    if (rec.teleportedAt && (nowMs - rec.teleportedAt) < 5000) {
+      console.log(`⏸️  PHYSICS SKIP: ${id} teleported ${nowMs - rec.teleportedAt}ms ago, pos=[${rec.state.p[0].toFixed(1)}, ${rec.state.p[1].toFixed(1)}, ${rec.state.p[2].toFixed(1)}]`);
+      continue;
+    }
+    
     const i = rec.input;
     const s = rec.state;
     // Turn
@@ -2305,9 +2476,9 @@ function processHitscan(shooterId, origin, dir, shotT, fenix) {
             }
           });
           
-          // Respawn bot after delay
+          // Respawn bot after delay (disabled in demo mode)
           setTimeout(() => {
-            if (mpRoom.players.size > 0 && mpRoom.bots.size < BOT_CONFIG.MAX_BOTS) {
+            if (!mpRoom.demoMode && mpRoom.players.size > 0 && mpRoom.bots.size < BOT_CONFIG.MAX_BOTS) {
               spawnBot();
             }
           }, BOT_CONFIG.RESPAWN_TIME);
@@ -2405,7 +2576,9 @@ function buildStateBufferFor(center, radius, excludePlayerId) {
     const flags = s.fenix ? 1 : 0;
     buf.writeUInt16BE(rec.numId & 0xffff, off);
     off += 2;
-    buf.writeUInt32BE(Math.floor(s.t) >>> 0, off);
+    // Use relative timestamp to avoid 32-bit overflow
+    const relativeTime = (s.t - mpRoom.startTime) % 0xFFFFFFFF;
+    buf.writeUInt32BE(Math.floor(relativeTime) >>> 0, off);
     off += 4;
     off = writeF32Array(buf, off, s.p);
     off = writeF32Array(buf, off, s.q);
@@ -2456,6 +2629,14 @@ setInterval(() => {
     for (let j = i + 1; j < players.length; j++) {
       const a = players[i],
         b = players[j];
+      
+      // Skip collision damage for recently teleported players (same grace period as physics)
+      if ((a.teleportedAt && (nowMs - a.teleportedAt) < 5000) ||
+          (b.teleportedAt && (nowMs - b.teleportedAt) < 5000)) {
+        console.log(`⏸️  COLLISION SKIP: Recent teleport detected`);
+        continue;
+      }
+      
       const d2 = distanceSq(a.state.p, b.state.p);
       const rad = SHIP_RADIUS * 2;
       if (d2 <= rad * rad) {
