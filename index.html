@@ -178,8 +178,8 @@
       if (!location.hostname.match(/^(localhost|127\.0\.0\.1)/)) {
         // If deployed to same domain, use same origin for API
         if (location.hostname === "terrific-warmth-production.up.railway.app") {
-          // Backend is on same domain, just use relative path
-          window.ORBIT_RUNNER_API = "";
+          // Backend is on same domain, use full URL for WebSocket compatibility
+          window.ORBIT_RUNNER_API = "https://terrific-warmth-production.up.railway.app";
         } else {
           // Fallback to original backend URL
           window.ORBIT_RUNNER_API =
