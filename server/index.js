@@ -1791,10 +1791,18 @@ mpWss.on("connection", (ws) => {
       // Check for demo mode bypass
       const isDemoMode = msg.demoMode === true || msg.paidToken === "DEMO_MODE";
       
-      // Track demo mode in room
-      if (isDemoMode) {
+      // Only disable bots if ALL players are in demo mode
+      // If ANY player is in normal mode, keep bots active
+      if (!isDemoMode) {
+        // Normal player joined - enable bots
+        if (mpRoom.demoMode) {
+          mpRoom.demoMode = false;
+          console.log("🎮 Normal player joined - bots re-enabled");
+        }
+      } else if (mpRoom.players.size === 0) {
+        // First player joining in demo mode - disable bots
         mpRoom.demoMode = true;
-        console.log("🎮 Demo mode detected - bots will be disabled");
+        console.log("🎮 First player in demo mode - bots disabled");
         
         // Remove all existing bots in demo mode
         if (mpRoom.bots.size > 0) {
@@ -1818,6 +1826,7 @@ mpWss.on("connection", (ws) => {
           mpRoom.bots.clear();
         }
       }
+      // If demo player joins after normal players, keep bots active
       
       if (!isDemoMode) {
         // Enforce paid session token for non-demo players
