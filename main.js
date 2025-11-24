@@ -2488,8 +2488,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       console.log("✅ Using Demos extension provider (fallback mode)");
       // console.log("🔍 Provider object:", provider);
       // console.log("🔍 Provider methods:", Object.getOwnPropertyNames(provider).filter(
-        (name) => typeof provider[name] === "function"
-      ));
+      //   (name) => typeof provider[name] === "function"
+      // ));
 
       // Request wallet address from extension
       let address;
