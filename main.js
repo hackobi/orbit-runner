@@ -1477,6 +1477,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         console.log("🔐 About to request signature from wallet, message:", signedMessage);
         console.log("🔐 Provider being used:", provider);
         
+        // Ensure wallet is ready before signing (older wallets disconnect)
+        console.log("🔐 Ensuring wallet is ready before signing...");
+        await ensureWalletReady(provider);
+        
         const signRes = await safeProviderRequest(provider, "sign", [signedMessage]);
         
         console.log("✅ Signature received:", signRes);
