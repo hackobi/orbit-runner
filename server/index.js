@@ -166,7 +166,7 @@ async function getTelegramUsernameForAddress(address) {
       params: [{ method: "getWeb2Identities", params: [address] }],
     };
     let resp = await demos.rpcCall(reqWeb2, true);
-    console.log("📣 Web2 identities raw:", JSON.stringify(resp));
+    // console.log("📣 Web2 identities raw:", JSON.stringify(resp));
     let payload = resp?.response || resp?.data || resp || null;
     let web2 =
       payload?.web2 || payload?.identities?.web2 || payload?.data?.web2;
@@ -178,7 +178,7 @@ async function getTelegramUsernameForAddress(address) {
         params: [{ method: "getIdentities", params: [address] }],
       };
       resp = await demos.rpcCall(reqAll, true);
-      console.log("📣 All identities raw:", JSON.stringify(resp));
+      // console.log("📣 All identities raw:", JSON.stringify(resp));
       payload = resp?.response || resp?.data || resp || null;
       web2 = payload?.web2 || payload?.identities?.web2 || payload?.data?.web2;
     }
@@ -196,9 +196,9 @@ async function getTelegramUsernameForAddress(address) {
 }
 
 async function sendTelegramMessage(text) {
-  console.log("📣 sendTelegramMessage called with text:", text?.substring(0, 100));
+  // console.log("📣 sendTelegramMessage called with text:", text?.substring(0, 100));
   try {
-    console.log("📣 Telegram config check:", {
+    // console.log("📣 Telegram config check:", {
       hasToken: !!TELEGRAM_BOT_TOKEN,
       tokenLength: TELEGRAM_BOT_TOKEN?.length || 0,
       hasChatId: !!TELEGRAM_CHAT_ID,
@@ -206,7 +206,7 @@ async function sendTelegramMessage(text) {
     });
     
     if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
-      console.log("📣 Skipping Telegram send (env not set)");
+      // console.log("📣 Skipping Telegram send (env not set)");
       return false;
     }
     const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
@@ -262,7 +262,7 @@ async function announcePointsRecordIfBeaten({
   points,
   previousRecord,
 }) {
-  console.log("📣 announcePointsRecordIfBeaten CALLED", {
+  // console.log("📣 announcePointsRecordIfBeaten CALLED", {
     playerAddress,
     playerName,
     points,
@@ -274,7 +274,7 @@ async function announcePointsRecordIfBeaten({
     const who = playerName || "Player";
     const debugText = `🎮 Someone just played Orbit Runner! ${who} scored ${points.toLocaleString()} points. Current record: ${previousRecord.toLocaleString()}`;
     
-    console.log("📣 Debug: Score submitted", {
+    // console.log("📣 Debug: Score submitted", {
       player: who,
       score: points,
       previousRecord,
@@ -285,7 +285,7 @@ async function announcePointsRecordIfBeaten({
     await sendTelegramMessage(debugText);
     
     if (!(points > previousRecord)) {
-      console.log("📣 No announce: not a new record", {
+      // console.log("📣 No announce: not a new record", {
         previousRecord,
         points,
       });
@@ -298,18 +298,18 @@ async function announcePointsRecordIfBeaten({
       const uname = await getTelegramUsernameForAddress(playerAddress);
       if (uname && typeof uname === "string") {
         recordWho = uname.startsWith("@") ? uname : `@${uname}`;
-        console.log("📣 Username lookup: success", {
+        // console.log("📣 Username lookup: success", {
           address: playerAddress,
           username: recordWho,
         });
       } else {
-        console.log("📣 Username lookup: none", { address: playerAddress });
+        // console.log("📣 Username lookup: none", { address: playerAddress });
       }
     }
     const text = `🚀 New Orbit Runner high score! ${recordWho} set ${points.toLocaleString()} points.`;
     const ok = await sendTelegramMessage(text);
     if (ok) {
-      console.log("📣 Telegram announcement sent.");
+      // console.log("📣 Telegram announcement sent.");
     } else {
       console.error("📣 Telegram announcement FAILED to send");
     }
@@ -324,9 +324,9 @@ app.get("/health", (_req, res) => res.json({ ok: true }));
 app.get("/test-telegram", async (_req, res) => {
   try {
     const testMessage = "🤖 Bot connectivity test from Railway server";
-    console.log("📣 TEST-TELEGRAM endpoint called");
+    // console.log("📣 TEST-TELEGRAM endpoint called");
     const result = await sendTelegramMessage(testMessage);
-    console.log("📣 TEST-TELEGRAM result:", result);
+    // console.log("📣 TEST-TELEGRAM result:", result);
     res.json({ 
       ok: result, 
       hasToken: !!TELEGRAM_BOT_TOKEN,
@@ -368,7 +368,7 @@ app.post("/admin/clear-leaderboard", async (_req, res) => {
       timestamp: new Date().toISOString()
     });
     
-    console.log("🧹 Leaderboard cleared via admin endpoint");
+    // console.log("🧹 Leaderboard cleared via admin endpoint");
   } catch (error) {
     res.status(500).json({ 
       ok: false, 
@@ -398,10 +398,10 @@ async function connectToDemos() {
   if (demosConnected) return true;
 
   try {
-    console.log("🔗 Connecting to Demos network...");
+    // console.log("🔗 Connecting to Demos network...");
     await demos.connect("https://node2.demos.sh");
     demosConnected = true;
-    console.log("✅ Connected to Demos network");
+    // console.log("✅ Connected to Demos network");
     return true;
   } catch (error) {
     console.error("❌ Failed to connect to Demos network:", error);
@@ -414,7 +414,7 @@ async function connectWallet() {
   if (walletConnected) return true;
 
   try {
-    console.log("👛 Connecting server wallet for coordination...");
+    // console.log("👛 Connecting server wallet for coordination...");
 
     const envMnemonic = (process.env.DEMOS_SERVER_MNEMONIC || "").trim();
     if (envMnemonic.length === 0) {
@@ -429,7 +429,7 @@ async function connectWallet() {
 
     // Get wallet address
     const address = demos.getAddress();
-    console.log("✅ Server wallet connected. Address:", address);
+    // console.log("✅ Server wallet connected. Address:", address);
 
     return true;
   } catch (error) {
@@ -443,7 +443,7 @@ async function connectTreasuryWallet() {
   if (treasuryConnected) return true;
 
   try {
-    console.log("👛 Connecting treasury wallet...");
+    // console.log("👛 Connecting treasury wallet...");
 
     const envMnemonic = (process.env.DEMOS_TREASURY_MNEMONIC || "").trim();
     if (envMnemonic.length === 0) {
@@ -458,7 +458,7 @@ async function connectTreasuryWallet() {
     treasuryConnected = true;
 
     const address = treasuryDemos.getAddress();
-    console.log("✅ Treasury wallet connected. Address:", address);
+    // console.log("✅ Treasury wallet connected. Address:", address);
     return true;
   } catch (error) {
     console.error("❌ Failed to connect treasury wallet:", error);
@@ -483,7 +483,7 @@ async function payoutTreasuryAll(recipientAddress) {
 
     const bal = await getTreasuryBalance();
     if (bal <= 0n) {
-      console.log("🏦 Payout skipped: empty treasury");
+      // console.log("🏦 Payout skipped: empty treasury");
       return { ok: false, reason: "empty" };
     }
 
@@ -520,7 +520,7 @@ async function payoutTreasuryAll(recipientAddress) {
     const transferable = bal > headroom ? bal - headroom : 0n;
 
     if (transferable < minPrize) {
-      console.log(
+      // console.log(
         "🏦 Payout skipped: below minimum prize or reserve requirement",
         {
           balance: bal.toString(),
@@ -537,7 +537,7 @@ async function payoutTreasuryAll(recipientAddress) {
         ? transferable
         : BigInt(Number.MAX_SAFE_INTEGER)
     );
-    console.log("🏦 Preparing payout from treasury:", {
+    // console.log("🏦 Preparing payout from treasury:", {
       transferable: amountNum,
       recipientAddress,
     });
@@ -573,7 +573,7 @@ async function payoutTreasuryAll(recipientAddress) {
       if (candidate) hash = candidate;
     }
     if (!hash) throw new Error("Broadcast did not return a transaction hash");
-    console.log("✅ Payout broadcasted:", hash);
+    // console.log("✅ Payout broadcasted:", hash);
     return { ok: true, txHash: hash };
   } catch (e) {
     console.error("❌ Payout failed:", e?.message || e);
@@ -584,7 +584,7 @@ async function payoutTreasuryAll(recipientAddress) {
 // Test blockchain connection (with server wallet for coordination)
 app.post("/blockchain/test", async (req, res) => {
   try {
-    console.log("🧪 Testing blockchain connection...");
+    // console.log("🧪 Testing blockchain connection...");
 
     // Test 1: Connect to network
     const connected = await connectToDemos();
@@ -612,7 +612,7 @@ app.post("/blockchain/test", async (req, res) => {
     try {
       const testData = new Uint8Array([1, 2, 3, 4, 5]);
       const storageTx = await demos.store(testData);
-      console.log("✅ Storage transaction prepared:", storageTx);
+      // console.log("✅ Storage transaction prepared:", storageTx);
       storageSuccess = true;
     } catch (error) {
       console.error("❌ Storage transaction test failed:", error);
@@ -694,7 +694,7 @@ app.get("/pay/info", async (_req, res) => {
 app.post("/time/verify", async (req, res) => {
   try {
     const { txHash, playerAddress, validityData } = req.body || {};
-    console.log("/time/verify", {
+    // console.log("/time/verify", {
       txHash,
       playerAddress,
       hasValidity: !!validityData,
@@ -816,7 +816,7 @@ app.post("/time/verify", async (req, res) => {
     }
 
     const c = tx.content;
-    console.log("/time/verify - transaction content:", c);
+    // console.log("/time/verify - transaction content:", c);
     const isNative = c.type === "native";
     const data = Array.isArray(c.data) ? c.data : null;
     const nativeTag = data && data[0];
@@ -865,7 +865,7 @@ app.post("/time/verify", async (req, res) => {
 app.post("/bomb/verify", async (req, res) => {
   try {
     const { txHash, playerAddress, validityData, amount: expectedAmount } = req.body || {};
-    console.log("/bomb/verify", {
+    // console.log("/bomb/verify", {
       txHash,
       playerAddress,
       expectedAmount,
@@ -970,7 +970,7 @@ app.post("/bomb/verify", async (req, res) => {
 app.post("/pay/verify", async (req, res) => {
   try {
     const { txHash, playerAddress, validityData } = req.body || {};
-    console.log("/pay/verify", {
+    // console.log("/pay/verify", {
       txHash,
       playerAddress,
       hasValidity: !!validityData,
@@ -1155,7 +1155,7 @@ app.post("/blockchain/dahr", async (req, res) => {
       });
     }
 
-    console.log("🔐 Generating DAHR for:", playerAddress);
+    // console.log("🔐 Generating DAHR for:", playerAddress);
 
     // Create DAHR response
     const token = require("crypto").randomUUID();
@@ -1215,7 +1215,7 @@ app.post("/blockchain/validate", async (req, res) => {
       });
     }
 
-    console.log("🔍 Validating signed stats from:", playerAddress);
+    // console.log("🔍 Validating signed stats from:", playerAddress);
 
     // Connect to network if not already connected
     const connected = await connectToDemos();
@@ -1276,7 +1276,7 @@ app.post("/blockchain/validate", async (req, res) => {
       });
     }
 
-    console.log("✅ Stats validation passed for:", playerAddress);
+    // console.log("✅ Stats validation passed for:", playerAddress);
 
     res.json({
       ok: true,
@@ -1343,7 +1343,7 @@ app.post("/blockchain/submit", async (req, res) => {
       return res.status(429).json({ ok: false, error: "Rate limited" });
     }
 
-    console.log("📊 Preparing blockchain submission for:", playerAddress);
+    // console.log("📊 Preparing blockchain submission for:", playerAddress);
 
     // Connect to network if not already connected
     const connected = await connectToDemos();
@@ -1385,7 +1385,7 @@ app.post("/blockchain/submit", async (req, res) => {
       });
     }
 
-    console.log("✅ Signature verified, preparing data for blockchain...");
+    // console.log("✅ Signature verified, preparing data for blockchain...");
 
     // Convert data bytes back to Uint8Array for storage
     const dataUint8Array = new Uint8Array(dataBytes);
@@ -1417,7 +1417,7 @@ app.post("/blockchain/submit", async (req, res) => {
     let tx;
     try {
       tx = await demos.store(dataUint8Array);
-      console.log("✅ Prepared storage transaction");
+      // console.log("✅ Prepared storage transaction");
     } catch (e) {
       console.error("❌ Failed to build storage transaction:", e);
       return res
@@ -1459,7 +1459,7 @@ app.post("/blockchain/submit", async (req, res) => {
       if (!hash) {
         throw new Error("Broadcast did not return a transaction hash");
       }
-      console.log("✅ Broadcasted storage tx:", hash || sendRes);
+      // console.log("✅ Broadcasted storage tx:", hash || sendRes);
 
       try {
         const prevRecord =
@@ -1511,13 +1511,13 @@ app.post("/blockchain/submit", async (req, res) => {
             submission.points > prevRecord &&
             isLikelyDemosAddress(submission.uid)
           ) {
-            console.log(
+            // console.log(
               "🏦 New record detected. Initiating payout to:",
               submission.uid
             );
             const payoutRes = await payoutTreasuryAll(submission.uid);
             if (payoutRes?.ok) {
-              console.log("🏦 Payout success:", payoutRes.txHash);
+              // console.log("🏦 Payout success:", payoutRes.txHash);
               // Resolve handle if available
               let shortAddr = `${submission.uid.slice(
                 0,
@@ -1593,11 +1593,11 @@ app.post("/blockchain/submit", async (req, res) => {
 
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server listening on 0.0.0.0:${PORT}`);
-  console.log(`📍 Railway should proxy requests to this port: ${PORT}`);
+  // console.log(`📍 Railway should proxy requests to this port: ${PORT}`);
   if (process.env.PORT) {
     console.log(`✅ Using Railway-provided PORT: ${PORT}`);
   } else {
-    console.log(`⚠️ No PORT from Railway, using default: ${PORT}`);
+    // console.log(`⚠️ No PORT from Railway, using default: ${PORT}`);
   }
 });
 
@@ -1608,27 +1608,27 @@ const server = app.listen(PORT, "0.0.0.0", () => {
     const ok = await connectWallet();
     if (ok) {
       cachedServerAddress = demos.getAddress();
-      console.log("💳 Server wallet ready. Address:", cachedServerAddress);
+      // console.log("💳 Server wallet ready. Address:", cachedServerAddress);
     }
     const tOk = await connectTreasuryWallet();
     if (tOk) {
-      console.log(
+      // console.log(
         "🏦 Treasury wallet ready. Address:",
         treasuryDemos.getAddress()
       );
       
       // Debug: Check if treasury wallet connection interfered with server wallet
       const serverAddrAfterTreasury = demos.getAddress();
-      console.log("DEBUG - Server address after treasury connection:", serverAddrAfterTreasury);
-      console.log("DEBUG - Expected server address:", cachedServerAddress);
-      console.log("DEBUG - Did treasury interfere?", serverAddrAfterTreasury !== cachedServerAddress);
+      // console.log("DEBUG - Server address after treasury connection:", serverAddrAfterTreasury);
+      // console.log("DEBUG - Expected server address:", cachedServerAddress);
+      // console.log("DEBUG - Did treasury interfere?", serverAddrAfterTreasury !== cachedServerAddress);
       
       // Re-connect server wallet if treasury interfered
       if (serverAddrAfterTreasury !== cachedServerAddress) {
         const serverMnemonic = (process.env.DEMOS_SERVER_MNEMONIC || "").trim();
         if (serverMnemonic.length > 0) {
           await demos.connectWallet(serverMnemonic, { isSeed: true });
-          console.log("🔧 Server wallet restored. Address:", demos.getAddress());
+          // console.log("🔧 Server wallet restored. Address:", demos.getAddress());
         }
       }
     }
@@ -1713,7 +1713,7 @@ function spawnBot() {
   };
   
   mpRoom.bots.set(botId, bot);
-  console.log(`🤖 Spawned bot ${botId} at position ${bot.pos.join(',')}`);
+  // console.log(`🤖 Spawned bot ${botId} at position ${bot.pos.join(',')}`);
   
   // Broadcast bot spawn to all clients
   const data = JSON.stringify({
@@ -1776,8 +1776,8 @@ mpWss.on("connection", (ws) => {
       
       // Debug: Log raw incoming message if it contains teleport data
       if (String(data).includes('demoTeleport')) {
-        console.log("🔍 RAW TELEPORT MESSAGE RECEIVED:", String(data));
-        console.log("🔍 PARSED TELEPORT MESSAGE:", JSON.stringify(msg));
+        // console.log("🔍 RAW TELEPORT MESSAGE RECEIVED:", String(data));
+        // console.log("🔍 PARSED TELEPORT MESSAGE:", JSON.stringify(msg));
       }
       
     } catch (_) {
@@ -1797,16 +1797,16 @@ mpWss.on("connection", (ws) => {
         // Normal player joined - enable bots
         if (mpRoom.demoMode) {
           mpRoom.demoMode = false;
-          console.log("🎮 Normal player joined - bots re-enabled");
+          // console.log("🎮 Normal player joined - bots re-enabled");
         }
       } else if (mpRoom.players.size === 0) {
         // First player joining in demo mode - disable bots
         mpRoom.demoMode = true;
-        console.log("🎮 First player in demo mode - bots disabled");
+        // console.log("🎮 First player in demo mode - bots disabled");
         
         // Remove all existing bots in demo mode
         if (mpRoom.bots.size > 0) {
-          console.log(`🧹 Removing ${mpRoom.bots.size} existing bots for demo mode`);
+          // console.log(`🧹 Removing ${mpRoom.bots.size} existing bots for demo mode`);
           
           // Send bot death messages for each bot
           for (const [botId, bot] of mpRoom.bots) {
@@ -1834,9 +1834,9 @@ mpWss.on("connection", (ws) => {
           prunePaidSessions();
           const payToken = String(msg.paidToken || "");
           const rec = paidSessions.get(payToken);
-          console.log("🎟️ Token validation:", { payToken, found: !!rec, expired: rec ? rec.expiresAt <= Date.now() : 'N/A' });
+          // console.log("🎟️ Token validation:", { payToken, found: !!rec, expired: rec ? rec.expiresAt <= Date.now() : 'N/A' });
           if (!rec || rec.expiresAt <= Date.now()) {
-            console.log("❌ Invalid/expired token, closing connection");
+            // console.log("❌ Invalid/expired token, closing connection");
             try {
               ws.close();
             } catch (_) {}
@@ -1844,7 +1844,7 @@ mpWss.on("connection", (ws) => {
           }
           // One-time use token
           paidSessions.delete(payToken);
-          console.log("✅ Token validated, removing from session");
+          // console.log("✅ Token validated, removing from session");
         } catch (_) {
           try {
             ws.close();
@@ -1852,7 +1852,7 @@ mpWss.on("connection", (ws) => {
           return;
         }
       } else {
-        console.log("🎮 Demo mode enabled - bypassing wallet requirement");
+        // console.log("🎮 Demo mode enabled - bypassing wallet requirement");
       }
 
       const name = String(msg.name || "").slice(0, 24) || "Anon";
@@ -1958,7 +1958,7 @@ mpWss.on("connection", (ws) => {
         
         // Handle demo teleport using sanitized input
         if (sanitizedInput.demoTeleport && sanitizedInput.teleportPos && Array.isArray(sanitizedInput.teleportPos)) {
-          console.log(`🎯 TELEPORT REQUEST: ${playerId} to [${sanitizedInput.teleportPos[0]}, ${sanitizedInput.teleportPos[1]}, ${sanitizedInput.teleportPos[2]}]`);
+          // console.log(`🎯 TELEPORT REQUEST: ${playerId} to [${sanitizedInput.teleportPos[0]}, ${sanitizedInput.teleportPos[1]}, ${sanitizedInput.teleportPos[2]}]`);
           
           // Initialize state if it doesn't exist
           if (!rec.state) {
@@ -1980,7 +1980,7 @@ mpWss.on("connection", (ws) => {
           // Mark as teleported to prevent physics override
           rec.teleportedAt = nowMs;
           
-          console.log(`✅ TELEPORT APPLIED: ${playerId} state now [${rec.state.p[0]}, ${rec.state.p[1]}, ${rec.state.p[2]}]`);
+          // console.log(`✅ TELEPORT APPLIED: ${playerId} state now [${rec.state.p[0]}, ${rec.state.p[1]}, ${rec.state.p[2]}]`);
         }
       }
       return;
@@ -2002,8 +2002,8 @@ mpWss.on("connection", (ws) => {
       const fenix = !!msg.fenix;
       const shotT = clampNum(msg.t, nowMs - 500, nowMs + 100);
       
-      console.log(`🔫 Server: Player ${playerId} shot ${fenix ? 'fenix' : 'bullet'} at [${p[0].toFixed(1)}, ${p[1].toFixed(1)}, ${p[2].toFixed(1)}]`);
-      console.log(`📡 Broadcasting to ${mpRoom.players.size - 1} other players`);
+      // console.log(`🔫 Server: Player ${playerId} shot ${fenix ? 'fenix' : 'bullet'} at [${p[0].toFixed(1)}, ${p[1].toFixed(1)}, ${p[2].toFixed(1)}]`);
+      // console.log(`📡 Broadcasting to ${mpRoom.players.size - 1} other players`);
       
       // Visuals for others
       broadcastToOthers({
@@ -2060,7 +2060,7 @@ mpWss.on("connection", (ws) => {
         if (target.health <= 0) {
           shooter.kills++;
           target.health = 100; // Respawn with full health
-          console.log(`💀 PVP KILL: ${playerId} killed ${targetId} (Killer now has ${shooter.kills} kills)`);
+          // console.log(`💀 PVP KILL: ${playerId} killed ${targetId} (Killer now has ${shooter.kills} kills)`);
           
           // Notify both players about the kill
           send({ type: "kill-credit", kills: shooter.kills });
@@ -2208,7 +2208,7 @@ function updateBots(dt) {
   // Remove all bots if no players
   if (mpRoom.players.size === 0) {
     if (mpRoom.bots.size > 0) {
-      console.log("🤖 No players, removing all bots");
+      // console.log("🤖 No players, removing all bots");
       mpRoom.bots.clear();
       
       // Notify clients to remove bots
@@ -2335,7 +2335,7 @@ function updateBots(dt) {
         bot.fireCooldown = BOT_CONFIG.FIRE_COOLDOWN + Math.random() * 0.2;
         bot.lastShot = nowMs;
         
-        console.log(`🤖 Bot ${botId} shot at player at distance ${nearestDistance.toFixed(1)}`);
+        // console.log(`🤖 Bot ${botId} shot at player at distance ${nearestDistance.toFixed(1)}`);
       }
     }
   }
@@ -2369,7 +2369,7 @@ function integratePlayers(dt) {
   for (const [id, rec] of mpRoom.players) {
     // Skip physics for recently teleported players (5 second grace period)
     if (rec.teleportedAt && (nowMs - rec.teleportedAt) < 5000) {
-      console.log(`⏸️  PHYSICS SKIP: ${id} teleported ${nowMs - rec.teleportedAt}ms ago, pos=[${rec.state.p[0].toFixed(1)}, ${rec.state.p[1].toFixed(1)}, ${rec.state.p[2].toFixed(1)}]`);
+      // console.log(`⏸️  PHYSICS SKIP: ${id} teleported ${nowMs - rec.teleportedAt}ms ago, pos=[${rec.state.p[0].toFixed(1)}, ${rec.state.p[1].toFixed(1)}, ${rec.state.p[2].toFixed(1)}]`);
       continue;
     }
     
@@ -2498,11 +2498,11 @@ function processHitscan(shooterId, origin, dir, shotT, fenix) {
         // Hit!
         const damage = fenix ? 50 : 34;
         bot.hp -= damage;
-        console.log(`🎯 Player ${shooterId} hit bot ${botId} for ${damage} damage (${bot.hp} HP remaining)`);
+        // console.log(`🎯 Player ${shooterId} hit bot ${botId} for ${damage} damage (${bot.hp} HP remaining)`);
         
         if (bot.hp <= 0) {
           // Bot destroyed
-          console.log(`💀 Bot ${botId} destroyed by player ${shooterId}`);
+          // console.log(`💀 Bot ${botId} destroyed by player ${shooterId}`);
           mpRoom.bots.delete(botId);
           
           // Notify all clients
@@ -2675,7 +2675,7 @@ setInterval(() => {
       // Skip collision damage for recently teleported players (same grace period as physics)
       if ((a.teleportedAt && (nowMs - a.teleportedAt) < 5000) ||
           (b.teleportedAt && (nowMs - b.teleportedAt) < 5000)) {
-        console.log(`⏸️  COLLISION SKIP: Recent teleport detected`);
+        // console.log(`⏸️  COLLISION SKIP: Recent teleport detected`);
         continue;
       }
       

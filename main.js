@@ -6,7 +6,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 (() => {
   // Enhanced error handling for extension communication
   const originalConsoleError = console.error;
-  const originalConsoleWarn = console.warn;
+//  const originalConsoleWarn = console.warn;
   const originalConsoleLog = console.log;
 
   // Create a more sophisticated error filter
@@ -47,7 +47,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
   };
 
-  console.warn = function (...args) {
+  // console.warn = function (...args) {
     const message = args.join(" ");
     if (!shouldSuppressError(message)) {
       originalConsoleWarn.apply(console, args);
@@ -143,10 +143,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
       try {
         const result = await provider.request(normalizedRequest);
-        console.log("✅ [DEBUG] Provider request successful:", result);
+        // console.log("✅ [DEBUG] Provider request successful:", result);
         return result;
       } catch (error) {
-        console.log("⚠️ Provider request failed:", error.message);
+        // console.log("⚠️ Provider request failed:", error.message);
 
         // Try fallback formats
         const fallbackFormats = [
@@ -169,13 +169,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           try {
             // console.log("🔍 [DEBUG] Trying fallback format:", format);
             const fallbackResult = await provider.request(format);
-            console.log(
+            // console.log(
               "✅ [DEBUG] Fallback format successful:",
               fallbackResult
             );
             return fallbackResult;
           } catch (fallbackError) {
-            console.log("⚠️ Fallback format failed:", fallbackError.message);
+            // console.log("⚠️ Fallback format failed:", fallbackError.message);
             continue;
           }
         }
@@ -210,14 +210,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
     if (!hasRequestMethod && !hasOtherMethods) {
       console.error("❌ Provider has no valid communication methods");
-      console.log(
+      // console.log(
         "🔍 [DEBUG] Provider properties:",
         Object.getOwnPropertyNames(provider)
       );
       return false;
     }
 
-    console.log("✅ Provider validation passed");
+    // console.log("✅ Provider validation passed");
     return true;
   }
 
@@ -255,7 +255,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   const urlParams = new URLSearchParams(window.location.search);
   const isDemoMode = urlParams.get('demo') === 'true' || urlParams.get('test') === 'true';
   if (isDemoMode) {
-    console.log("🎮 DEMO MODE ENABLED - Bypassing wallet requirements");
+    // console.log("🎮 DEMO MODE ENABLED - Bypassing wallet requirements");
     // Set fake values for demo mode
     walletAddress = "DEMO_PLAYER";
     paidSessionToken = "DEMO_MODE";
@@ -308,14 +308,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     DBG.buf.push(rec);
     if (DBG.buf.length > 400) DBG.buf.shift();
     try {
-      console.log("[OR]", tag, rec);
+      // console.log("[OR]", tag, rec);
     } catch (_) {}
   }
   window.orDbg = {
     dump: () => {
       try {
         const s = JSON.stringify(DBG.buf, null, 2);
-        console.log(s);
+        // console.log(s);
         return s;
       } catch (e) {
         return "[]";
@@ -403,11 +403,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           hudElement.style.zIndex = "9999";
           hudElement.style.border = "2px solid cyan";
           hudElement.style.fontFamily = "monospace";
-          console.log("🚨 FORCED HUD STYLING APPLIED");
+          // console.log("🚨 FORCED HUD STYLING APPLIED");
         }
         
         // Debug info
-        console.log("HUD element after toggle:", {
+        // console.log("HUD element after toggle:", {
           display: hudElement.style.display,
           textContent: hudElement.textContent,
           position: hudElement.style.position,
@@ -426,7 +426,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         element.style.display = hudVisible ? "block" : "none";
       });
       
-      console.log("HUD visibility set to:", hudVisible);
+      // console.log("HUD visibility set to:", hudVisible);
     }
   });
   const hud =
@@ -590,7 +590,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       state.targetPosition = { x: worldX, z: worldZ };
 
       // Visual feedback
-      console.log(`🎯 Navigation target set: [${Math.round(worldX)}, ${Math.round(worldZ)}]`);
+      // console.log(`🎯 Navigation target set: [${Math.round(worldX)}, ${Math.round(worldZ)}]`);
     });
 
     // Resize functionality
@@ -936,12 +936,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           }
         }
       } catch (rpcError) {
-        console.log("RPC balance fetch failed:", rpcError);
+        // console.log("RPC balance fetch failed:", rpcError);
       }
       
       return 0;
     } catch (error) {
-      console.warn("Failed to fetch balance:", error);
+      // console.warn("Failed to fetch balance:", error);
       return 0;
     }
   }
@@ -957,7 +957,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       // Get the current provider
       const provider = getCurrentProvider();
       if (!provider) {
-        console.log("❌ No wallet provider available for social media check");
+        // console.log("❌ No wallet provider available for social media check");
         return null;
       }
 
@@ -970,14 +970,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       // Get Web2 identities (Twitter, Telegram, etc.)
       let response;
       try {
-        console.log("🚀 Making getWeb2Identities request...");
+        // console.log("🚀 Making getWeb2Identities request...");
         response = await safeProviderRequest(provider, "getWeb2Identities", []);
-        console.log("✅ getWeb2Identities request completed");
+        // console.log("✅ getWeb2Identities request completed");
       } catch (providerError) {
-        console.log("❌ getWeb2Identities request failed:", providerError);
-        console.log("❌ Error type:", typeof providerError);
-        console.log("❌ Error message:", providerError.message || 'No message');
-        console.log("❌ Error code:", providerError.code || 'No code');
+        // console.log("❌ getWeb2Identities request failed:", providerError);
+        // console.log("❌ Error type:", typeof providerError);
+        // console.log("❌ Error message:", providerError.message || 'No message');
+        // console.log("❌ Error code:", providerError.code || 'No code');
         throw providerError;
       }
       
@@ -1000,11 +1000,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         }
       } else if (response && Array.isArray(response)) {
         identities = response;
-        console.log("✅ Using direct array response:", identities);
+        // console.log("✅ Using direct array response:", identities);
       }
       
       if (identities && Array.isArray(identities)) {
-        console.log("✅ Found", identities.length, "identities:", identities);
+        // console.log("✅ Found", identities.length, "identities:", identities);
         
         // Look for Twitter or Telegram usernames
         const twitterIdentity = identities.find(identity => 
@@ -1019,16 +1019,16 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           identity.type === 'telegram'
         );
         
-        console.log("🐦 Twitter identity found:", twitterIdentity);
-        console.log("📱 Telegram identity found:", telegramIdentity);
+        // console.log("🐦 Twitter identity found:", twitterIdentity);
+        // console.log("📱 Telegram identity found:", telegramIdentity);
         
         // Prefer Twitter, fallback to Telegram
         if (twitterIdentity && twitterIdentity.username) {
-          console.log("✅ Using Twitter username:", twitterIdentity.username);
+          // console.log("✅ Using Twitter username:", twitterIdentity.username);
           return twitterIdentity.username;
         }
         if (telegramIdentity && telegramIdentity.username) {
-          console.log("✅ Using Telegram username:", telegramIdentity.username);
+          // console.log("✅ Using Telegram username:", telegramIdentity.username);
           return telegramIdentity.username;
         }
         
@@ -1038,16 +1038,16 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           // console.log("🔄 Trying alternative fields for identity:", anyIdentity);
           const altUsername = anyIdentity.handle || anyIdentity.name || anyIdentity.identifier;
           if (altUsername) {
-            console.log("✅ Using alternative field:", altUsername);
+            // console.log("✅ Using alternative field:", altUsername);
             return altUsername;
           }
         }
         
-        console.log("⚠️ No username found in any identity");
+        // console.log("⚠️ No username found in any identity");
       } else {
-        console.log("❌ No valid identities found in response");
-        console.log("❌ Raw response was:", response);
-        console.log("❌ Expected array or object with success/data structure");
+        // console.log("❌ No valid identities found in response");
+        // console.log("❌ Raw response was:", response);
+        // console.log("❌ Expected array or object with success/data structure");
         
         // Try to handle other possible response formats
         if (response && typeof response === 'object') {
@@ -1078,7 +1078,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
               // Try to find any array property in nested response
               for (const key of Object.keys(dataObj.response)) {
                 if (Array.isArray(dataObj.response[key])) {
-                  console.log(`🔄 Found array property '${key}':`, dataObj.response[key]);
+                  // console.log(`🔄 Found array property '${key}':`, dataObj.response[key]);
                   identities = dataObj.response[key];
                   break;
                 }
@@ -1112,7 +1112,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             );
             
             if (twitterIdentity && twitterIdentity.username) {
-              console.log("✅ Found Twitter username in alternative format:", twitterIdentity.username);
+              // console.log("✅ Found Twitter username in alternative format:", twitterIdentity.username);
               return twitterIdentity.username;
             }
             
@@ -1131,7 +1131,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       
       return null;
     } catch (error) {
-      console.log("❌ Error getting social media username:", error);
+      // console.log("❌ Error getting social media username:", error);
       return null;
     }
   }
@@ -1141,7 +1141,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     
     // Prevent NaN by ensuring balance is either a valid number, null, or "Loading..."
     if (balance !== null && balance !== undefined && isNaN(parseFloat(balance))) {
-      console.log("⚠️ Invalid balance detected, setting to null:", balance);
+      // console.log("⚠️ Invalid balance detected, setting to null:", balance);
       balance = null;
     }
     
@@ -1152,7 +1152,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         // console.log("🔗 updateConnectedWallet called with address:", address);
         // Try to get social media username first
         try {
-          console.log("🚀 Starting social media username lookup...");
+          // console.log("🚀 Starting social media username lookup...");
           const socialUsername = await getSocialMediaUsername();
           // console.log("📝 getSocialMediaUsername returned:", socialUsername);
           
@@ -1162,10 +1162,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           } else {
             // Fallback to truncated address
             displayText = `${address.slice(0, 6)}...${address.slice(-4)}`;
-            console.log("⚠️ No social username, using fallback:", displayText);
+            // console.log("⚠️ No social username, using fallback:", displayText);
           }
         } catch (error) {
-          console.log("❌ Could not get social media username:", error);
+          // console.log("❌ Could not get social media username:", error);
           // Fallback to truncated address
           displayText = `${address.slice(0, 6)}...${address.slice(-4)}`;
         }
@@ -1177,7 +1177,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (connectedBalance) {
       // console.log("💰 Balance debug - raw balance:", balance, "type:", typeof balance);
       const displayBalance = (balance !== null && balance !== undefined && !isNaN(balance)) ? balance : "Loading...";
-      console.log("💰 Display balance:", displayBalance);
+      // console.log("💰 Display balance:", displayBalance);
       connectedBalance.textContent = `Balance: ${displayBalance} DEMOS`;
       
       // Always fetch balance when wallet is connected
@@ -1292,31 +1292,31 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         const accounts = await safeProviderRequest(provider, "eth_accounts", []);
         if (accounts && accounts.length > 0) {
           walletAddress = accounts[0];
-          console.log("✅ Wallet connected with address:", walletAddress);
+          // console.log("✅ Wallet connected with address:", walletAddress);
           await updateConnectedWallet(walletAddress, null);
           
           // Fetch balance after successful connection
-          console.log("🚀 Starting balance fetch from ensureWalletReady...");
+          // console.log("🚀 Starting balance fetch from ensureWalletReady...");
           fetchDemosBalance(walletAddress, provider).then(async (balance) => {
-            console.log("💰 Balance fetch completed in ensureWalletReady:", balance);
+            // console.log("💰 Balance fetch completed in ensureWalletReady:", balance);
             await updateConnectedWallet(walletAddress, balance);
           }).catch((error) => {
-            console.log("❌ Balance fetch failed in ensureWalletReady:", error);
+            // console.log("❌ Balance fetch failed in ensureWalletReady:", error);
           });
           
           updateLaunchButton();
         } else {
-          console.warn("⚠️ Connection succeeded but no accounts returned");
+          // console.warn("⚠️ Connection succeeded but no accounts returned");
         }
       } catch (e) {
-        console.warn("Wallet connect attempt failed:", e);
+        // console.warn("Wallet connect attempt failed:", e);
         throw new Error("Unable to connect wallet");
       }
       return;
     }
     
     // If we have wallet address, do minimal verification without risking disconnection
-    console.log("✅ Wallet address already available, preserving connection:", walletAddress);
+    // console.log("✅ Wallet address already available, preserving connection:", walletAddress);
     
     // Optional: Light verification that doesn't risk clearing the wallet
     try {
@@ -1329,14 +1329,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           await updateConnectedWallet(currentAddress, null);
           updateLaunchButton();
         } else {
-          console.log("✅ Wallet verification confirmed address:", walletAddress);
+          // console.log("✅ Wallet verification confirmed address:", walletAddress);
         }
       } else {
-        console.warn("⚠️ Wallet verification returned empty accounts, but preserving existing address");
+        // console.warn("⚠️ Wallet verification returned empty accounts, but preserving existing address");
         // Don't clear walletAddress, keep the existing one
       }
     } catch (verifyError) {
-      console.warn("⚠️ Wallet verification failed, but preserving existing address:", verifyError.message);
+      // console.warn("⚠️ Wallet verification failed, but preserving existing address:", verifyError.message);
       // Don't clear walletAddress, provider might still work for transactions
     }
   }
@@ -1359,13 +1359,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         // Check if provider is still available
         const provider = await getDemosProvider();
         if (!provider) {
-          console.warn("⚠️ Wallet provider disappeared during gameplay");
+          // console.warn("⚠️ Wallet provider disappeared during gameplay");
           return;
         }
         
         // Every 2nd check (20 seconds), perform active keepalive
         if (walletKeepaliveCount % 2 === 0) {
-          console.log("💓 Performing wallet keepalive ping...");
+          // console.log("💓 Performing wallet keepalive ping...");
           
           try {
             // Try a lightweight operation to keep connection alive
@@ -1379,16 +1379,16 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
                 await updateConnectedWallet(currentAccount, null);
               }
             } else {
-              console.warn("⚠️ Keepalive: No accounts returned, wallet may be disconnected");
+              // console.warn("⚠️ Keepalive: No accounts returned, wallet may be disconnected");
             }
           } catch (keepaliveError) {
-            console.warn("⚠️ Wallet keepalive failed:", keepaliveError.message);
+            // console.warn("⚠️ Wallet keepalive failed:", keepaliveError.message);
             // Don't throw, just log the issue
           }
         }
         
       } catch (error) {
-        console.warn("⚠️ Error in wallet monitoring:", error);
+        // console.warn("⚠️ Error in wallet monitoring:", error);
       }
     }, 10000); // Check every 10 seconds
   }
@@ -1402,7 +1402,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
 
   async function ensurePaymentForSession() {
-    console.log("[Pay] Starting payment session with wallet:", walletAddress);
+    // console.log("[Pay] Starting payment session with wallet:", walletAddress);
     if (!walletAddress) throw new Error("Connect your wallet first");
     let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
     const infoRes = await fetch(`${apiBase}/pay/info`);
@@ -1419,24 +1419,24 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
     // Ensure wallet is ready without forcing reconnect
     await ensureWalletReady(provider);
-    console.log("[Pay] After ensureWalletReady, wallet address:", walletAddress);
+    // console.log("[Pay] After ensureWalletReady, wallet address:", walletAddress);
     
     if (!walletAddress) {
       throw new Error("Wallet address was cleared during wallet preparation");
     }
     
     // Send 2 DEM to server wallet only (server handles jackpot and gas)
-    console.log("[Pay] Sending 2 DEM to server:", serverAddress);
+    // console.log("[Pay] Sending 2 DEM to server:", serverAddress);
     const resp = await provider.request({
       method: "nativeTransfer", 
       params: [{ recipientAddress: serverAddress, amount: 2 }],
     });
     try {
-      console.log("[Pay] Dual payment response:", resp);
+      // console.log("[Pay] Dual payment response:", resp);
       const vdat = resp?.data?.validityData || resp?.validityData || null;
-      console.log("[Pay] validityData:", vdat);
+      // console.log("[Pay] validityData:", vdat);
       if (vdat && vdat.response) {
-        console.log("[Pay] validityData.response:", vdat.response);
+        // console.log("[Pay] validityData.response:", vdat.response);
       }
     } catch (_) {}
 
@@ -1448,7 +1448,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       resp?.result?.hash ||
       resp?.hash ||
       "";
-    console.log("[Pay] extracted txHash:", txHash);
+    // console.log("[Pay] extracted txHash:", txHash);
     if (!txHash) {
       throw new Error(
         "Payment failed. Please check that you have enough DEM tokens in your wallet."
@@ -1457,7 +1457,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
     // Retry verification for up to ~30s to allow propagation/confirmation
     let paid = null;
-    console.log("[Pay] Starting payment verification with:", {
+    // console.log("[Pay] Starting payment verification with:", {
       txHash,
       playerAddress: walletAddress,
       validityData: !!vdat
@@ -1499,7 +1499,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
 
   async function ensureBombPayment(demAmount) {
-    console.log("💣 Starting bomb payment with wallet state:", {
+    // console.log("💣 Starting bomb payment with wallet state:", {
       walletAddress,
       currentProvider: !!currentProvider,
       paidSessionToken: !!paidSessionToken
@@ -1517,7 +1517,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
     
     // Enhanced wallet readiness check with recovery
-    console.log("💣 Ensuring wallet is ready for bomb purchase...");
+    // console.log("💣 Ensuring wallet is ready for bomb purchase...");
     await ensureWalletReady(provider);
     
     // Re-verify wallet address after potential recovery
@@ -1535,7 +1535,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (!serverAddress) throw new Error("Server address missing");
 
     // Send DEM payment for bombs to server wallet
-    console.log(`[Bomb Purchase] Sending ${demAmount} DEM to server:`, serverAddress);
+    // console.log(`[Bomb Purchase] Sending ${demAmount} DEM to server:`, serverAddress);
     const resp = await provider.request({
       method: "nativeTransfer",
       params: [{ recipientAddress: serverAddress, amount: demAmount }],
@@ -1550,7 +1550,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       resp?.hash ||
       "";
     
-    console.log("[Bomb Purchase] extracted txHash:", txHash);
+    // console.log("[Bomb Purchase] extracted txHash:", txHash);
     if (!txHash) {
       throw new Error(
         "Payment failed. Please check that you have enough DEM tokens in your wallet."
@@ -1558,7 +1558,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
 
     // Verify payment with server using bomb-specific endpoint
-    console.log("[Bomb Purchase] Verifying payment...");
+    // console.log("[Bomb Purchase] Verifying payment...");
     let verified = false;
     
     // Try to verify for up to 10 seconds
@@ -1578,7 +1578,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         const v = await vRes.json();
         if (v?.ok) {
           verified = true;
-          console.log(`[Bomb Purchase] Payment verified: ${demAmount} DEM for bombs`);
+          // console.log(`[Bomb Purchase] Payment verified: ${demAmount} DEM for bombs`);
           break;
         }
       } else {
@@ -1600,7 +1600,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
 
   async function ensureTimeExtensionPayment() {
-    console.log("⏱️ Starting time extension payment with wallet state:", {
+    // console.log("⏱️ Starting time extension payment with wallet state:", {
       walletAddress,
       currentProvider: !!currentProvider,
       paidSessionToken: !!paidSessionToken
@@ -1627,7 +1627,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
     
     // Enhanced wallet readiness check with recovery
-    console.log("⏱️ Ensuring wallet is ready for time extension purchase...");
+    // console.log("⏱️ Ensuring wallet is ready for time extension purchase...");
     await ensureWalletReady(provider);
     
     // Re-verify wallet address after potential recovery
@@ -1636,17 +1636,17 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
     
     // Send 10 DEM to server wallet only (server handles split and gas)
-    console.log("[TimeExtension] Sending 10 DEM to server:", serverAddress);
+    // console.log("[TimeExtension] Sending 10 DEM to server:", serverAddress);
     const resp = await provider.request({
       method: "nativeTransfer", 
       params: [{ recipientAddress: serverAddress, amount: 10 }],
     });
     try {
-      console.log("[TimeExtension] nativeTransfer response:", resp);
+      // console.log("[TimeExtension] nativeTransfer response:", resp);
       const vdat = resp?.data?.validityData || resp?.validityData || null;
-      console.log("[TimeExtension] validityData:", vdat);
+      // console.log("[TimeExtension] validityData:", vdat);
       if (vdat && vdat.response) {
-        console.log("[TimeExtension] validityData.response:", vdat.response);
+        // console.log("[TimeExtension] validityData.response:", vdat.response);
       }
     } catch (_) {}
 
@@ -1658,7 +1658,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       resp?.result?.hash ||
       resp?.hash ||
       "";
-    console.log("[TimeExtension] extracted txHash:", txHash);
+    // console.log("[TimeExtension] extracted txHash:", txHash);
     if (!txHash) {
       throw new Error(
         "Payment failed. Please check that you have enough DEM tokens in your wallet."
@@ -1699,7 +1699,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   // DAHR Score Submission Implementation
   async function submitStatsToDemos() {
-    console.log("🎯 submitStatsToDemos called, walletAddress:", walletAddress);
+    // console.log("🎯 submitStatsToDemos called, walletAddress:", walletAddress);
     if (!walletAddress) {
       alert("Please connect your wallet first");
       return;
@@ -1757,8 +1757,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
     try {
       // console.log("🔍 Starting DAHR submission for Demos blockchain...");
-      console.log("📊 Game stats:", stats);
-      console.log("👛 Wallet address:", walletAddress);
+      // console.log("📊 Game stats:", stats);
+      // console.log("👛 Wallet address:", walletAddress);
 
       // Prepare game data for submission
       const scoreData = {
@@ -1780,10 +1780,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         },
       };
 
-      console.log("📦 Score data prepared:", scoreData);
+      // console.log("📦 Score data prepared:", scoreData);
 
       // Use server-side DAHR submission (no browser provider needed)
-      console.log("🔗 Using server-side DAHR submission...");
+      // console.log("🔗 Using server-side DAHR submission...");
 
       // Update UI to show DAHR progress
       if (endMsg) {
@@ -1799,7 +1799,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
 
       // Submit score through DAHR endpoint
-      console.log("📤 Submitting score via DAHR...");
+      // console.log("📤 Submitting score via DAHR...");
 
       // First get DAHR token from server
       const dahrResponse = await fetch(`${apiBase}/blockchain/dahr`, {
@@ -1818,14 +1818,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
 
       const dahrData = await dahrResponse.json();
-      console.log("🔐 DAHR token received:", dahrData);
+      // console.log("🔐 DAHR token received:", dahrData);
       const dahrToken = dahrData && dahrData.token ? dahrData.token : undefined;
 
       // Submit to blockchain using proper Demos extension patterns
-      console.log("🔗 Submitting to blockchain using Demos extension...");
+      // console.log("🔗 Submitting to blockchain using Demos extension...");
 
       try {
-        console.log("🔗 [STAGE 1] Getting Demos provider for transaction...");
+        // console.log("🔗 [STAGE 1] Getting Demos provider for transaction...");
 
         // Get provider for extension approval
         const provider = await getDemosProvider();
@@ -1835,13 +1835,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           );
         }
 
-        console.log("✅ Demos provider found");
+        // console.log("✅ Demos provider found");
         // console.log("🔍 [DEBUG] Provider type:", typeof provider);
         // console.log("🔍 [DEBUG] Provider object:", provider);
 
         if (typeof provider.request === "function") {
           // console.log("🔍 [DEBUG] Provider has request method");
-          console.log(
+          // console.log(
             "🔍 [DEBUG] Provider methods:",
             Object.getOwnPropertyNames(provider).filter(
               (name) => typeof provider[name] === "function"
@@ -1850,7 +1850,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           // Skip provider self-test to avoid extension errors on older builds
         } else {
           // console.log("🔍 [DEBUG] Provider does NOT have request method");
-          console.log(
+          // console.log(
             "🔍 [DEBUG] Available methods:",
             Object.getOwnPropertyNames(provider)
           );
@@ -1858,7 +1858,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           // Check if provider has other common methods
           ["request", "send", "sendAsync", "connect", "enable"].forEach(
             (method) => {
-              console.log(
+              // console.log(
                 `🔍 [DEBUG] Has ${method} method:`,
                 typeof provider[method] === "function"
               );
@@ -1867,7 +1867,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         }
 
         // Create a simple storage transaction using the extension
-        console.log("🎮 [STAGE 2] Creating game stats transaction...");
+        // console.log("🎮 [STAGE 2] Creating game stats transaction...");
 
         // Build the exact message the server verifies and stores
         const signedMessage = JSON.stringify({
@@ -1881,12 +1881,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
         // Follow docs API: sign(message) - wallet already connected
         let transactionResponse;
-        console.log("🔐 About to request signature from wallet, message:", signedMessage);
-        console.log("🔐 Provider being used:", provider);
+        // console.log("🔐 About to request signature from wallet, message:", signedMessage);
+        // console.log("🔐 Provider being used:", provider);
         
         const signRes = await safeProviderRequest(provider, "sign", [signedMessage]);
         
-        console.log("✅ Signature received:", signRes);
+        // console.log("✅ Signature received:", signRes);
         // Normalize signature to a 0x-hex string; server verify expects hex
         function toHexFromArray(arr) {
           try {
@@ -1925,7 +1925,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           signRes?.result?.signature ||
           "";
         if (!signature) {
-          console.warn("Wallet sign() returned unexpected shape:", signRes);
+          // console.warn("Wallet sign() returned unexpected shape:", signRes);
           try {
             const ps = await provider.request({
               method: "personal_sign",
@@ -1951,7 +1951,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           transactionResponse.hash ||
           `tx_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-        console.log("🎉 [STAGE 3] WALLET TRANSACTION COMPLETED!");
+        // console.log("🎉 [STAGE 3] WALLET TRANSACTION COMPLETED!");
         // console.log("📋 Signature/confirmation:", transactionHash);
 
         // Update UI to show wallet signature confirmation (no explorer link at this step)
@@ -1968,7 +1968,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         }
 
         // Submit signed stats to server (docs-aligned payload)
-        console.log("📤 [STAGE 4] Submitting signed stats to server...");
+        // console.log("📤 [STAGE 4] Submitting signed stats to server...");
 
         // Provide bytes for storage/processing
         const dataBytes = Array.from(new TextEncoder().encode(signedMessage));
@@ -1992,7 +1992,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         }
 
         const response = await submitResponse.json();
-        console.log("✅ [STAGE 5] DAHR submission response:", response);
+        // console.log("✅ [STAGE 5] DAHR submission response:", response);
 
         if (response && response.ok && response.txHash) {
           const txHash = response.txHash || "";
@@ -2052,7 +2052,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           roundSubmitted = true;
         }
 
-        console.log(
+        // console.log(
           response.ok
             ? "🎉 Stats successfully submitted via Demos Extension!"
             : "❌ Demos Extension submission failed"
@@ -2119,8 +2119,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
 
     try {
-      console.log("🧪 Starting blockchain connection test...");
-      console.log("👛 Wallet address:", walletAddress);
+      // console.log("🧪 Starting blockchain connection test...");
+      // console.log("👛 Wallet address:", walletAddress);
 
       // Get the Demos provider
       const demosProvider = await getDemosProvider();
@@ -2129,9 +2129,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
 
       // Test 1: Check if provider is available (already connected via extension)
-      console.log("🔗 Testing provider availability...");
+      // console.log("🔗 Testing provider availability...");
       if (demosProvider && typeof demosProvider.request === "function") {
-        console.log("✅ Provider is available and ready");
+        // console.log("✅ Provider is available and ready");
         if (blockchainTestResults) {
           blockchainTestResults.innerHTML += `
             <div style="color: #4ade80; margin-top: 4px;">✅ Network connection: Connected via extension</div>
@@ -2142,7 +2142,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
 
       // Test 2: Get wallet address using extension API
-      console.log("👛 Testing wallet access...");
+      // console.log("👛 Testing wallet access...");
       let address = walletAddress; // Use connected address as default
       try {
         // Try to get accounts using the extension API with proper format
@@ -2150,9 +2150,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         if (accounts && (Array.isArray(accounts) ? accounts[0] : accounts)) {
           address = Array.isArray(accounts) ? accounts[0] : accounts;
         }
-        console.log("✅ Wallet address retrieved:", address);
+        // console.log("✅ Wallet address retrieved:", address);
       } catch (error) {
-        console.log("ℹ️ Using connected wallet address:", address);
+        // console.log("ℹ️ Using connected wallet address:", address);
       }
       if (blockchainTestResults) {
         blockchainTestResults.innerHTML += `
@@ -2161,7 +2161,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
 
       // Test 3: Test signature capability using extension API
-      console.log("✍️ Testing signature capability...");
+      // console.log("✍️ Testing signature capability...");
       try {
         const testMessage = "Orbit Runner Blockchain Test " + Date.now();
         const signature = await tryRequest(demosProvider, "personal_sign", [
@@ -2169,14 +2169,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           address,
         ]);
         if (signature) {
-          console.log("✅ Signature created:", signature);
+          // console.log("✅ Signature created:", signature);
         } else {
-          console.log(
+          // console.log(
             "ℹ️ Signature test: User approval required or method not available"
           );
         }
       } catch (error) {
-        console.log(
+        // console.log(
           "ℹ️ Signature test requires user approval (expected):",
           error.message
         );
@@ -2189,7 +2189,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
 
       // Test 4: Note about storage transactions (browser extensions use different API)
-      console.log("💾 Storage transaction info...");
+      // console.log("💾 Storage transaction info...");
       if (blockchainTestResults) {
         blockchainTestResults.innerHTML += `
           <div style="color: #60a5fa; margin-left: 12px;">ℹ️ Storage transactions: Available via server API</div>
@@ -2200,7 +2200,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
 
       // Final success message
-      console.log("🎉 All blockchain tests passed!");
+      // console.log("🎉 All blockchain tests passed!");
 
       if (blockchainTestResults) {
         blockchainTestResults.className = "blockchain-test-results success";
@@ -2288,7 +2288,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Initialize Demos Extension-First Integration
   async function initDemosSDK() {
     try {
-      console.log("🚀 Initializing Demos Extension-First Integration...");
+      // console.log("🚀 Initializing Demos Extension-First Integration...");
 
       // Check if extension is available
       const provider = getDemosProvider();
@@ -2297,7 +2297,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         return false;
       }
 
-      console.log("✅ Demos extension provider available");
+      // console.log("✅ Demos extension provider available");
       return true;
     } catch (error) {
       console.error(
@@ -2313,14 +2313,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     try {
       // Check if Demos SDK is available
       if (window.demos && typeof window.demos.request === "function") {
-        console.log("✅ Demos SDK initialized from window.demos");
+        // console.log("✅ Demos SDK initialized from window.demos");
         return window.demos;
       }
       
       // Try alternative SDK access patterns
       if (window.DemosSDK && typeof window.DemosSDK.init === "function") {
         const sdk = await window.DemosSDK.init();
-        console.log("✅ Demos SDK initialized via DemosSDK.init()");
+        // console.log("✅ Demos SDK initialized via DemosSDK.init()");
         return sdk;
       }
       
@@ -2328,11 +2328,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       const providers = await window.detectDemosExtension();
       if (providers.length > 0) {
         const provider = providers[0].provider || providers[0];
-        console.log("✅ Demos SDK initialized from detected provider");
+        // console.log("✅ Demos SDK initialized from detected provider");
         return provider;
       }
       
-      console.log("⚠️ No Demos SDK available");
+      // console.log("⚠️ No Demos SDK available");
       return null;
     } catch (error) {
       console.error("❌ Failed to initialize Demos SDK:", error);
@@ -2343,25 +2343,25 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Connect wallet using Demos extension directly
   async function connectWalletWithSDK() {
     try {
-      console.log("🔗 Connecting wallet with Demos SDK...");
+      // console.log("🔗 Connecting wallet with Demos SDK...");
 
       // Initialize Demos SDK first (following working app patterns)
       const demos = await initializeDemosSDK();
       if (!demos) {
-        console.log(
+        // console.log(
           "⚠️ SDK not available, falling back to extension-only mode"
         );
         return connectWalletWithExtension();
       }
 
-      console.log("✅ Demos SDK initialized successfully");
+      // console.log("✅ Demos SDK initialized successfully");
 
       // Use SDK to connect to network
       try {
         await demos.connect("https://node2.demos.sh");
-        console.log("✅ Connected to Demos network via SDK");
+        // console.log("✅ Connected to Demos network via SDK");
       } catch (networkError) {
-        console.log(
+        // console.log(
           "⚠️ Network connection failed, continuing with extension-only mode:",
           networkError.message
         );
@@ -2374,9 +2374,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         throw new Error("No Demos extension provider found");
       }
 
-      console.log("✅ Using Demos extension provider");
+      // console.log("✅ Using Demos extension provider");
       // console.log("🔍 [DEBUG] Provider object:", provider);
-      console.log(
+      // console.log(
         "🔍 [DEBUG] Provider methods:",
         Object.getOwnPropertyNames(provider).filter(
           (name) => typeof provider[name] === "function"
@@ -2394,14 +2394,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             address = address[0];
           }
         } catch (error) {
-          console.log("⚠️ eth_requestAccounts failed, trying eth_accounts");
+          // console.log("⚠️ eth_requestAccounts failed, trying eth_accounts");
           try {
             address = await safeProviderRequest(provider, "eth_accounts");
             if (address && Array.isArray(address) && address.length > 0) {
               address = address[0];
             }
           } catch (error2) {
-            console.log("⚠️ eth_accounts also failed");
+            // console.log("⚠️ eth_accounts also failed");
           }
         }
       }
@@ -2423,7 +2423,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
                 break;
               }
             } catch (error) {
-              console.log(`⚠️ Method ${method} failed:`, error);
+              // console.log(`⚠️ Method ${method} failed:`, error);
             }
           }
         }
@@ -2431,7 +2431,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
       if (!address) {
         console.error("❌ Could not get address from provider");
-        console.log(
+        // console.log(
           "🔍 [DEBUG] Available provider methods:",
           Object.getOwnPropertyNames(provider).filter(
             (name) => typeof provider[name] === "function"
@@ -2446,7 +2446,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         throw new Error("No address returned from provider");
       }
 
-      console.log("✅ Wallet address received:", address);
+      // console.log("✅ Wallet address received:", address);
 
       // Set wallet address
       walletAddress = address;
@@ -2475,7 +2475,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Fallback function for extension-only mode
   async function connectWalletWithExtension() {
     try {
-      console.log(
+      // console.log(
         "🔗 Connecting wallet with Demos extension (fallback mode)..."
       );
 
@@ -2485,7 +2485,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         throw new Error("No Demos extension provider found");
       }
 
-      console.log("✅ Using Demos extension provider (fallback mode)");
+      // console.log("✅ Using Demos extension provider (fallback mode)");
       // console.log("🔍 Provider object:", provider);
       // console.log("🔍 Provider methods:", Object.getOwnPropertyNames(provider).filter(
       //   (name) => typeof provider[name] === "function"
@@ -2503,10 +2503,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           });
           if (demosAccounts && Array.isArray(demosAccounts) && demosAccounts.length > 0) {
             address = demosAccounts[0];
-            console.log("✅ Got address from demos_accounts:", address);
+            // console.log("✅ Got address from demos_accounts:", address);
           }
         } catch (error) {
-          console.log("⚠️ demos_accounts failed:", error.message);
+          // console.log("⚠️ demos_accounts failed:", error.message);
         }
         
         if (!address) {
@@ -2516,20 +2516,20 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             });
             if (accounts && Array.isArray(accounts) && accounts.length > 0) {
               address = accounts[0];
-              console.log("✅ Got address from eth_requestAccounts:", address);
+              // console.log("✅ Got address from eth_requestAccounts:", address);
             }
           } catch (error) {
-            console.log("⚠️ eth_requestAccounts failed:", error.message);
+            // console.log("⚠️ eth_requestAccounts failed:", error.message);
             try {
               const accounts = await provider.request({
                 method: "eth_accounts"
               });
               if (accounts && Array.isArray(accounts) && accounts.length > 0) {
                 address = accounts[0];
-                console.log("✅ Got address from eth_accounts:", address);
+                // console.log("✅ Got address from eth_accounts:", address);
               }
             } catch (error2) {
-              console.log("⚠️ eth_accounts also failed:", error2.message);
+              // console.log("⚠️ eth_accounts also failed:", error2.message);
             }
           }
         }
@@ -2539,9 +2539,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       if (!address && typeof provider.getAddress === "function") {
         try {
           address = await provider.getAddress();
-          console.log("✅ Got address from getAddress:", address);
+          // console.log("✅ Got address from getAddress:", address);
         } catch (error) {
-          console.log("⚠️ getAddress failed:", error.message);
+          // console.log("⚠️ getAddress failed:", error.message);
         }
       }
 
@@ -2554,11 +2554,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
               const result = await provider[method]();
               if (result && Array.isArray(result) && result.length > 0) {
                 address = result[0];
-                console.log(`✅ Got address from ${method}:`, address);
+                // console.log(`✅ Got address from ${method}:`, address);
                 break;
               }
             } catch (error) {
-              console.log(`⚠️ Method ${method} failed:`, error.message);
+              // console.log(`⚠️ Method ${method} failed:`, error.message);
             }
           }
         }
@@ -2570,19 +2570,19 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           const accounts = await provider.enable();
           if (accounts && Array.isArray(accounts) && accounts.length > 0) {
             address = accounts[0];
-            console.log("✅ Got address from enable:", address);
+            // console.log("✅ Got address from enable:", address);
           }
         } catch (error) {
-          console.log("⚠️ enable failed:", error.message);
+          // console.log("⚠️ enable failed:", error.message);
         }
       }
 
       if (!address) {
-        console.log("ℹ️ Extension method couldn't get address, this is normal - will use provider method");
+        // console.log("ℹ️ Extension method couldn't get address, this is normal - will use provider method");
         throw new Error("Extension connection method not available");
       }
 
-      console.log("✅ Wallet address received (extension-only mode):", address);
+      // console.log("✅ Wallet address received (extension-only mode):", address);
 
       // Set wallet address
       walletAddress = address;
@@ -2599,12 +2599,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
 
       // Fetch balance using extension-only method
-      console.log("🚀 Starting balance fetch...");
+      // console.log("🚀 Starting balance fetch...");
       try {
         const fetchedBalance = await fetchDemosBalanceFromExtension();
-        console.log("💰 Balance fetch completed:", fetchedBalance);
+        // console.log("💰 Balance fetch completed:", fetchedBalance);
       } catch (balanceError) {
-        console.log("⚠️ Balance fetch failed:", balanceError);
+        // console.log("⚠️ Balance fetch failed:", balanceError);
       }
 
       return address;
@@ -2618,22 +2618,22 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   async function fetchDemosBalanceFromSDK() {
     try {
       if (!walletAddress) {
-        console.log("⚠️ Cannot fetch balance: Wallet address not available");
+        // console.log("⚠️ Cannot fetch balance: Wallet address not available");
         return;
       }
 
-      console.log("💰 Fetching balance via Demos SDK for:", walletAddress);
+      // console.log("💰 Fetching balance via Demos SDK for:", walletAddress);
 
       // Try to use SDK first
       const demos = await initializeDemosSDK();
       if (demos && typeof demos.getBalance === "function") {
         try {
           const balance = await demos.getBalance(walletAddress);
-          console.log("✅ Balance fetched via SDK:", balance);
+          // console.log("✅ Balance fetched via SDK:", balance);
           await updateConnectedWallet(walletAddress, balance);
           return balance;
         } catch (sdkError) {
-          console.log(
+          // console.log(
             "⚠️ SDK balance fetch failed, falling back to extension:",
             sdkError.message
           );
@@ -2652,11 +2652,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   async function fetchDemosBalanceFromExtension() {
     try {
       if (!walletAddress) {
-        console.log("⚠️ Cannot fetch balance: Wallet address not available");
+        // console.log("⚠️ Cannot fetch balance: Wallet address not available");
         return;
       }
 
-      console.log(
+      // console.log(
         "💰 Fetching balance via Demos extension for:",
         walletAddress
       );
@@ -2664,7 +2664,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       // Get balance from extension provider
       const provider = getDemosProvider();
       if (!provider) {
-        console.log(
+        // console.log(
           "⚠️ Cannot fetch balance: Extension provider not available"
         );
         return;
@@ -2679,21 +2679,21 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             walletAddress,
             "latest",
           ]);
-          console.log("💰 Raw eth_getBalance response:", balance, "type:", typeof balance);
+          // console.log("💰 Raw eth_getBalance response:", balance, "type:", typeof balance);
           
           // Handle demos provider response wrapper
           if (balance && balance.success && balance.data) {
-            console.log("💰 Extracting balance from demos response:", balance.data);
+            // console.log("💰 Extracting balance from demos response:", balance.data);
             balance = balance.data;
             
             // Check if data has nested structure like social identities
             if (balance && typeof balance === 'object' && balance.response) {
-              console.log("💰 Found nested response in balance:", balance.response);
+              // console.log("💰 Found nested response in balance:", balance.response);
               balance = balance.response;
             }
           }
           
-          console.log("💰 Balance after extraction:", balance, "type:", typeof balance);
+          // console.log("💰 Balance after extraction:", balance, "type:", typeof balance);
           
           // Convert from hex to number if needed
           if (
@@ -2702,24 +2702,24 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             balance.startsWith("0x")
           ) {
             const convertedBalance = parseInt(balance, 16);
-            console.log("💰 Converting hex", balance, "to decimal:", convertedBalance);
+            // console.log("💰 Converting hex", balance, "to decimal:", convertedBalance);
             balance = convertedBalance.toString();
-            console.log("💰 Final converted balance:", balance);
+            // console.log("💰 Final converted balance:", balance);
           }
           
           // Ensure balance is a valid number
           if (balance !== undefined && balance !== null) {
             const numBalance = parseFloat(balance);
             if (isNaN(numBalance)) {
-              console.log("⚠️ Balance conversion resulted in NaN:", balance);
+              // console.log("⚠️ Balance conversion resulted in NaN:", balance);
               balance = null;
             } else {
               balance = numBalance.toString();
-              console.log("💰 Final validated balance:", balance);
+              // console.log("💰 Final validated balance:", balance);
             }
           }
         } catch (error) {
-          console.log("⚠️ eth_getBalance failed:", error);
+          // console.log("⚠️ eth_getBalance failed:", error);
         }
       }
 
@@ -2728,7 +2728,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         try {
           balance = await provider.getBalance(walletAddress);
         } catch (error) {
-          console.log("⚠️ getBalance failed:", error);
+          // console.log("⚠️ getBalance failed:", error);
         }
       }
 
@@ -2737,16 +2737,16 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         try {
           balance = await provider.balance(walletAddress);
         } catch (error) {
-          console.log("⚠️ balance failed:", error);
+          // console.log("⚠️ balance failed:", error);
         }
       }
 
       if (balance) {
-        console.log("✅ Balance fetched via extension:", balance);
+        // console.log("✅ Balance fetched via extension:", balance);
         await updateConnectedWallet(walletAddress, balance);
         return balance;
       } else {
-        console.log("⚠️ Could not fetch balance from extension");
+        // console.log("⚠️ Could not fetch balance from extension");
         return null;
       }
     } catch (error) {
@@ -2775,7 +2775,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         typeof window.waitForDemosExtension !== "function" &&
         attempts < maxAttempts
       ) {
-        console.log(
+        // console.log(
           `⏳ Waiting for extension detector to load... (${
             attempts + 1
           }/${maxAttempts})`
@@ -2827,7 +2827,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           });
 
         if (normalized.length > 0) {
-          console.log("✅ Request-capable Demos providers:", normalized.length);
+          // console.log("✅ Request-capable Demos providers:", normalized.length);
           // Detection only; enable connect (no auto-connect to avoid popup loops)
           setStatus("available");
           if (connectExtensionBtn) {
@@ -2839,14 +2839,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           // Store filtered providers
           window.demosProviders = normalized;
           providersDetected = true;
-          console.log("✅ Providers stored:", window.demosProviders);
+          // console.log("✅ Providers stored:", window.demosProviders);
         } else {
-          console.log("⚠️ No Demos extension providers found");
+          // console.log("⚠️ No Demos extension providers found");
           setStatus("unavailable");
           showExtensionNotDetected();
         }
       } else {
-        console.log("⚠️ Demos extension detector not loaded");
+        // console.log("⚠️ Demos extension detector not loaded");
         showExtensionNotDetected();
       }
     } catch (error) {
@@ -2962,7 +2962,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Get the connected Demos provider for blockchain operations
   async function getDemosProvider() {
     // console.log("🔍 [DEBUG] getDemosProvider called (wallet may be empty)");
-    console.log(
+    // console.log(
       "🔍 [DEBUG] window.demosProviders:",
       Array.isArray(window.demosProviders) ? window.demosProviders.length : 0,
       "providers"
@@ -2974,17 +2974,17 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         window.demosProviders.length === 0) &&
       typeof window.waitForDemosExtension === "function"
     ) {
-      console.log("⏳ No providers found, waiting for Demos extension...");
+      // console.log("⏳ No providers found, waiting for Demos extension...");
       try {
         await window.waitForDemosExtension(3, 500);
-        console.log(
+        // console.log(
           "🔍 [DEBUG] After wait, providers:",
           Array.isArray(window.demosProviders)
             ? window.demosProviders.length
             : 0
         );
       } catch (error) {
-        console.log("⚠️ Error waiting for extension:", error.message);
+        // console.log("⚠️ Error waiting for extension:", error.message);
       }
     }
 
@@ -2995,7 +2995,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       Array.isArray(window.demosProviders) &&
       window.demosProviders.length > 0
     ) {
-      console.log(
+      // console.log(
         "🔍 [DEBUG] Available providers:",
         window.demosProviders.map((p) => p.info?.name || "unknown")
       );
@@ -3011,17 +3011,17 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         demosProviderDetail &&
         validateProvider(demosProviderDetail.provider)
       ) {
-        console.log(
+        // console.log(
           "✅ Found connected Demos provider:",
           demosProviderDetail.info.name
         );
-        console.log(
+        // console.log(
           "🔍 [DEBUG] Provider object:",
           demosProviderDetail.provider
         );
         rawProvider = demosProviderDetail.provider;
       } else {
-        console.log("❌ No valid Demos provider found in connected providers");
+        // console.log("❌ No valid Demos provider found in connected providers");
       }
     }
 
@@ -3043,7 +3043,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           (!fallback.condition || fallback.condition(fallback.provider)) &&
           validateProvider(fallback.provider)
         ) {
-          console.log(`✅ Using ${fallback.name} provider`);
+          // console.log(`✅ Using ${fallback.name} provider`);
           rawProvider = fallback.provider;
           break;
         }
@@ -3051,12 +3051,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
 
     if (!rawProvider) {
-      console.log("❌ No valid Demos provider found");
+      // console.log("❌ No valid Demos provider found");
       return null;
     }
 
     // Return raw provider (0.1.2 expects plain method/params calls)
-    console.log("✅ Using raw provider for requests");
+    // console.log("✅ Using raw provider for requests");
     return rawProvider;
   }
 
@@ -3067,7 +3067,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       params = [params];
     }
 
-    console.log(
+    // console.log(
       `🔍 [DEBUG] safeProviderRequest called: method=${method}, params=`,
       params
     );
@@ -3084,10 +3084,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           };
           // console.log("🔍 [DEBUG] Trying EIP-1193 format:", request);
           const result = await provider.request(request);
-          console.log("✅ [DEBUG] EIP-1193 request successful:", result);
+          // console.log("✅ [DEBUG] EIP-1193 request successful:", result);
           return result;
         } catch (error) {
-          console.log("⚠️ EIP-1193 format failed:", error.message);
+          // console.log("⚠️ EIP-1193 format failed:", error.message);
         }
       }
 
@@ -3100,10 +3100,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           };
           // console.log("🔍 [DEBUG] Trying standard format:", request);
           const result = await provider.request(request);
-          console.log("✅ [DEBUG] Standard request successful:", result);
+          // console.log("✅ [DEBUG] Standard request successful:", result);
           return result;
         } catch (error) {
-          console.log("⚠️ Standard format failed:", error.message);
+          // console.log("⚠️ Standard format failed:", error.message);
         }
       }
 
@@ -3118,35 +3118,35 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           };
           // console.log("🔍 [DEBUG] Trying injectProviderV3 format:", request);
           const result = await provider.request(request);
-          console.log(
+          // console.log(
             "✅ [DEBUG] injectProviderV3 request successful:",
             result
           );
           return result;
         } catch (error) {
-          console.log("⚠️ injectProviderV3 format failed:", error.message);
+          // console.log("⚠️ injectProviderV3 format failed:", error.message);
         }
       }
 
       // Try direct method call format
       if (typeof provider[method] === "function") {
         try {
-          console.log(
+          // console.log(
             `🔍 [DEBUG] Trying direct method call: ${method}`,
             params
           );
           const result = await provider[method](...params);
-          console.log("✅ [DEBUG] Direct method call successful:", result);
+          // console.log("✅ [DEBUG] Direct method call successful:", result);
           return result;
         } catch (error) {
-          console.log("⚠️ Direct method call failed:", error.message);
+          // console.log("⚠️ Direct method call failed:", error.message);
         }
       }
 
       // Try legacy format with callbacks
       if (typeof provider.sendAsync === "function") {
         try {
-          console.log(`🔍 [DEBUG] Trying sendAsync for ${method}:`, params);
+          // console.log(`🔍 [DEBUG] Trying sendAsync for ${method}:`, params);
           return new Promise((resolve, reject) => {
             provider.sendAsync(
               {
@@ -3163,7 +3163,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
                   console.error("❌ sendAsync response error:", response.error);
                   reject(response.error);
                 } else {
-                  console.log(
+                  // console.log(
                     "✅ [DEBUG] sendAsync successful:",
                     response.result
                   );
@@ -3173,24 +3173,24 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             );
           });
         } catch (error) {
-          console.log("⚠️ sendAsync format failed:", error.message);
+          // console.log("⚠️ sendAsync format failed:", error.message);
         }
       }
 
       // Try legacy send method
       if (typeof provider.send === "function") {
         try {
-          console.log(`🔍 [DEBUG] Trying send method for ${method}:`, params);
+          // console.log(`🔍 [DEBUG] Trying send method for ${method}:`, params);
           const result = await provider.send({
             id: Date.now(),
             jsonrpc: "2.0",
             method: method,
             params: params,
           });
-          console.log("✅ [DEBUG] send method successful:", result);
+          // console.log("✅ [DEBUG] send method successful:", result);
           return result;
         } catch (error) {
-          console.log("⚠️ send method failed:", error.message);
+          // console.log("⚠️ send method failed:", error.message);
         }
       }
 
@@ -3220,7 +3220,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       try {
         return await window.safeProviderRequest(prov, method, params);
       } catch (error) {
-        console.log(
+        // console.log(
           "⚠️ safeProviderRequest failed, falling back to basic implementation:",
           error.message
         );
@@ -3230,13 +3230,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
     // Validate provider exists
     if (!prov || typeof prov !== "object") {
-      console.log("❌ Invalid provider in tryRequest:", prov);
+      // console.log("❌ Invalid provider in tryRequest:", prov);
       throw new Error("Invalid provider object");
     }
 
     // Check if provider has required methods
     if (!prov.request || typeof prov.request !== "function") {
-      console.log("❌ Provider does not have request method:", prov);
+      // console.log("❌ Provider does not have request method:", prov);
       throw new Error("Provider does not have request method");
     }
 
@@ -3253,7 +3253,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         // For Demos provider, try the standard format first
         return await prov.request({ method, params: params || [] });
       } catch (error) {
-        console.log(
+        // console.log(
           "⚠️ Standard format failed, trying injectProviderV3 format:",
           error.message
         );
@@ -3261,7 +3261,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           // Fallback to injectProviderV3 format
           return await prov.request({ type: method, params: params || [] });
         } catch (error2) {
-          console.log(
+          // console.log(
             "❌ injectProviderV3 format also failed:",
             error2.message
           );
@@ -3329,11 +3329,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Connect with a specific provider (robust to provider shapes and methods)
   async function connectWithProvider(providerDetail) {
     const name = providerDetail?.info?.name || "Unknown Provider";
-    console.log("🔌 Connecting with provider:", name);
+    // console.log("🔌 Connecting with provider:", name);
 
     const prov = resolveRequestProvider(providerDetail);
     if (!prov) {
-      console.warn(
+      // console.warn(
         "⚠️ No request-capable provider found in detail; aborting real connect"
       );
       if (extensionWarning) extensionWarning.style.display = "block";
@@ -3395,11 +3395,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
       if (addr) {
         walletAddress = String(addr);
-        console.log("🔗 Setting walletAddress to:", walletAddress);
+        // console.log("🔗 Setting walletAddress to:", walletAddress);
         currentProvider = providerDetail;
         await updateConnectedWallet(walletAddress, null); // Start with loading state
         updateLaunchButton();
-        console.log("✅ Connected to real Demos provider:", walletAddress);
+        // console.log("✅ Connected to real Demos provider:", walletAddress);
 
         // Fetch actual balance
         fetchDemosBalance(walletAddress, prov).then(async (balance) => {
@@ -3413,7 +3413,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
               // console.log("🔄 Accounts changed event:", accs);
               if (Array.isArray(accs) && accs[0]) {
                 // Wallet connected/account changed
-                console.log("✅ New wallet address:", accs[0]);
+                // console.log("✅ New wallet address:", accs[0]);
                 walletAddress = accs[0];
                 await updateConnectedWallet(walletAddress, null);
                 fetchDemosBalance(walletAddress, prov).then(async (balance) => {
@@ -3422,10 +3422,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
                 updateLaunchButton();
               } else {
                 // Wallet disconnected (empty accounts array)
-                console.log("🔌 Wallet disconnected via accountsChanged");
+                // console.log("🔌 Wallet disconnected via accountsChanged");
                 // Don't force disconnect - let user stay connected
                 // This prevents unwanted disconnections from extension updates
-                console.log("ℹ️ Keeping wallet connection despite accountsChanged event");
+                // console.log("ℹ️ Keeping wallet connection despite accountsChanged event");
               }
             });
         } catch (_) {}
@@ -3454,7 +3454,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             });
         } catch (_) {}
       } else {
-        console.log("ℹ️ Skipping explicit connect - accounts already available or wallet connected");
+        // console.log("ℹ️ Skipping explicit connect - accounts already available or wallet connected");
       }
       // EIP-2255 style permissions
       try {
@@ -3491,14 +3491,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
       if (addr) {
         walletAddress = String(addr);
-        console.log(
+        // console.log(
           "🔗 Setting walletAddress (after connect/poll):",
           walletAddress
         );
         currentProvider = providerDetail;
         await updateConnectedWallet(walletAddress, null); // Start with loading state
         updateLaunchButton();
-        console.log("✅ Connected after connect/poll:", walletAddress);
+        // console.log("✅ Connected after connect/poll:", walletAddress);
 
         // Fetch actual balance
         fetchDemosBalance(walletAddress, prov).then(async (balance) => {
@@ -3508,7 +3508,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         return true;
       }
 
-      console.warn("⚠️ Provider responded without accounts; show warning");
+      // console.warn("⚠️ Provider responded without accounts; show warning");
       if (extensionWarning) {
         extensionWarning.style.display = "block";
         extensionWarning.textContent =
@@ -3529,12 +3529,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Set up wallet event listeners
   if (connectExtensionBtn) {
     connectExtensionBtn.addEventListener("click", async () => {
-      console.log("🔗 Extension connect button clicked");
+      // console.log("🔗 Extension connect button clicked");
       if (connecting) return;
       connecting = true;
 
       // Skip SDK approach and go directly to provider method for debugging
-      console.log("🚀 Going directly to provider method...");
+      // console.log("🚀 Going directly to provider method...");
       // try {
       //   const sdkConnected = await connectWalletWithSDK();
       //   if (sdkConnected) {
@@ -3572,25 +3572,25 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           
           // Get wallet address without forcing reconnection
           const response = await provider.request({ method: "connect" });
-          console.log("response", response);
+          // console.log("response", response);
 
           if (response.success) {
             walletAddress = response.data.address;
             currentProvider = provider;
-            console.log(
+            // console.log(
               "🔗 Setting walletAddress (connect response):",
               walletAddress
             );
             await updateConnectedWallet(response.data.address, null);
             // Fetch actual balance
-            console.log("🚀 Starting fetchDemosBalance call...");
+            // console.log("🚀 Starting fetchDemosBalance call...");
             fetchDemosBalance(response.data.address, provider).then(
               async (balance) => {
-                console.log("💰 fetchDemosBalance resolved with:", balance);
+                // console.log("💰 fetchDemosBalance resolved with:", balance);
                 await updateConnectedWallet(response.data.address, balance);
               }
             ).catch((error) => {
-              console.log("❌ fetchDemosBalance failed:", error);
+              // console.log("❌ fetchDemosBalance failed:", error);
             });
             updateLaunchButton();
             return;
@@ -3629,7 +3629,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   if (disconnectBtn) {
     disconnectBtn.addEventListener("click", async () => {
-      console.log("🔌 Disconnect button clicked");
+      // console.log("🔌 Disconnect button clicked");
       walletAddress = "";
       currentProvider = null;
       await updateConnectedWallet("");
@@ -3658,7 +3658,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         }
       }
 
-      console.log("🚀 Launching " + (isDemoMode ? "in DEMO MODE" : "with wallet"), walletAddress, "and payment token:", !!paidSessionToken);
+      // console.log("🚀 Launching " + (isDemoMode ? "in DEMO MODE" : "with wallet"), walletAddress, "and payment token:", !!paidSessionToken);
       // console.log("🔍 Pre-launch wallet state check:", {
       //   walletAddress,
       //   currentProvider: !!currentProvider,
@@ -3703,7 +3703,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       // Enable demo mode by reloading with URL parameter
       const currentUrl = new URL(window.location.href);
       currentUrl.searchParams.set('demo', 'true');
-      console.log("🎮 Switching to demo mode...");
+      // console.log("🎮 Switching to demo mode...");
       window.location.href = currentUrl.toString();
     });
   }
@@ -3747,7 +3747,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         return;
       }
 
-      console.log("🧪 Blockchain test button clicked");
+      // console.log("🧪 Blockchain test button clicked");
       testBlockchainConnection();
     });
   }
@@ -3902,7 +3902,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     const preservedWalletAddress = walletAddress;
     const preservedCurrentProvider = currentProvider;
     const preservedPaidSessionToken = paidSessionToken;
-    console.log("🔒 Preserving wallet state during game init:", {
+    // console.log("🔒 Preserving wallet state during game init:", {
       walletAddress: preservedWalletAddress,
       currentProvider: !!preservedCurrentProvider,
       paidSessionToken: !!preservedPaidSessionToken
@@ -3923,11 +3923,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     hud.style.fontFamily = "monospace";
     
     updateHud(); // Ensure HUD has content when game starts
-    console.log("🚨 HUD FORCED VISIBLE ON GAME START");
+    // console.log("🚨 HUD FORCED VISIBLE ON GAME START");
     help.style.display = "block";
-    console.log("🌐 Calling connectMP()...");
+    // console.log("🌐 Calling connectMP()...");
     connectMP().then(() => {
-      console.log("✅ connectMP() completed");
+      // console.log("✅ connectMP() completed");
     }).catch(err => {
       console.error("❌ connectMP() failed:", err);
     });
@@ -3953,7 +3953,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       // console.log("🔄 Restoring payment token after game init");
       paidSessionToken = preservedPaidSessionToken;
     }
-    console.log("✅ Final wallet state after startGame:", {
+    // console.log("✅ Final wallet state after startGame:", {
       walletAddress,
       currentProvider: !!currentProvider,
       paidSessionToken: !!paidSessionToken
@@ -5795,7 +5795,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           dir: [dir.x, dir.y, dir.z],
           fenix: !!fenixActive,
         };
-        console.log(`📤 Sending ${fenixActive ? 'fenix' : 'bullet'} to server: pos [${tipWorld.x.toFixed(1)}, ${tipWorld.y.toFixed(1)}, ${tipWorld.z.toFixed(1)}]`);
+        // console.log(`📤 Sending ${fenixActive ? 'fenix' : 'bullet'} to server: pos [${tipWorld.x.toFixed(1)}, ${tipWorld.y.toFixed(1)}, ${tipWorld.z.toFixed(1)}]`);
         MP.ws.send(JSON.stringify(shootMsg));
       } catch (_) {}
     }
@@ -5942,7 +5942,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   };
   
   // Debug mouse control
-  console.log("Mouse control initialized:", mouseControl);
+  // console.log("Mouse control initialized:", mouseControl);
   function onKeyDown(e) {
     // Disable game controls while welcome screen is visible or when typing in inputs
     const active = document.activeElement;
@@ -6022,8 +6022,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         spawnCenteredTextLabel("DEV OFF", shipPosition, 0xff8888, 2.0, 1.2);
       }
     }
-    // Demo mode teleport for PVP testing
-    if (c === "KeyG" && isDemoMode) {
+    // Teleport for PVP testing - works in both demo and normal modes
+    if (c === "KeyG") {
       // // console.log("🔍 TELEPORT: KeyG pressed in demo mode!");
       // console.log(`🩺 TELEPORT: Pre-teleport health=${health}, gameOver=${gameOver}, shield=${shield}`);
       
@@ -6043,9 +6043,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       shield = 0;
       damageCooldown = 2.0; // 2-second grace period
       
-      console.log(`🩺 TELEPORT: Post-reset health=${health}, gameOver=${gameOver}, pos=[${x.toFixed(1)}, 0, ${z.toFixed(1)}]`);
       spawnCenteredTextLabel("TELEPORT TO COMBAT", shipPosition, 0x00ff00, 2.5, 1.8);
-      console.log(`🎯 DEMO MODE: Teleported to combat position [${x.toFixed(1)}, 0, ${z.toFixed(1)}] for PVP testing`);
       
       // Set teleport state to be included in next regular input message
       pendingTeleport = {
@@ -6055,9 +6053,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       
       // Start grace period tracking
       graceStartTime = Date.now();
-      console.log("🛡️ GRACE PERIOD: Started 5-second physics grace period");
-      
-      console.log("📡 TELEPORT: Set pending teleport state", pendingTeleport);
+      // Grace period started
     }
     if (c === "KeyL") {
       input.toggleLb = true;
@@ -6274,7 +6270,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   window.addEventListener("keydown", (e) => {
     if (e.code === "KeyM" && !e.repeat) {
       mouseControl.enabled = !mouseControl.enabled;
-      console.log("Mouse control:", mouseControl.enabled ? "ON" : "OFF");
+      // console.log("Mouse control:", mouseControl.enabled ? "ON" : "OFF");
       
       // Toggle indicator visibility
       if (mouseIndicator) {
@@ -6867,7 +6863,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     // Set initial position far but visible
     m.position.set(0, 100, 0); // Start high up so it's visible
     
-    console.log(`🏗️ Created remote ship ${numId} with normal scale, red/white colors. Added to scene (${scene.children.length} children). Visible: ${m.visible}, Position will be set on first update.`);
+    // console.log(`🏗️ Created remote ship ${numId} with normal scale, red/white colors. Added to scene (${scene.children.length} children). Visible: ${m.visible}, Position will be set on first update.`);
     MP.remotes.set(numId, {
       mesh: m,
       samples: [],
@@ -6938,13 +6934,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           if (i % 30 === 0) { // Every ~1 second
             const serverPos = vec3From(p);
             const localError = shipPosition.distanceTo(serverPos);
-            console.log(`🎯 Sync check: Local error ${localError.toFixed(1)}u, Server pos [${p[0].toFixed(0)}, ${p[1].toFixed(0)}, ${p[2].toFixed(0)}]`);
+            // console.log(`🎯 Sync check: Local error ${localError.toFixed(1)}u, Server pos [${p[0].toFixed(0)}, ${p[1].toFixed(0)}, ${p[2].toFixed(0)}]`);
           }
           continue;
         }
         let r = MP.remotes.get(numId);
         if (!r) {
-          console.log(`✨ Creating remote ship for player ${numId}`);
+          // console.log(`✨ Creating remote ship for player ${numId}`);
           createRemoteShip(numId);
           r = MP.remotes.get(numId);
         }
@@ -6957,7 +6953,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     // JSON control/event message
     try {
       const msg = JSON.parse(ev.data);
-      console.log(`📨 WS Message type: ${msg.type}`);
+      // console.log(`📨 WS Message type: ${msg.type}`);
       if (msg.type === "welcome") {
         dbg("welcome", {
           you: msg.playerId,
@@ -6970,7 +6966,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         MP.serverStartTime = Date.now() - (MP.serverOffsetEma || 0); // Initialize relative timestamp base
         // Build id->num and remote meshes
         // TEMPORARILY keeping old ships for testing
-        console.log(`🔄 Reconnected - keeping ${MP.remotes.size} existing ships for testing`);
+        // console.log(`🔄 Reconnected - keeping ${MP.remotes.size} existing ships for testing`);
         
         // Don't clear existing ships for testing
         // MP.idToNum.clear();
@@ -7028,7 +7024,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       if (msg.type === "player-remove") {
         // TEMPORARILY DISABLED for multiplayer testing
         // Ships stay visible even when players disconnect
-        console.log(`📌 Player ${msg.id} disconnected but keeping ship visible for testing`);
+        // console.log(`📌 Player ${msg.id} disconnected but keeping ship visible for testing`);
         const numId = MP.idToNum.get(msg.id);
         if (numId != null) {
           // Mark ship as disconnected but keep it visible
@@ -7075,14 +7071,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
       if (msg.type === "shoot") {
         // Handle incoming bullets from other players
-        console.log(`🔫 SHOOT MESSAGE RECEIVED! From: ${msg.id}, My ID: ${MP.myId}`);
+        // console.log(`🔫 SHOOT MESSAGE RECEIVED! From: ${msg.id}, My ID: ${MP.myId}`);
         if (msg.id === MP.myId) {
-          console.log(`⏭️ Skipping own bullet`);
+          // console.log(`⏭️ Skipping own bullet`);
           return; // Don't spawn our own bullets
         }
         
-        console.log(`🔫 Spawning ${msg.fenix ? 'fenix' : 'bullet'} from player ${msg.id}`);
-        console.log(`📍 Bullet spawn: pos [${msg.p[0].toFixed(1)}, ${msg.p[1].toFixed(1)}, ${msg.p[2].toFixed(1)}], dir [${msg.dir[0].toFixed(2)}, ${msg.dir[1].toFixed(2)}, ${msg.dir[2].toFixed(2)}]`);
+        // console.log(`🔫 Spawning ${msg.fenix ? 'fenix' : 'bullet'} from player ${msg.id}`);
+        // console.log(`📍 Bullet spawn: pos [${msg.p[0].toFixed(1)}, ${msg.p[1].toFixed(1)}, ${msg.p[2].toFixed(1)}], dir [${msg.dir[0].toFixed(2)}, ${msg.dir[1].toFixed(2)}, ${msg.dir[2].toFixed(2)}]`);
         
         const startPos = new THREE.Vector3(msg.p[0], msg.p[1], msg.p[2]);
         const direction = new THREE.Vector3(msg.dir[0], msg.dir[1], msg.dir[2]).normalize();
@@ -7108,7 +7104,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             owner: "remote",
             shooterId: msg.id // Track who shot this beam
           });
-          console.log(`✅ Added remote fenix beam to scene, total bullets: ${bullets.length}`);
+          // console.log(`✅ Added remote fenix beam to scene, total bullets: ${bullets.length}`);
         } else {
           // Create regular bullet from remote player
           const bullet = acquirePlayerBulletMesh();
@@ -7135,12 +7131,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             owner: "remote",
             shooterId: msg.id // Track who shot this bullet
           });
-          console.log(`✅ Added remote player bullet to scene, total bullets: ${bullets.length}`);
+          // console.log(`✅ Added remote player bullet to scene, total bullets: ${bullets.length}`);
         }
         return;
       }
       if (msg.type === "botSpawn") {
-        console.log(`🤖 Server spawned bot: ${msg.bot.id}`);
+        // console.log(`🤖 Server spawned bot: ${msg.bot.id}`);
         
         // Create visual representation for server bot
         if (!MP.serverBots) MP.serverBots = new Map();
@@ -7162,7 +7158,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             hp: msg.bot.hp
           });
           
-          console.log(`🤖 Created visual for bot ${msg.bot.id}`);
+          // console.log(`🤖 Created visual for bot ${msg.bot.id}`);
         }
         return;
       }
@@ -7190,7 +7186,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
               hp: 100
             };
             MP.serverBots.set(botData.id, bot);
-            console.log(`🤖 Created bot ${botData.id} from update`);
+            // console.log(`🤖 Created bot ${botData.id} from update`);
           }
           
           // Update position and rotation
@@ -7209,14 +7205,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           if (!serverBotIds.has(botId)) {
             scene.remove(bot.mesh);
             MP.serverBots.delete(botId);
-            console.log(`🤖 Removed bot ${botId}`);
+            // console.log(`🤖 Removed bot ${botId}`);
           }
         }
         return;
       }
       if (msg.type === "botShoot") {
         // Handle bot shooting from server
-        console.log(`🤖 Bot ${msg.botId} shot from server`);
+        // console.log(`🤖 Bot ${msg.botId} shot from server`);
         
         const startPos = new THREE.Vector3(msg.p[0], msg.p[1], msg.p[2]);
         const direction = new THREE.Vector3(msg.dir[0], msg.dir[1], msg.dir[2]).normalize();
@@ -7243,7 +7239,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
       if (msg.type === "botDeath") {
         // Handle bot death from server
-        console.log(`💀 Bot ${msg.botId} destroyed by ${msg.killerId}`);
+        // console.log(`💀 Bot ${msg.botId} destroyed by ${msg.killerId}`);
         
         if (MP.serverBots && MP.serverBots.has(msg.botId)) {
           const bot = MP.serverBots.get(msg.botId);
@@ -7267,7 +7263,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
       if (msg.type === "kill-credit") {
         // Handle kill credit from server
-        console.log(`🏆 Kill credit received: ${msg.kills} total kills`);
+        // console.log(`🏆 Kill credit received: ${msg.kills} total kills`);
         killsCount = msg.kills;
         
         // Show kill notification
@@ -7301,7 +7297,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           return; // Message is for another player
         }
         // Handle being killed by another player
-        console.log(`💀 You were killed by ${msg.killerId}`);
+        // console.log(`💀 You were killed by ${msg.killerId}`);
         
         // Show death notification
         spawnCenteredTextLabel(`💀 KILLED BY ${msg.killerId}`, shipPosition, 0xff0000, 2.5, 2.0);
@@ -7309,7 +7305,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
       if (msg.type === "player-kill") {
         // Handle notification of another player's kill
-        console.log(`📢 ${msg.killerId} killed ${msg.victimId}`);
+        // console.log(`📢 ${msg.killerId} killed ${msg.victimId}`);
         
         // Show kill feed notification in top right
         const killFeedText = `${msg.killerId} ➤ ${msg.victimId}`;
@@ -7320,21 +7316,21 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
 
   async function connectMP() {
-    console.log("📡 connectMP() called, serverAvailable:", serverAvailable, "MP.ws:", !!MP.ws);
+    // console.log("📡 connectMP() called, serverAvailable:", serverAvailable, "MP.ws:", !!MP.ws);
     
     // Wait for server detection if not yet available
     if (!serverAvailable) {
-      console.log("⏳ Waiting for server detection...");
+      // console.log("⏳ Waiting for server detection...");
       await detectServer();
-      console.log("📡 After detectServer, serverAvailable:", serverAvailable);
+      // console.log("📡 After detectServer, serverAvailable:", serverAvailable);
     }
     
     if (!serverAvailable) {
-      console.log("❌ Server not available, aborting MP connection");
+      // console.log("❌ Server not available, aborting MP connection");
       return;
     }
     if (MP.ws) {
-      console.log("⚠️ WebSocket already exists, aborting");
+      // console.log("⚠️ WebSocket already exists, aborting");
       return;
     }
     try {
@@ -7367,7 +7363,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             scene.remove(bot.mesh);
           }
           MP.serverBots.clear();
-          console.log("🤖 Cleaned up server bots on disconnect");
+          // console.log("🤖 Cleaned up server bots on disconnect");
         }
         
         setTimeout(connectMP, 1500);
@@ -7429,8 +7425,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       fenix: !!fenixActive,
     };
     
-    // Include teleport data if pending (demo mode only)
-    if (pendingTeleport && isDemoMode) {
+    // Include teleport data if pending
+    if (pendingTeleport) {
       msg.demoTeleport = true;
       msg.teleportPos = pendingTeleport.pos;
       // console.log("🎯 TELEPORT: Including teleport data in input message", pendingTeleport);
@@ -7438,7 +7434,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       // Send teleport data multiple times to ensure delivery (clear after 10 attempts)
       pendingTeleport.attempts = (pendingTeleport.attempts || 0) + 1;
       if (pendingTeleport.attempts >= 10) {
-        console.log("🎯 TELEPORT: Clearing after 10 attempts");
+        // Teleport cleared after 10 attempts
         pendingTeleport = null;
       }
     }
@@ -7550,7 +7546,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       shipPosition.copy(sp);
       ship.position.copy(sp);
       ship.quaternion.copy(sq);
-      console.warn(`⚡ Snapped player position (error was ${posErr.toFixed(1)} units)`);
+      // console.warn(`⚡ Snapped player position (error was ${posErr.toFixed(1)} units)`);
       return;
     }
     if (posErr > 5) {
@@ -7623,7 +7619,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         pushTop(parse("or_lb_survival"), s, "survivalSec")
       );
     } catch (e) {
-      console.warn("Leaderboard save failed", e);
+      // console.warn("Leaderboard save failed", e);
     }
   }
 
@@ -8200,14 +8196,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   async function showStoreOverlay() {
     // Pre-emptively check wallet connection when store is opened
     if (walletAddress) {
-      console.log("🛒 Store opened, verifying wallet connection...");
+      // console.log("🛒 Store opened, verifying wallet connection...");
       try {
         const provider = await getDemosProvider();
         if (provider) {
           await ensureWalletReady(provider);
         }
       } catch (error) {
-        console.warn("⚠️ Wallet verification failed when opening store:", error.message);
+        // console.warn("⚠️ Wallet verification failed when opening store:", error.message);
         // Don't block store opening, just log the issue
       }
     }
@@ -8484,7 +8480,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     // Defensive fix for ship visibility bug - ensure ship is visible after restart
     setTimeout(() => {
       if (ship && !ship.visible) {
-        console.warn('[Bug Fix] Ship was invisible after restart, fixing...');
+        // console.warn('[Bug Fix] Ship was invisible after restart, fixing...');
         ship.visible = true;
       }
     }, 100);
@@ -8569,7 +8565,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             graceIndicator.remove();
           }
           graceStartTime = null;
-          console.log("🛡️ GRACE PERIOD: Ended - Physics re-enabled");
+          // console.log("🛡️ GRACE PERIOD: Ended - Physics re-enabled");
         }
       }
       if (boostActive) {
@@ -8700,7 +8696,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         
         // Log significant errors occasionally
         if (posError > 5 && Math.random() < 0.02) {
-          console.log(`📍 Position error: ${posError.toFixed(1)} units`);
+          // console.log(`📍 Position error: ${posError.toFixed(1)} units`);
         }
         
         // If error is significant, gently correct towards server state
@@ -9650,7 +9646,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
               scene.remove(b.mesh);
               bullets.splice(i, 1);
               // Note: Don't remove bot or add score - server will notify us if bot dies
-              console.log(`💥 Hit bot ${botId} (visual only, server validates)`);
+              // console.log(`💥 Hit bot ${botId} (visual only, server validates)`);
               break;
             }
           }
@@ -9762,9 +9758,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
                       damage: b.kind === "fenix" ? 30 : 15,
                       position: [remote.mesh.position.x, remote.mesh.position.y, remote.mesh.position.z]
                     }));
-                    console.log(`🎯 HIT! Shot remote player ${targetPlayerId} with ${b.kind} bullet for ${b.kind === "fenix" ? 30 : 15} damage`);
+                    // console.log(`🎯 HIT! Shot remote player ${targetPlayerId} with ${b.kind} bullet for ${b.kind === "fenix" ? 30 : 15} damage`);
                   } else {
-                    console.warn(`⚠️ Could not find player ID for numId ${numId}`);
+                    // console.warn(`⚠️ Could not find player ID for numId ${numId}`);
                   }
                 } catch (_) {}
               }
@@ -9787,8 +9783,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           
           if (distance < collisionDistance) {
             const damage = b.kind === "remote-fenix" ? 30 : 15;
-            console.log(`💥 HIT BY REMOTE! Took ${damage} damage from ${b.kind}`);
-            console.log(`🩸 Health: ${health} -> ${Math.max(0, health - damage)}`);
+            // console.log(`💥 HIT BY REMOTE! Took ${damage} damage from ${b.kind}`);
+            // console.log(`🩸 Health: ${health} -> ${Math.max(0, health - damage)}`);
             
             // Apply damage and show damage label
             health = Math.max(0, health - damage);
@@ -9797,7 +9793,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             
             // Check if player was killed
             if (health <= 0) {
-              console.log(`💀 KILLED BY REMOTE PLAYER! Health reduced to 0`);
+              // console.log(`💀 KILLED BY REMOTE PLAYER! Health reduced to 0`);
               gameOver = true;
               if (roundActive) {
                 roundActive = false;
@@ -9815,7 +9811,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             else if (b.kind === "remote-fenix") releaseFenixBeamMesh(b.mesh);
             bullets.splice(i, 1);
             if (health <= 0) {
-              console.log(`💀 KILLED BY REMOTE PLAYER! Taking damage from ${b.kind}`);
+              // console.log(`💀 KILLED BY REMOTE PLAYER! Taking damage from ${b.kind}`);
               gameOver = true;
               // Stop the round and show end overlay
               if (roundActive) {
@@ -9824,7 +9820,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
               }
             }
             
-            console.log(`💔 Health reduced to ${health}% by remote ${b.kind} bullet`);
+            // console.log(`💔 Health reduced to ${health}% by remote ${b.kind} bullet`);
             break;
           }
         }
@@ -9852,7 +9848,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           if (r.lastRender && r.lastRender.p) {
             r.mesh.position.copy(r.lastRender.p);
             r.mesh.quaternion.copy(r.lastRender.q);
-            console.warn(`⚠️ Remote ${numId} has no samples, using last position`);
+            // console.warn(`⚠️ Remote ${numId} has no samples, using last position`);
           }
           continue;
         }
@@ -9886,7 +9882,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             r.mesh.visible = false; // Flash to show stale
           }
           
-          console.warn(`⚠️ Remote ${numId} samples are ${Math.round(sampleAge/1000)}s old - showing last position with flashing`);
+          // console.warn(`⚠️ Remote ${numId} samples are ${Math.round(sampleAge/1000)}s old - showing last position with flashing`);
           
           // Store last render position
           r.lastRender.p.copy(p);
@@ -9925,7 +9921,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         // Ensure visibility
         if (!r.mesh.visible) {
           r.mesh.visible = true;
-          console.warn(`⚠️ Remote ${numId} was invisible, forcing visible`);
+          // console.warn(`⚠️ Remote ${numId} was invisible, forcing visible`);
         }
         
         // Add a bright point light to make remote ships more visible
@@ -9940,7 +9936,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         if (numId && p && Math.random() < 0.01) { // 1% chance = ~once per second
           const distance = ship.position.distanceTo(p);
           const sampleCount = r.samples ? r.samples.length : 0;
-          console.log(`👥 Remote ${numId}: Distance ${distance.toFixed(1)}u, Samples: ${sampleCount}, Interpolating to [${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)}]`);
+          // console.log(`👥 Remote ${numId}: Distance ${distance.toFixed(1)}u, Samples: ${sampleCount}, Interpolating to [${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)}]`);
         }
       }
     }
