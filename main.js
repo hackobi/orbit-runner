@@ -832,7 +832,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (!walletAddress || walletAddress.length === 0) {
       console.log("🔌 No wallet address, attempting connection...");
       try {
-        await provider.request({ method: "connect" });
+        // Try newer wallet format first
+        try {
+          await provider.request({ method: "connect" });
+        } catch (e) {
+          // Try older wallet format with 'type' field
+          console.log("⚠️ Standard connect failed, trying older format");
+          await provider.request({ type: "connect" });
+        }
         
         // Get the wallet address after connection
         const accounts = await safeProviderRequest(provider, "eth_accounts", []);
@@ -2571,8 +2578,63 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       params
     );
 
+    // Special handling for older Demos wallet extension versions
+    if (method === "eth_accounts") {
+      // Try simpler connect method first for older wallets
+      try {
+        if (typeof provider.request === "function") {
+          const connectRequest = {
+            type: "connect",
+            params: []
+          };
+          console.log("🔍 [DEBUG] Trying older Demos wallet connect format:", connectRequest);
+          const connectResult = await provider.request(connectRequest);
+          if (connectResult && connectResult.address) {
+            console.log("✅ [DEBUG] Got address from older wallet connect:", connectResult.address);
+            return [connectResult.address];
+          }
+        }
+      } catch (error) {
+        console.log("⚠️ Older wallet connect format failed:", error.message);
+      }
+
+      // Try demos_accounts for older Demos wallets
+      try {
+        if (typeof provider.request === "function") {
+          const demosRequest = {
+            type: "demos_accounts",
+            params: []
+          };
+          console.log("🔍 [DEBUG] Trying demos_accounts format:", demosRequest);
+          const result = await provider.request(demosRequest);
+          if (result) {
+            console.log("✅ [DEBUG] demos_accounts successful:", result);
+            return Array.isArray(result) ? result : [result];
+          }
+        }
+      } catch (error) {
+        console.log("⚠️ demos_accounts format failed:", error.message);
+      }
+    }
+
     try {
-      // Try EIP-1193 standard format first (most compatible)
+      // Try standard format (without id/jsonrpc) first for newer wallets
+      if (typeof provider.request === "function") {
+        try {
+          const request = {
+            method: method,
+            params: params,
+          };
+          console.log("🔍 [DEBUG] Trying standard format:", request);
+          const result = await provider.request(request);
+          console.log("✅ [DEBUG] Standard request successful:", result);
+          return result;
+        } catch (error) {
+          console.log("⚠️ Standard format failed:", error.message);
+        }
+      }
+
+      // Try EIP-1193 standard format (most compatible)
       if (typeof provider.request === "function") {
         try {
           const request = {
@@ -2590,23 +2652,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         }
       }
 
-      // Try standard format (without id/jsonrpc)
-      if (typeof provider.request === "function") {
-        try {
-          const request = {
-            method: method,
-            params: params,
-          };
-          console.log("🔍 [DEBUG] Trying standard format:", request);
-          const result = await provider.request(request);
-          console.log("✅ [DEBUG] Standard request successful:", result);
-          return result;
-        } catch (error) {
-          console.log("⚠️ Standard format failed:", error.message);
-        }
-      }
-
-      // Try injectProviderV3 format with proper structure
+      // Try older Demos wallet format with 'type' field
       if (typeof provider.request === "function") {
         try {
           const request = {
@@ -2615,15 +2661,15 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             params: params,
             jsonrpc: "2.0",
           };
-          console.log("🔍 [DEBUG] Trying injectProviderV3 format:", request);
+          console.log("🔍 [DEBUG] Trying older Demos wallet format with type field:", request);
           const result = await provider.request(request);
           console.log(
-            "✅ [DEBUG] injectProviderV3 request successful:",
+            "✅ [DEBUG] Older Demos wallet request successful:",
             result
           );
           return result;
         } catch (error) {
-          console.log("⚠️ injectProviderV3 format failed:", error.message);
+          console.log("⚠️ Older Demos wallet format failed:", error.message);
         }
       }
 
