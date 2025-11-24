@@ -1487,17 +1487,35 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           throw new Error("Could not reconnect wallet for signing");
         }
         
+        // Helper function to add timeout to prevent hanging
+        function withTimeout(promise, timeoutMs) {
+          return Promise.race([
+            promise,
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error(`Operation timed out after ${timeoutMs}ms`)), timeoutMs)
+            )
+          ]);
+        }
+        
         // Try sign first, then fallback to personal_sign for older wallets
         let signRes;
         try {
-          signRes = await safeProviderRequest(provider, "sign", [signedMessage]);
+          console.log("🔐 Trying sign method with 15s timeout...");
+          signRes = await withTimeout(
+            safeProviderRequest(provider, "sign", [signedMessage]),
+            15000
+          );
         } catch (e) {
-          console.log("⚠️ Standard sign failed, trying personal_sign for older wallet");
+          console.log("⚠️ Standard sign failed/timed out, trying personal_sign for older wallet:", e.message);
           try {
-            signRes = await safeProviderRequest(provider, "personal_sign", [signedMessage, walletAddress]);
+            console.log("🔐 Trying personal_sign method with 15s timeout...");
+            signRes = await withTimeout(
+              safeProviderRequest(provider, "personal_sign", [signedMessage, walletAddress]),
+              15000
+            );
           } catch (e2) {
-            console.error("❌ Both sign and personal_sign failed:", e2);
-            throw new Error("Unable to sign message with wallet");
+            console.error("❌ Both sign and personal_sign failed:", e2.message);
+            throw new Error("Unable to sign message with wallet - both methods failed or timed out");
           }
         }
         
