@@ -63,8 +63,11 @@ app.use(cors({
   credentials: true
 }));
 app.use(express.json());
-app.use(express.static("."));
-app.use("/node_modules", express.static("../node_modules"));
+
+// Serve static files from the root directory (parent of server/)
+const staticPath = path.join(__dirname, "..");
+app.use(express.static(staticPath));
+app.use("/node_modules", express.static(path.join(staticPath, "node_modules")));
 
 // In-memory store (persisted to disk)
 const DATA_PATH = path.join(__dirname, "leaderboards.json");
