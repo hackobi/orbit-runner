@@ -1604,8 +1604,8 @@ const server = app.listen(PORT, "0.0.0.0", () => {
   }
 });
 
-// Eagerly connect on boot to print the server wallet address
-(async () => {
+// Connect to Demos after server starts (non-blocking)
+setTimeout(async () => {
   try {
     await connectToDemos();
     const ok = await connectWallet();
@@ -1616,9 +1616,9 @@ const server = app.listen(PORT, "0.0.0.0", () => {
     const tOk = await connectTreasuryWallet();
     if (tOk) {
       // console.log(
-        "🏦 Treasury wallet ready. Address:",
-        treasuryDemos.getAddress()
-      );
+      //   "🏦 Treasury wallet ready. Address:",
+      //   treasuryDemos.getAddress()
+      // );
       
       // Debug: Check if treasury wallet connection interfered with server wallet
       const serverAddrAfterTreasury = demos.getAddress();
@@ -1638,7 +1638,7 @@ const server = app.listen(PORT, "0.0.0.0", () => {
   } catch (e) {
     console.warn("⚠️ Server wallet not connected at boot:", e?.message || e);
   }
-})();
+}, 1000); // Delay 1 second to let server start first
 
 // Leaderboards WS on root path; Multiplayer WS on /mp
 const lbWss = new WebSocketServer({ noServer: true });
