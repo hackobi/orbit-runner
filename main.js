@@ -849,12 +849,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     // In demo mode, always allow launch
     const isValid = isDemoMode || ((walletAddress && walletAddress.length > 0) && !!paidSessionToken);
     // console.log("updateLaunchButton called:", {
-      walletAddress,
-      paidSessionToken: !!paidSessionToken,
-      isDemoMode,
-      isValid,
-      launchBtnDisabled: launchBtn?.disabled,
-    });
+    //   walletAddress,
+    //   paidSessionToken: !!paidSessionToken,
+    //   isDemoMode,
+    //   isValid,
+    //   launchBtnDisabled: launchBtn?.disabled,
+    // });
 
     if (launchBtn) {
       const hasWallet = walletAddress && walletAddress.length > 0;
@@ -879,11 +879,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
       
       // console.log("🚀 Launch button state updated:", {
-        disabled: launchBtn.disabled,
-        text: buttonSpan?.textContent,
-        hasEnabledClass: launchBtn.classList.contains("enabled"),
-        hasPaymentReadyClass: launchBtn.classList.contains("payment-ready"),
-      });
+      //   disabled: launchBtn.disabled,
+      //   text: buttonSpan?.textContent,
+      //   hasEnabledClass: launchBtn.classList.contains("enabled"),
+      //   hasPaymentReadyClass: launchBtn.classList.contains("payment-ready"),
+      // });
     }
 
     // Update blockchain test button (only requires wallet connection)
@@ -1278,9 +1278,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Enhanced wallet ready function with automatic recovery
   async function ensureWalletReady(provider) {
     // console.log("🔧 Ensuring wallet ready, current state:", {
-      walletAddress,
-      provider: !!provider
-    });
+    //   walletAddress,
+    //   provider: !!provider
+    // });
     
     // If we don't have a wallet address, definitely need to connect
     if (!walletAddress || walletAddress.length === 0) {
@@ -2781,11 +2781,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           }/${maxAttempts})`
         );
         // console.log("🔍 Available functions:", {
-          waitForDemosExtension: typeof window.waitForDemosExtension,
-          detectDemosExtension: typeof window.detectDemosExtension,
-          requestDemosProviders: typeof window.requestDemosProviders,
-          demosProviders: window.demosProviders?.length || 0,
-        });
+        //   waitForDemosExtension: typeof window.waitForDemosExtension,
+        //   detectDemosExtension: typeof window.detectDemosExtension,
+        //   requestDemosProviders: typeof window.requestDemosProviders,
+        //   demosProviders: window.demosProviders?.length || 0,
+        // });
         await new Promise((resolve) => setTimeout(resolve, 200));
         attempts++;
       }
@@ -3660,10 +3660,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
       console.log("🚀 Launching " + (isDemoMode ? "in DEMO MODE" : "with wallet"), walletAddress, "and payment token:", !!paidSessionToken);
       // console.log("🔍 Pre-launch wallet state check:", {
-        walletAddress,
-        currentProvider: !!currentProvider,
-        paidSessionToken: !!paidSessionToken
-      });
+      //   walletAddress,
+      //   currentProvider: !!currentProvider,
+      //   paidSessionToken: !!paidSessionToken
+      // });
 
       if (welcomeScreen) welcomeScreen.classList.add("hidden");
       if (canvas) {
@@ -3676,10 +3676,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       
       // Check wallet state after game start
       // console.log("🔍 Post-startGame wallet state check:", {
-        walletAddress,
-        currentProvider: !!currentProvider,
-        paidSessionToken: !!paidSessionToken
-      });
+      //   walletAddress,
+      //   currentProvider: !!currentProvider,
+      //   paidSessionToken: !!paidSessionToken
+      // });
       // Start the 3-minute round at game launch
       roundActive = true;
       roundEndsAt = Date.now() + 3 * 60 * 1000;
