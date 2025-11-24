@@ -27,17 +27,39 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
 
 // Configure CORS to allow Netlify and other deployments
 app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:8000',  // Added for local testing
-    'http://localhost:8787', 
-    'https://strong-centaur-2dae15.netlify.app',
-    'https://orbit-runner-production.up.railway.app',
-    'https://terrific-warmth-production.up.railway.app', // New Railway frontend
-    /\.netlify\.app$/,
-    /\.railway\.app$/,
-    /\.vercel\.app$/  // Support Vercel deployments too
-  ],
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps or same-origin requests)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:8000',
+      'http://localhost:8787', 
+      'https://strong-centaur-2dae15.netlify.app',
+      'https://orbit-runner-production.up.railway.app',
+      'https://terrific-warmth-production.up.railway.app'
+    ];
+    
+    const allowedPatterns = [
+      /\.netlify\.app$/,
+      /\.railway\.app$/,
+      /\.vercel\.app$/
+    ];
+    
+    // Check exact match
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      return callback(null, true);
+    }
+    
+    // Check patterns
+    for (const pattern of allowedPatterns) {
+      if (pattern.test(origin)) {
+        return callback(null, true);
+      }
+    }
+    
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true
 }));
 app.use(express.json());

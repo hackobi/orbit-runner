@@ -176,8 +176,15 @@
     <script type="module">
       // Point client to Railway API in production; keep localhost auto-detect for local dev
       if (!location.hostname.match(/^(localhost|127\.0\.0\.1)/)) {
-        window.ORBIT_RUNNER_API =
-          "https://orbit-runner-production.up.railway.app";
+        // If deployed to same domain, use same origin for API
+        if (location.hostname === "terrific-warmth-production.up.railway.app") {
+          // Backend is on same domain, just use relative path
+          window.ORBIT_RUNNER_API = "";
+        } else {
+          // Fallback to original backend URL
+          window.ORBIT_RUNNER_API =
+            "https://orbit-runner-production.up.railway.app";
+        }
       }
       import * as THREE from "https://unpkg.com/three@0.164.0/build/three.module.min.js";
       window.THREE = THREE;
