@@ -1700,6 +1700,8 @@ function spawnBot() {
   const angle = Math.random() * Math.PI * 2;
   const radius = 400 + Math.random() * BOT_CONFIG.SPAWN_RADIUS;
   
+  console.log(`🤖 Spawning bot ${botId} at radius ${radius.toFixed(0)}`);
+  
   const bot = {
     id: botId,
     numId: (mpRoom.nextNumericId = (mpRoom.nextNumericId % 65534) + 1),
@@ -2210,10 +2212,15 @@ function forwardFromYawPitch(yaw, pitch) {
 function updateBots(dt) {
   const nowMs = Date.now();
   
+  // Debug: Log that update is running
+  if (mpRoom.bots.size > 0 && nowMs % 5000 < 100) { // Log every 5 seconds
+    console.log(`🤖 Updating ${mpRoom.bots.size} bots, dt=${dt.toFixed(3)}, players=${mpRoom.players.size}`);
+  }
+  
   // Remove all bots if no players
   if (mpRoom.players.size === 0) {
     if (mpRoom.bots.size > 0) {
-      // console.log("🤖 No players, removing all bots");
+      console.log("🤖 No players, removing all bots");
       mpRoom.bots.clear();
       
       // Notify clients to remove bots
@@ -2274,10 +2281,20 @@ function updateBots(dt) {
     
     // Move toward player
     if (nearestDistance > BOT_CONFIG.RANGE * 0.8) {
+      const oldPos = [...bot.pos];
       const forward = [Math.sin(bot.yaw), 0, Math.cos(bot.yaw)];
       bot.pos[0] += forward[0] * BOT_CONFIG.SPEED * dt;
       bot.pos[1] += forward[1] * BOT_CONFIG.SPEED * dt;
       bot.pos[2] += forward[2] * BOT_CONFIG.SPEED * dt;
+      
+      // Debug log movement
+      if (nowMs % 5000 < 100) {
+        const moved = Math.sqrt(
+          Math.pow(bot.pos[0] - oldPos[0], 2) + 
+          Math.pow(bot.pos[2] - oldPos[2], 2)
+        );
+        console.log(`🤖 Bot ${bot.id} moved ${moved.toFixed(2)} units, distance to player: ${nearestDistance.toFixed(1)}`);
+      }
     }
     
     // Shooting logic
