@@ -346,6 +346,11 @@ body::before {
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--glass-border);
+  display: none; /* Hidden by default */
+}
+
+.demo-mode-section.visible {
+  display: block; /* Show when explicitly enabled */
 }
 
 .demo-description {

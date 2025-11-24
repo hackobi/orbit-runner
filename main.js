@@ -3687,6 +3687,16 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     });
   }
 
+  // Only show demo button if explicitly requested via URL parameter
+  const demoSection = document.querySelector('.demo-mode-section');
+  if (demoSection) {
+    // Show demo button if URL has ?showdemo=true or ?demo=visible
+    if (urlParams.get('showdemo') === 'true' || urlParams.get('demo') === 'visible') {
+      demoSection.classList.add('visible');
+      console.log("🎮 Demo button visible (URL parameter detected)");
+    }
+  }
+  
   // Demo Mode button functionality
   if (demoBtnElement) {
     demoBtnElement.addEventListener("click", () => {
