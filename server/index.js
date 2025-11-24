@@ -21,6 +21,7 @@ try {
   require("dotenv").config();
 } catch (_) {}
 
+// Railway provides PORT dynamically, we must use it
 const PORT = process.env.PORT || 8787;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || "";
@@ -1590,9 +1591,15 @@ app.post("/blockchain/submit", async (req, res) => {
   }
 });
 
-const server = app.listen(PORT, () =>
-  console.log(`Leaderboard API listening on :${PORT}`)
-);
+const server = app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Server listening on 0.0.0.0:${PORT}`);
+  console.log(`📍 Railway should proxy requests to this port: ${PORT}`);
+  if (process.env.PORT) {
+    console.log(`✅ Using Railway-provided PORT: ${PORT}`);
+  } else {
+    console.log(`⚠️ No PORT from Railway, using default: ${PORT}`);
+  }
+});
 
 // Eagerly connect on boot to print the server wallet address
 (async () => {
