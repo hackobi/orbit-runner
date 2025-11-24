@@ -841,15 +841,24 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           await provider.request({ type: "connect" });
         }
         
-        // Get the wallet address after connection
-        const accounts = await safeProviderRequest(provider, "eth_accounts", []);
-        if (accounts && accounts.length > 0) {
-          walletAddress = accounts[0];
-          console.log("✅ Wallet connected with address:", walletAddress);
+        // Get the wallet address after connection - avoid eth_accounts for older wallets
+        // Check if provider now exposes address after connect
+        if (provider.address) {
+          walletAddress = provider.address;
+          console.log("✅ Got address from provider.address after connect:", walletAddress);
+        } else if (provider.selectedAddress) {
+          walletAddress = provider.selectedAddress;
+          console.log("✅ Got address from provider.selectedAddress after connect:", walletAddress);
+        } else if (provider.accounts && provider.accounts.length > 0) {
+          walletAddress = provider.accounts[0];
+          console.log("✅ Got address from provider.accounts after connect:", walletAddress);
+        } else {
+          console.warn("⚠️ Connection succeeded but no address found in provider properties");
+        }
+        
+        if (walletAddress) {
           updateConnectedWallet(walletAddress, null);
           updateLaunchButton();
-        } else {
-          console.warn("⚠️ Connection succeeded but no accounts returned");
         }
       } catch (e) {
         console.warn("Wallet connect attempt failed:", e);
@@ -861,27 +870,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     // If we have wallet address, do minimal verification without risking disconnection
     console.log("✅ Wallet address already available, preserving connection:", walletAddress);
     
-    // Optional: Light verification that doesn't risk clearing the wallet
-    try {
-      const accounts = await safeProviderRequest(provider, "eth_accounts", []);
-      if (accounts && accounts.length > 0) {
-        const currentAddress = accounts[0];
-        if (currentAddress !== walletAddress) {
-          console.log("🔄 Wallet address changed from verification:", currentAddress);
-          walletAddress = currentAddress;
-          updateConnectedWallet(currentAddress, null);
-          updateLaunchButton();
-        } else {
-          console.log("✅ Wallet verification confirmed address:", walletAddress);
-        }
-      } else {
-        console.warn("⚠️ Wallet verification returned empty accounts, but preserving existing address");
-        // Don't clear walletAddress, keep the existing one
-      }
-    } catch (verifyError) {
-      console.warn("⚠️ Wallet verification failed, but preserving existing address:", verifyError.message);
-      // Don't clear walletAddress, provider might still work for transactions
-    }
+    // For older wallets, skip verification to avoid crashes - just trust the stored address
+    console.log("✅ Wallet verification skipped to avoid compatibility issues with older wallets");
   }
 
   // Wallet state monitor with active connection maintenance
