@@ -2579,41 +2579,31 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     );
 
     // Special handling for older Demos wallet extension versions
-    if (method === "eth_accounts") {
-      // Try simpler connect method first for older wallets
-      try {
-        if (typeof provider.request === "function") {
-          const connectRequest = {
-            type: "connect",
-            params: []
-          };
-          console.log("🔍 [DEBUG] Trying older Demos wallet connect format:", connectRequest);
-          const connectResult = await provider.request(connectRequest);
-          if (connectResult && connectResult.address) {
-            console.log("✅ [DEBUG] Got address from older wallet connect:", connectResult.address);
-            return [connectResult.address];
-          }
-        }
-      } catch (error) {
-        console.log("⚠️ Older wallet connect format failed:", error.message);
+    if (method === "eth_accounts" || method === "connect") {
+      // For older wallets, check if we already have the address stored
+      if (walletAddress && walletAddress.length > 0) {
+        console.log("✅ [DEBUG] Using stored wallet address:", walletAddress);
+        return [walletAddress];
       }
 
-      // Try demos_accounts for older Demos wallets
-      try {
-        if (typeof provider.request === "function") {
-          const demosRequest = {
-            type: "demos_accounts",
-            params: []
-          };
-          console.log("🔍 [DEBUG] Trying demos_accounts format:", demosRequest);
-          const result = await provider.request(demosRequest);
-          if (result) {
-            console.log("✅ [DEBUG] demos_accounts successful:", result);
-            return Array.isArray(result) ? result : [result];
-          }
-        }
-      } catch (error) {
-        console.log("⚠️ demos_accounts format failed:", error.message);
+      // Try getting address from provider properties first (some older wallets expose it)
+      if (provider.address) {
+        console.log("✅ [DEBUG] Got address from provider.address:", provider.address);
+        walletAddress = provider.address;
+        return [provider.address];
+      }
+
+      if (provider.selectedAddress) {
+        console.log("✅ [DEBUG] Got address from provider.selectedAddress:", provider.selectedAddress);
+        walletAddress = provider.selectedAddress;
+        return [provider.selectedAddress];
+      }
+
+      // For very old wallets, they might already be connected and expose accounts differently
+      if (provider.accounts && provider.accounts.length > 0) {
+        console.log("✅ [DEBUG] Got accounts from provider.accounts:", provider.accounts);
+        walletAddress = provider.accounts[0];
+        return provider.accounts;
       }
     }
 
@@ -3112,33 +3102,63 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         try {
           const provider = demosProviderDetail.provider;
           
-          // Use ensureWalletReady to avoid unnecessary reconnections
-          await ensureWalletReady(provider);
+          // Check if already connected (older wallets may expose address directly)
+          let connectedAddress = provider.address || provider.selectedAddress || 
+                                (provider.accounts && provider.accounts[0]);
           
-          // Get wallet address without forcing reconnection
-          const response = await provider.request({ method: "connect" });
-          console.log("response", response);
+          if (!connectedAddress) {
+            // Not connected, try to connect
+            try {
+              // Use ensureWalletReady which handles both old and new wallet formats
+              await ensureWalletReady(provider);
+              
+              // After ensureWalletReady, we should have walletAddress set
+              connectedAddress = walletAddress;
+            } catch (err) {
+              console.log("⚠️ ensureWalletReady failed, trying direct connect:", err);
+              
+              // Last resort: try direct connect with simple format
+              try {
+                const response = await provider.request({ method: "connect" });
+                console.log("response", response);
+                
+                if (response?.success) {
+                  connectedAddress = response.data?.address;
+                } else if (response?.address) {
+                  connectedAddress = response.address;
+                } else if (typeof response === "string") {
+                  connectedAddress = response;
+                }
+              } catch (e) {
+                console.error("Direct connect also failed:", e);
+              }
+            }
+          }
 
-          if (response.success) {
-            walletAddress = response.data.address;
+          if (connectedAddress) {
+            walletAddress = connectedAddress;
             console.log(
               "🔗 Setting walletAddress (connect response):",
               walletAddress
             );
-            updateConnectedWallet(response.data.address, null);
+            updateConnectedWallet(walletAddress, null);
             // Fetch actual balance
-            fetchDemosBalance(response.data.address, provider).then(
+            fetchDemosBalance(walletAddress, provider).then(
               (balance) => {
-                updateConnectedWallet(response.data.address, balance);
+                updateConnectedWallet(walletAddress, balance);
               }
             );
             updateLaunchButton();
+            connectExtensionBtn.style.display = "none";
+            connectedWalletDiv.style.display = "block";
             return;
           } else {
             console.error("Failed to connect with Demos Extension");
+            alert("Failed to connect wallet. Please make sure your wallet is unlocked.");
           }
         } catch (err) {
           console.error("Error during Demos connection:", err);
+          alert("Error connecting to wallet: " + err.message);
         } finally {
           connecting = false;
         }
