@@ -1744,7 +1744,7 @@ function now() {
 }
 
 mpWss.on("connection", (ws) => {
-  console.log("🔌 WebSocket connection established");
+  // console.log("🔌 WebSocket connection established"); // Too frequent
   ws.isAlive = true;
   ws.on("pong", () => {
     ws.isAlive = true;
@@ -1786,7 +1786,7 @@ mpWss.on("connection", (ws) => {
     if (!msg || typeof msg !== "object") return;
 
     if (msg.type === "hello" && !playerId) {
-      console.log("👋 Received hello message:", { paidToken: msg.paidToken, name: msg.name, demoMode: msg.demoMode });
+      // Removed verbose hello logging
       
       // Check for demo mode bypass
       const isDemoMode = msg.demoMode === true || msg.paidToken === "DEMO_MODE";
@@ -1858,10 +1858,10 @@ mpWss.on("connection", (ws) => {
       const name = String(msg.name || "").slice(0, 24) || "Anon";
       playerId = makePlayerId();
       ws.playerId = playerId;
-      console.log("🎮 Creating player:", { playerId, name });
+      // console.log("🎮 Creating player:", { playerId, name });
       const color = 0x47e6ff; // same color for all players (per requirement)
       const spawn = pickSpawnPoint(mpRoom.worldSeed);
-      console.log("📍 Player spawn:", spawn.p);
+      // console.log("📍 Player spawn:", spawn.p);
       const state = {
         t: now(),
         p: spawn.p,
@@ -1906,7 +1906,7 @@ mpWss.on("connection", (ws) => {
         color: p.color,
         state: p.state,
       }));
-      console.log("📊 Sending welcome with snapshot:", { playerCount: snapshot.length, players: snapshot.map(p => ({ name: p.name, numId: p.numId })) });
+      // console.log("📊 Sending welcome with snapshot:", { playerCount: snapshot.length, players: snapshot.map(p => ({ name: p.name, numId: p.numId })) });
       send({
         type: "welcome",
         playerId,
@@ -1918,7 +1918,7 @@ mpWss.on("connection", (ws) => {
       });
 
       // Notify others
-      console.log("📢 Broadcasting player-add to others:", { numId, name });
+      // console.log("📢 Broadcasting player-add to others:", { numId, name });
       broadcastToOthers({
         type: "player-add",
         id: playerId,
@@ -1949,8 +1949,7 @@ mpWss.on("connection", (ws) => {
       const rec = mpRoom.players.get(playerId);
       if (rec) {
         // Debug: Log ALL incoming input messages  
-        console.log(`📥 INPUT MESSAGE from ${playerId}: demoTeleport=${msg.demoTeleport}, teleportPos=${JSON.stringify(msg.teleportPos)}`);
-        console.log(`📥 FULL MESSAGE from ${playerId}:`, JSON.stringify(msg));
+        // Removed verbose input logging for performance
         
         // Sanitize input first (now preserves teleport fields)
         const sanitizedInput = sanitizeInput(msg, nowMs);
@@ -2035,7 +2034,7 @@ mpWss.on("connection", (ws) => {
         // Apply damage
         target.health = Math.max(0, target.health - damage);
         
-        console.log(`🎯 PVP: ${playerId} hit ${targetId} for ${damage} damage (${target.health} HP remaining)`);
+        // console.log(`🎯 PVP: ${playerId} hit ${targetId} for ${damage} damage (${target.health} HP remaining)`);
         
         // Send health update to the target player
         // Find the WebSocket for the target player
