@@ -7146,7 +7146,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           tintShip(mesh, 0xff6666); // Red tint for bots
           mesh.position.set(msg.bot.pos[0], msg.bot.pos[1], msg.bot.pos[2]);
           mesh.rotation.y = msg.bot.yaw;
-          mesh.scale.setScalar(15); // Bot scale
+          mesh.scale.setScalar(1.5); // Bot scale - slightly larger than player
           scene.add(mesh);
           
           MP.serverBots.set(msg.bot.id, {
@@ -7174,7 +7174,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             // Bot doesn't exist yet, create it
             const mesh = buildDefaultShip();
             tintShip(mesh, 0xff6666);
-            mesh.scale.setScalar(15);
+            mesh.scale.setScalar(1.5); // Bot scale - slightly larger than player
             scene.add(mesh);
             
             bot = {
