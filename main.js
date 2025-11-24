@@ -170,9 +170,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             // console.log("🔍 [DEBUG] Trying fallback format:", format);
             const fallbackResult = await provider.request(format);
             // console.log(
-              "✅ [DEBUG] Fallback format successful:",
-              fallbackResult
-            );
+              // "✅ [DEBUG] Fallback format successful:",
+              // fallbackResult
+            // );
             return fallbackResult;
           } catch (fallbackError) {
             // console.log("⚠️ Fallback format failed:", fallbackError.message);
@@ -211,9 +211,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (!hasRequestMethod && !hasOtherMethods) {
       console.error("❌ Provider has no valid communication methods");
       // console.log(
-        "🔍 [DEBUG] Provider properties:",
-        Object.getOwnPropertyNames(provider)
-      );
+        // "🔍 [DEBUG] Provider properties:",
+        // Object.getOwnPropertyNames(provider)
+      // );
       return false;
     }
 
@@ -1458,10 +1458,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     // Retry verification for up to ~30s to allow propagation/confirmation
     let paid = null;
     // console.log("[Pay] Starting payment verification with:", {
-      txHash,
-      playerAddress: walletAddress,
-      validityData: !!vdat
-    });
+      // txHash,
+      // playerAddress: walletAddress,
+      // validityData: !!vdat
+    // });
     
     for (let i = 0; i < 30; i++) {
       if (!walletAddress) {
@@ -1500,10 +1500,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   async function ensureBombPayment(demAmount) {
     // console.log("💣 Starting bomb payment with wallet state:", {
-      walletAddress,
-      currentProvider: !!currentProvider,
-      paidSessionToken: !!paidSessionToken
-    });
+      // walletAddress,
+      // currentProvider: !!currentProvider,
+      // paidSessionToken: !!paidSessionToken
+    // });
     
     if (!walletAddress) {
       console.error("💣 Wallet address missing for bomb payment!");
@@ -1601,10 +1601,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   async function ensureTimeExtensionPayment() {
     // console.log("⏱️ Starting time extension payment with wallet state:", {
-      walletAddress,
-      currentProvider: !!currentProvider,
-      paidSessionToken: !!paidSessionToken
-    });
+      // walletAddress,
+      // currentProvider: !!currentProvider,
+      // paidSessionToken: !!paidSessionToken
+    // });
     
     if (!walletAddress) {
       console.error("⏱️ Wallet address missing for time extension payment!");
@@ -1842,26 +1842,26 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         if (typeof provider.request === "function") {
           // console.log("🔍 [DEBUG] Provider has request method");
           // console.log(
-            "🔍 [DEBUG] Provider methods:",
-            Object.getOwnPropertyNames(provider).filter(
-              (name) => typeof provider[name] === "function"
-            )
-          );
+            // "🔍 [DEBUG] Provider methods:",
+            // Object.getOwnPropertyNames(provider).filter(
+              // (name) => typeof provider[name] === "function"
+            // )
+          // );
           // Skip provider self-test to avoid extension errors on older builds
         } else {
           // console.log("🔍 [DEBUG] Provider does NOT have request method");
           // console.log(
-            "🔍 [DEBUG] Available methods:",
-            Object.getOwnPropertyNames(provider)
-          );
+            // "🔍 [DEBUG] Available methods:",
+            // Object.getOwnPropertyNames(provider)
+          // );
 
           // Check if provider has other common methods
           ["request", "send", "sendAsync", "connect", "enable"].forEach(
             (method) => {
               // console.log(
-                `🔍 [DEBUG] Has ${method} method:`,
-                typeof provider[method] === "function"
-              );
+                // `🔍 [DEBUG] Has ${method} method:`,
+                // typeof provider[method] === "function"
+              // );
             }
           );
         }
@@ -2053,10 +2053,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         }
 
         // console.log(
-          response.ok
-            ? "🎉 Stats successfully submitted via Demos Extension!"
-            : "❌ Demos Extension submission failed"
-        );
+          // response.ok
+            // ? "🎉 Stats successfully submitted via Demos Extension!"
+            // : "❌ Demos Extension submission failed"
+        // );
         // console.log("📋 Response details:", response);
       } catch (approvalError) {
         console.error(
@@ -2172,14 +2172,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           // console.log("✅ Signature created:", signature);
         } else {
           // console.log(
-            "ℹ️ Signature test: User approval required or method not available"
-          );
+            // "ℹ️ Signature test: User approval required or method not available"
+          // );
         }
       } catch (error) {
         // console.log(
-          "ℹ️ Signature test requires user approval (expected):",
-          error.message
-        );
+          // "ℹ️ Signature test requires user approval (expected):",
+          // error.message
+        // );
       }
 
       if (blockchainTestResults) {
@@ -2349,8 +2349,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       const demos = await initializeDemosSDK();
       if (!demos) {
         // console.log(
-          "⚠️ SDK not available, falling back to extension-only mode"
-        );
+          // "⚠️ SDK not available, falling back to extension-only mode"
+        // );
         return connectWalletWithExtension();
       }
 
@@ -2362,9 +2362,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         // console.log("✅ Connected to Demos network via SDK");
       } catch (networkError) {
         // console.log(
-          "⚠️ Network connection failed, continuing with extension-only mode:",
-          networkError.message
-        );
+          // "⚠️ Network connection failed, continuing with extension-only mode:",
+          // networkError.message
+        // );
         return connectWalletWithExtension();
       }
 
@@ -2377,11 +2377,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       // console.log("✅ Using Demos extension provider");
       // console.log("🔍 [DEBUG] Provider object:", provider);
       // console.log(
-        "🔍 [DEBUG] Provider methods:",
-        Object.getOwnPropertyNames(provider).filter(
-          (name) => typeof provider[name] === "function"
-        )
-      );
+        // "🔍 [DEBUG] Provider methods:",
+        // Object.getOwnPropertyNames(provider).filter(
+          // (name) => typeof provider[name] === "function"
+        // )
+      // );
 
       // Request wallet address from extension
       let address;
@@ -2432,11 +2432,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       if (!address) {
         console.error("❌ Could not get address from provider");
         // console.log(
-          "🔍 [DEBUG] Available provider methods:",
-          Object.getOwnPropertyNames(provider).filter(
-            (name) => typeof provider[name] === "function"
-          )
-        );
+          // "🔍 [DEBUG] Available provider methods:",
+          // Object.getOwnPropertyNames(provider).filter(
+            // (name) => typeof provider[name] === "function"
+          // )
+        // );
         throw new Error(
           "Provider does not support getAddress or alternative methods"
         );
@@ -2476,8 +2476,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   async function connectWalletWithExtension() {
     try {
       // console.log(
-        "🔗 Connecting wallet with Demos extension (fallback mode)..."
-      );
+        // "🔗 Connecting wallet with Demos extension (fallback mode)..."
+      // );
 
       // Use extension provider for wallet connection
       const provider = await getDemosProvider();
@@ -2634,9 +2634,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           return balance;
         } catch (sdkError) {
           // console.log(
-            "⚠️ SDK balance fetch failed, falling back to extension:",
-            sdkError.message
-          );
+            // "⚠️ SDK balance fetch failed, falling back to extension:",
+            // sdkError.message
+          // );
         }
       }
 
@@ -2657,16 +2657,16 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
 
       // console.log(
-        "💰 Fetching balance via Demos extension for:",
-        walletAddress
-      );
+        // "💰 Fetching balance via Demos extension for:",
+        // walletAddress
+      // );
 
       // Get balance from extension provider
       const provider = getDemosProvider();
       if (!provider) {
         // console.log(
-          "⚠️ Cannot fetch balance: Extension provider not available"
-        );
+          // "⚠️ Cannot fetch balance: Extension provider not available"
+        // );
         return;
       }
 
@@ -2776,10 +2776,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         attempts < maxAttempts
       ) {
         // console.log(
-          `⏳ Waiting for extension detector to load... (${
-            attempts + 1
-          }/${maxAttempts})`
-        );
+          // `⏳ Waiting for extension detector to load... (${
+            // attempts + 1
+          // }/${maxAttempts})`
+        // );
         // console.log("🔍 Available functions:", {
         //   waitForDemosExtension: typeof window.waitForDemosExtension,
         //   detectDemosExtension: typeof window.detectDemosExtension,
@@ -2963,10 +2963,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   async function getDemosProvider() {
     // console.log("🔍 [DEBUG] getDemosProvider called (wallet may be empty)");
     // console.log(
-      "🔍 [DEBUG] window.demosProviders:",
-      Array.isArray(window.demosProviders) ? window.demosProviders.length : 0,
-      "providers"
-    );
+      // "🔍 [DEBUG] window.demosProviders:",
+      // Array.isArray(window.demosProviders) ? window.demosProviders.length : 0,
+      // "providers"
+    // );
 
     // Try to wait for extension to be ready if detection function is available
     if (
@@ -2978,11 +2978,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       try {
         await window.waitForDemosExtension(3, 500);
         // console.log(
-          "🔍 [DEBUG] After wait, providers:",
-          Array.isArray(window.demosProviders)
-            ? window.demosProviders.length
-            : 0
-        );
+          // "🔍 [DEBUG] After wait, providers:",
+          // Array.isArray(window.demosProviders)
+            // ? window.demosProviders.length
+            // : 0
+        // );
       } catch (error) {
         // console.log("⚠️ Error waiting for extension:", error.message);
       }
@@ -2996,9 +2996,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       window.demosProviders.length > 0
     ) {
       // console.log(
-        "🔍 [DEBUG] Available providers:",
-        window.demosProviders.map((p) => p.info?.name || "unknown")
-      );
+        // "🔍 [DEBUG] Available providers:",
+        // window.demosProviders.map((p) => p.info?.name || "unknown")
+      // );
 
       const demosProviderDetail = window.demosProviders.find(
         (p) =>
@@ -3012,13 +3012,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         validateProvider(demosProviderDetail.provider)
       ) {
         // console.log(
-          "✅ Found connected Demos provider:",
-          demosProviderDetail.info.name
-        );
+          // "✅ Found connected Demos provider:",
+          // demosProviderDetail.info.name
+        // );
         // console.log(
-          "🔍 [DEBUG] Provider object:",
-          demosProviderDetail.provider
-        );
+          // "🔍 [DEBUG] Provider object:",
+          // demosProviderDetail.provider
+        // );
         rawProvider = demosProviderDetail.provider;
       } else {
         // console.log("❌ No valid Demos provider found in connected providers");
@@ -3068,9 +3068,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
 
     // console.log(
-      `🔍 [DEBUG] safeProviderRequest called: method=${method}, params=`,
-      params
-    );
+      // `🔍 [DEBUG] safeProviderRequest called: method=${method}, params=`,
+      // params
+    // );
 
     try {
       // Try EIP-1193 standard format first (most compatible)
@@ -3119,9 +3119,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           // console.log("🔍 [DEBUG] Trying injectProviderV3 format:", request);
           const result = await provider.request(request);
           // console.log(
-            "✅ [DEBUG] injectProviderV3 request successful:",
-            result
-          );
+            // "✅ [DEBUG] injectProviderV3 request successful:",
+            // result
+          // );
           return result;
         } catch (error) {
           // console.log("⚠️ injectProviderV3 format failed:", error.message);
@@ -3132,9 +3132,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       if (typeof provider[method] === "function") {
         try {
           // console.log(
-            `🔍 [DEBUG] Trying direct method call: ${method}`,
-            params
-          );
+            // `🔍 [DEBUG] Trying direct method call: ${method}`,
+            // params
+          // );
           const result = await provider[method](...params);
           // console.log("✅ [DEBUG] Direct method call successful:", result);
           return result;
@@ -3164,9 +3164,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
                   reject(response.error);
                 } else {
                   // console.log(
-                    "✅ [DEBUG] sendAsync successful:",
-                    response.result
-                  );
+                    // "✅ [DEBUG] sendAsync successful:",
+                    // response.result
+                  // );
                   resolve(response.result);
                 }
               }
@@ -3221,9 +3221,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         return await window.safeProviderRequest(prov, method, params);
       } catch (error) {
         // console.log(
-          "⚠️ safeProviderRequest failed, falling back to basic implementation:",
-          error.message
-        );
+          // "⚠️ safeProviderRequest failed, falling back to basic implementation:",
+          // error.message
+        // );
         // Continue with fallback implementation
       }
     }
@@ -3254,17 +3254,17 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         return await prov.request({ method, params: params || [] });
       } catch (error) {
         // console.log(
-          "⚠️ Standard format failed, trying injectProviderV3 format:",
-          error.message
-        );
+          // "⚠️ Standard format failed, trying injectProviderV3 format:",
+          // error.message
+        // );
         try {
           // Fallback to injectProviderV3 format
           return await prov.request({ type: method, params: params || [] });
         } catch (error2) {
           // console.log(
-            "❌ injectProviderV3 format also failed:",
-            error2.message
-          );
+            // "❌ injectProviderV3 format also failed:",
+            // error2.message
+          // );
           throw error2;
         }
       }
@@ -3334,8 +3334,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     const prov = resolveRequestProvider(providerDetail);
     if (!prov) {
       // console.warn(
-        "⚠️ No request-capable provider found in detail; aborting real connect"
-      );
+        // "⚠️ No request-capable provider found in detail; aborting real connect"
+      // );
       if (extensionWarning) extensionWarning.style.display = "block";
       return false;
     }
@@ -3492,9 +3492,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       if (addr) {
         walletAddress = String(addr);
         // console.log(
-          "🔗 Setting walletAddress (after connect/poll):",
-          walletAddress
-        );
+          // "🔗 Setting walletAddress (after connect/poll):",
+          // walletAddress
+        // );
         currentProvider = providerDetail;
         await updateConnectedWallet(walletAddress, null); // Start with loading state
         updateLaunchButton();
@@ -3578,9 +3578,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             walletAddress = response.data.address;
             currentProvider = provider;
             // console.log(
-              "🔗 Setting walletAddress (connect response):",
-              walletAddress
-            );
+              // "🔗 Setting walletAddress (connect response):",
+              // walletAddress
+            // );
             await updateConnectedWallet(response.data.address, null);
             // Fetch actual balance
             // console.log("🚀 Starting fetchDemosBalance call...");
@@ -3903,10 +3903,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     const preservedCurrentProvider = currentProvider;
     const preservedPaidSessionToken = paidSessionToken;
     // console.log("🔒 Preserving wallet state during game init:", {
-      walletAddress: preservedWalletAddress,
-      currentProvider: !!preservedCurrentProvider,
-      paidSessionToken: !!preservedPaidSessionToken
-    });
+      // walletAddress: preservedWalletAddress,
+      // currentProvider: !!preservedCurrentProvider,
+      // paidSessionToken: !!preservedPaidSessionToken
+    // });
     
     // FORCE HUD VISIBLE WITH DEBUG STYLING
     hudVisible = true;
@@ -3954,10 +3954,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       paidSessionToken = preservedPaidSessionToken;
     }
     // console.log("✅ Final wallet state after startGame:", {
-      walletAddress,
-      currentProvider: !!currentProvider,
-      paidSessionToken: !!paidSessionToken
-    });
+      // walletAddress,
+      // currentProvider: !!currentProvider,
+      // paidSessionToken: !!paidSessionToken
+    // });
     
     // Start wallet state monitoring to detect disconnections during gameplay
     startWalletStateMonitoring();
