@@ -987,10 +987,21 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     
     // Send 2 DEM to server wallet only (server handles jackpot and gas)
     console.log("[Pay] Sending 2 DEM to server:", serverAddress);
-    const resp = await provider.request({
-      method: "nativeTransfer", 
-      params: [{ recipientAddress: serverAddress, amount: 2 }],
-    });
+    
+    // Try newer wallet format first, then fallback to older format
+    let resp;
+    try {
+      resp = await provider.request({
+        method: "nativeTransfer", 
+        params: [{ recipientAddress: serverAddress, amount: 2 }],
+      });
+    } catch (e) {
+      console.log("⚠️ Standard nativeTransfer failed, trying older format");
+      resp = await provider.request({
+        type: "nativeTransfer", 
+        params: [{ recipientAddress: serverAddress, amount: 2 }],
+      });
+    }
     try {
       console.log("[Pay] Dual payment response:", resp);
       const vdat = resp?.data?.validityData || resp?.validityData || null;
@@ -1096,10 +1107,21 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
     // Send DEM payment for bombs to server wallet
     console.log(`[Bomb Purchase] Sending ${demAmount} DEM to server:`, serverAddress);
-    const resp = await provider.request({
-      method: "nativeTransfer",
-      params: [{ recipientAddress: serverAddress, amount: demAmount }],
-    });
+    
+    // Try newer wallet format first, then fallback to older format
+    let resp;
+    try {
+      resp = await provider.request({
+        method: "nativeTransfer",
+        params: [{ recipientAddress: serverAddress, amount: demAmount }],
+      });
+    } catch (e) {
+      console.log("⚠️ Standard nativeTransfer failed for bomb, trying older format");
+      resp = await provider.request({
+        type: "nativeTransfer",
+        params: [{ recipientAddress: serverAddress, amount: demAmount }],
+      });
+    }
     
     const vdat = resp?.data?.validityData || resp?.validityData || null;
     const txHash =
@@ -1197,10 +1219,21 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     
     // Send 10 DEM to server wallet only (server handles split and gas)
     console.log("[TimeExtension] Sending 10 DEM to server:", serverAddress);
-    const resp = await provider.request({
-      method: "nativeTransfer", 
-      params: [{ recipientAddress: serverAddress, amount: 10 }],
-    });
+    
+    // Try newer wallet format first, then fallback to older format
+    let resp;
+    try {
+      resp = await provider.request({
+        method: "nativeTransfer", 
+        params: [{ recipientAddress: serverAddress, amount: 10 }],
+      });
+    } catch (e) {
+      console.log("⚠️ Standard nativeTransfer failed for time extension, trying older format");
+      resp = await provider.request({
+        type: "nativeTransfer", 
+        params: [{ recipientAddress: serverAddress, amount: 10 }],
+      });
+    }
     try {
       console.log("[TimeExtension] nativeTransfer response:", resp);
       const vdat = resp?.data?.validityData || resp?.validityData || null;
