@@ -832,28 +832,55 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (!walletAddress || walletAddress.length === 0) {
       console.log("🔌 No wallet address, attempting connection...");
       try {
-        // Try newer wallet format first
+        // Try newer wallet format first and capture response
+        let connectResponse = null;
         try {
-          await provider.request({ method: "connect" });
+          connectResponse = await provider.request({ method: "connect" });
+          console.log("✅ Connect response:", connectResponse);
         } catch (e) {
           // Try older wallet format with 'type' field
           console.log("⚠️ Standard connect failed, trying older format");
-          await provider.request({ type: "connect" });
+          connectResponse = await provider.request({ type: "connect" });
+          console.log("✅ Older format connect response:", connectResponse);
         }
         
-        // Get the wallet address after connection - avoid eth_accounts for older wallets
-        // Check if provider now exposes address after connect
-        if (provider.address) {
-          walletAddress = provider.address;
-          console.log("✅ Got address from provider.address after connect:", walletAddress);
-        } else if (provider.selectedAddress) {
-          walletAddress = provider.selectedAddress;
-          console.log("✅ Got address from provider.selectedAddress after connect:", walletAddress);
-        } else if (provider.accounts && provider.accounts.length > 0) {
-          walletAddress = provider.accounts[0];
-          console.log("✅ Got address from provider.accounts after connect:", walletAddress);
-        } else {
-          console.warn("⚠️ Connection succeeded but no address found in provider properties");
+        // First check the connect response itself for address
+        if (connectResponse) {
+          if (connectResponse.address) {
+            walletAddress = connectResponse.address;
+            console.log("✅ Got address from connectResponse.address:", walletAddress);
+          } else if (connectResponse.data?.address) {
+            walletAddress = connectResponse.data.address;
+            console.log("✅ Got address from connectResponse.data.address:", walletAddress);
+          } else if (typeof connectResponse === "string" && connectResponse.startsWith("0x")) {
+            walletAddress = connectResponse;
+            console.log("✅ Got address from connectResponse string:", walletAddress);
+          } else if (connectResponse.success && connectResponse.data?.address) {
+            walletAddress = connectResponse.data.address;
+            console.log("✅ Got address from connectResponse.success.data.address:", walletAddress);
+          }
+        }
+        
+        // If no address in response, check provider properties
+        if (!walletAddress) {
+          console.log("🔍 Checking provider properties for address...");
+          console.log("Provider object keys:", Object.keys(provider));
+          console.log("Provider.address:", provider.address);
+          console.log("Provider.selectedAddress:", provider.selectedAddress);
+          console.log("Provider.accounts:", provider.accounts);
+          
+          if (provider.address) {
+            walletAddress = provider.address;
+            console.log("✅ Got address from provider.address after connect:", walletAddress);
+          } else if (provider.selectedAddress) {
+            walletAddress = provider.selectedAddress;
+            console.log("✅ Got address from provider.selectedAddress after connect:", walletAddress);
+          } else if (provider.accounts && provider.accounts.length > 0) {
+            walletAddress = provider.accounts[0];
+            console.log("✅ Got address from provider.accounts after connect:", walletAddress);
+          } else {
+            console.warn("⚠️ Connection succeeded but no address found in provider properties");
+          }
         }
         
         if (walletAddress) {
