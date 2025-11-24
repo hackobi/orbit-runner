@@ -1480,6 +1480,17 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         const signRes = await safeProviderRequest(provider, "sign", [signedMessage]);
         
         console.log("✅ Signature received:", signRes);
+        
+        // Handle older wallet response format that might have success: false
+        if (signRes && signRes.success === false) {
+          if (signRes.error) {
+            console.error("❌ Wallet signing error:", signRes.error);
+            throw new Error(`Wallet signing failed: ${signRes.error.message || signRes.error}`);
+          } else {
+            console.warn("⚠️ Wallet returned success: false but no error details");
+            throw new Error("Wallet signing failed: Unknown error");
+          }
+        }
         // Normalize signature to a 0x-hex string; server verify expects hex
         function toHexFromArray(arr) {
           try {
