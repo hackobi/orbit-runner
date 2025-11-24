@@ -1479,9 +1479,27 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         
         // Ensure wallet is ready before signing (older wallets disconnect)
         console.log("🔐 Ensuring wallet is ready before signing...");
-        await ensureWalletReady(provider);
+        try {
+          await ensureWalletReady(provider);
+          console.log("🔐 Wallet ready, current address:", walletAddress);
+        } catch (e) {
+          console.error("🔐 Failed to ensure wallet ready:", e);
+          throw new Error("Could not reconnect wallet for signing");
+        }
         
-        const signRes = await safeProviderRequest(provider, "sign", [signedMessage]);
+        // Try sign first, then fallback to personal_sign for older wallets
+        let signRes;
+        try {
+          signRes = await safeProviderRequest(provider, "sign", [signedMessage]);
+        } catch (e) {
+          console.log("⚠️ Standard sign failed, trying personal_sign for older wallet");
+          try {
+            signRes = await safeProviderRequest(provider, "personal_sign", [signedMessage, walletAddress]);
+          } catch (e2) {
+            console.error("❌ Both sign and personal_sign failed:", e2);
+            throw new Error("Unable to sign message with wallet");
+          }
+        }
         
         console.log("✅ Signature received:", signRes);
         
