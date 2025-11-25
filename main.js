@@ -731,9 +731,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         ? `${address.slice(0, 6)}...${address.slice(-4)}`
         : "Not connected";
     }
+    // Hide balance display entirely
     if (connectedBalance) {
-      const displayBalance = balance !== null ? balance : "Loading...";
-      connectedBalance.textContent = `Balance: ${displayBalance} DEMOS`;
+      connectedBalance.style.display = "none";
     }
     if (connectedWallet) {
       connectedWallet.style.display = address ? "flex" : "none";
@@ -1078,13 +1078,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     
     if (!walletAddress) {
       console.error("💣 Wallet address missing for bomb payment!");
-      throw new Error("Wallet disconnected. Please refresh and reconnect your wallet.");
+      throw new Error("Wallet not connected. Please connect your Demos wallet and try again.");
     }
     
     const provider = await getDemosProvider();
     if (!provider || typeof provider.request !== "function") {
       console.error("💣 Provider unavailable for bomb payment!");
-      throw new Error("Wallet provider unavailable. Please refresh and reconnect your wallet.");
+      throw new Error("Unable to access wallet. Please ensure your wallet is unlocked and try again.");
     }
     
     // Enhanced wallet readiness check with recovery
@@ -1190,7 +1190,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     
     if (!walletAddress) {
       console.error("⏱️ Wallet address missing for time extension payment!");
-      throw new Error("Wallet disconnected. Please refresh and reconnect your wallet.");
+      throw new Error("Wallet not connected. Please connect your Demos wallet and try again.");
     }
     
     let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
@@ -1205,7 +1205,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     const provider = await getDemosProvider();
     if (!provider || typeof provider.request !== "function") {
       console.error("⏱️ Provider unavailable for time extension payment!");
-      throw new Error("Wallet provider unavailable. Please refresh and reconnect your wallet.");
+      throw new Error("Unable to access wallet. Please ensure your wallet is unlocked and try again.");
     }
     
     // Enhanced wallet readiness check with recovery
@@ -3243,12 +3243,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
               walletAddress
             );
             updateConnectedWallet(walletAddress, null);
-            // Skip balance fetch for older wallets to avoid crashes
-            // fetchDemosBalance(walletAddress, provider).then(
-            //   (balance) => {
-            //     updateConnectedWallet(walletAddress, balance);
-            //   }
-            // );
+            // Balance display disabled - just show connection status
             updateLaunchButton();
             connectExtensionBtn.style.display = "none";
             connectedWallet.style.display = "block";

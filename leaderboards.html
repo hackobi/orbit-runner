@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orbit Runner - Leaderboards</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%);
+            color: #e8eaf0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: rgba(10, 14, 39, 0.8);
+            backdrop-filter: blur(10px);
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #ff6b6b, #ff3838);
+            border-radius: 50%;
+            position: relative;
+        }
+
+        .logo-icon::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            border: 3px solid white;
+            border-radius: 50%;
+        }
+
+        h1 {
+            font-size: 1.75rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, #fff, #a8b2d1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .back-link {
+            color: #8892b0;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border: 1px solid rgba(136, 146, 176, 0.3);
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+
+        .back-link:hover {
+            color: #fff;
+            border-color: rgba(136, 146, 176, 0.6);
+            background: rgba(136, 146, 176, 0.1);
+        }
+
+        .container {
+            flex: 1;
+            max-width: 1200px;
+            width: 100%;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .leaderboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+
+        .leaderboard-section {
+            background: rgba(30, 41, 59, 0.5);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .leaderboard-section:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .section-icon {
+            font-size: 1.5rem;
+        }
+
+        .leaderboard-list {
+            list-style: none;
+        }
+
+        .leaderboard-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            background: rgba(10, 14, 39, 0.3);
+            border-radius: 8px;
+            transition: background 0.3s ease;
+        }
+
+        .leaderboard-item:hover {
+            background: rgba(10, 14, 39, 0.5);
+        }
+
+        .rank {
+            font-weight: bold;
+            width: 30px;
+            text-align: center;
+            font-size: 0.9rem;
+        }
+
+        .rank-1 { color: #ffd700; }
+        .rank-2 { color: #c0c0c0; }
+        .rank-3 { color: #cd7f32; }
+
+        .player-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 0 1rem;
+        }
+
+        .player-name {
+            font-weight: 500;
+            color: #fff;
+            font-size: 0.9rem;
+            word-break: break-all;
+        }
+
+        .player-timestamp {
+            font-size: 0.75rem;
+            color: #8892b0;
+            margin-top: 0.25rem;
+        }
+
+        .score-value {
+            font-weight: 600;
+            color: #64ffda;
+            font-size: 1rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 2rem;
+            color: #8892b0;
+            font-style: italic;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 3rem;
+            font-size: 1.25rem;
+            color: #8892b0;
+        }
+
+        .error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #f87171;
+            padding: 1rem;
+            border-radius: 8px;
+            text-align: center;
+            margin: 2rem 0;
+        }
+
+        .refresh-btn {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 1rem;
+            border-radius: 50%;
+            width: 56px;
+            height: 56px;
+            cursor: pointer;
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.4);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .refresh-btn:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 30px rgba(102, 126, 234, 0.6);
+        }
+
+        .refresh-btn.spinning {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .last-updated {
+            text-align: center;
+            color: #8892b0;
+            font-size: 0.875rem;
+            margin-top: 1rem;
+        }
+
+        @media (max-width: 768px) {
+            .header-content {
+                flex-direction: column;
+                gap: 1rem;
+            }
+
+            .leaderboard-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-content">
+            <div class="logo">
+                <div class="logo-icon"></div>
+                <h1>Orbit Runner Leaderboards</h1>
+            </div>
+            <a href="/" class="back-link">← Back to Game</a>
+        </div>
+    </header>
+
+    <div class="container">
+        <div id="loading" class="loading">Loading leaderboards...</div>
+        <div id="error" class="error" style="display: none;"></div>
+        <div id="leaderboards" class="leaderboard-grid" style="display: none;"></div>
+        <div id="lastUpdated" class="last-updated" style="display: none;"></div>
+    </div>
+
+    <button id="refreshBtn" class="refresh-btn" title="Refresh Leaderboards">
+        ↻
+    </button>
+
+    <script>
+        const apiBase = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? `http://${window.location.hostname}:8787`
+            : 'https://orbit-runner-production.up.railway.app';
+
+        const leaderboardConfig = [
+            { key: 'points', title: 'High Scores', icon: '🏆' },
+            { key: 'kills', title: 'Most Kills', icon: '⚔️' },
+            { key: 'asteroids', title: 'Asteroids Destroyed', icon: '🪨' },
+            { key: 'belt', title: 'Belt Progression', icon: '🌌' },
+            { key: 'survival', title: 'Survival Time', icon: '⏱️' },
+            { key: 'sessions', title: 'Games Played', icon: '🎮' }
+        ];
+
+        let isRefreshing = false;
+
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return '';
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMins = Math.floor(diffMs / 60000);
+            const diffHours = Math.floor(diffMs / 3600000);
+            const diffDays = Math.floor(diffMs / 86400000);
+
+            if (diffMins < 1) return 'just now';
+            if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''} ago`;
+            if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+            if (diffDays < 7) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+            
+            return date.toLocaleDateString();
+        }
+
+        function formatAddress(address) {
+            if (!address) return 'Anonymous';
+            return `${address.slice(0, 6)}...${address.slice(-4)}`;
+        }
+
+        function formatScore(value, key) {
+            if (key === 'survival') {
+                const seconds = Math.floor(value / 1000);
+                const minutes = Math.floor(seconds / 60);
+                const remainingSeconds = seconds % 60;
+                return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+            }
+            return value.toLocaleString();
+        }
+
+        function renderLeaderboard(data) {
+            const container = document.getElementById('leaderboards');
+            container.innerHTML = '';
+
+            leaderboardConfig.forEach(config => {
+                const entries = data[config.key] || [];
+                const section = document.createElement('div');
+                section.className = 'leaderboard-section';
+
+                const title = document.createElement('h2');
+                title.className = 'section-title';
+                title.innerHTML = `<span class="section-icon">${config.icon}</span> ${config.title}`;
+                section.appendChild(title);
+
+                if (entries.length === 0) {
+                    const empty = document.createElement('div');
+                    empty.className = 'empty-state';
+                    empty.textContent = 'No records yet. Be the first!';
+                    section.appendChild(empty);
+                } else {
+                    const list = document.createElement('ul');
+                    list.className = 'leaderboard-list';
+
+                    entries.slice(0, 10).forEach((entry, index) => {
+                        const item = document.createElement('li');
+                        item.className = 'leaderboard-item';
+
+                        const rank = document.createElement('span');
+                        rank.className = `rank rank-${index + 1}`;
+                        rank.textContent = `#${index + 1}`;
+
+                        const playerInfo = document.createElement('div');
+                        playerInfo.className = 'player-info';
+
+                        const playerName = document.createElement('div');
+                        playerName.className = 'player-name';
+                        playerName.textContent = formatAddress(entry.address || entry.player);
+
+                        const timestamp = document.createElement('div');
+                        timestamp.className = 'player-timestamp';
+                        timestamp.textContent = formatTimestamp(entry.timestamp || entry.time);
+
+                        playerInfo.appendChild(playerName);
+                        playerInfo.appendChild(timestamp);
+
+                        const score = document.createElement('span');
+                        score.className = 'score-value';
+                        score.textContent = formatScore(entry.value || entry.score || 0, config.key);
+
+                        item.appendChild(rank);
+                        item.appendChild(playerInfo);
+                        item.appendChild(score);
+                        list.appendChild(item);
+                    });
+
+                    section.appendChild(list);
+                }
+
+                container.appendChild(section);
+            });
+        }
+
+        async function fetchLeaderboards() {
+            if (isRefreshing) return;
+            isRefreshing = true;
+
+            const loadingEl = document.getElementById('loading');
+            const errorEl = document.getElementById('error');
+            const leaderboardsEl = document.getElementById('leaderboards');
+            const lastUpdatedEl = document.getElementById('lastUpdated');
+            const refreshBtn = document.getElementById('refreshBtn');
+
+            refreshBtn.classList.add('spinning');
+            errorEl.style.display = 'none';
+
+            try {
+                const response = await fetch(`${apiBase}/leaderboards`);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch leaderboards: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                loadingEl.style.display = 'none';
+                leaderboardsEl.style.display = 'grid';
+                lastUpdatedEl.style.display = 'block';
+                lastUpdatedEl.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+                
+                renderLeaderboard(data);
+            } catch (error) {
+                console.error('Error fetching leaderboards:', error);
+                loadingEl.style.display = 'none';
+                errorEl.style.display = 'block';
+                errorEl.textContent = `Failed to load leaderboards: ${error.message}`;
+                leaderboardsEl.style.display = 'none';
+                lastUpdatedEl.style.display = 'none';
+            } finally {
+                isRefreshing = false;
+                refreshBtn.classList.remove('spinning');
+            }
+        }
+
+        // Initial load
+        fetchLeaderboards();
+
+        // Refresh button
+        document.getElementById('refreshBtn').addEventListener('click', fetchLeaderboards);
+
+        // Auto-refresh every 30 seconds
+        setInterval(fetchLeaderboards, 30000);
+    </script>
+</body>
+</html>
