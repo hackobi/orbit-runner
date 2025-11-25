@@ -1,13 +1,19 @@
 const { Pool } = require('pg');
 
 // Database connection pool
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-});
+let pool = null;
+if (process.env.DATABASE_URL) {
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  });
+}
 
 // Initialize database tables
 async function initDatabase() {
+  if (!pool) {
+    throw new Error('Database not configured - DATABASE_URL not found');
+  }
   const client = await pool.connect();
   try {
     console.log('🗄️ Initializing database tables...');
@@ -48,6 +54,9 @@ async function initDatabase() {
 
 // Get top scores for all categories
 async function getLeaderboards() {
+  if (!pool) {
+    throw new Error('Database not configured');
+  }
   const client = await pool.connect();
   try {
     // Get top 10 in each category
