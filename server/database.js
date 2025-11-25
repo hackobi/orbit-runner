@@ -61,42 +61,48 @@ async function getLeaderboards() {
   try {
     // Get top 10 in each category
     const [pointsResult, killsResult, asteroidsResult, beltResult, survivalResult, sessionsResult] = await Promise.all([
-      client.query('SELECT address, points, created_at as timestamp FROM leaderboard_scores WHERE points > 0 ORDER BY points DESC LIMIT 10'),
-      client.query('SELECT address, kills, created_at as timestamp FROM leaderboard_scores WHERE kills > 0 ORDER BY kills DESC LIMIT 10'),
-      client.query('SELECT address, asteroids, created_at as timestamp FROM leaderboard_scores WHERE asteroids > 0 ORDER BY asteroids DESC LIMIT 10'),
-      client.query('SELECT address, belt_time_sec as "beltTimeSec", created_at as timestamp FROM leaderboard_scores WHERE belt_time_sec > 0 AND belt_time_sec <= 600 ORDER BY belt_time_sec DESC LIMIT 10'),
-      client.query('SELECT address, survival_sec as "survivalSec", created_at as timestamp FROM leaderboard_scores WHERE survival_sec > 0 AND survival_sec <= 600 ORDER BY survival_sec DESC LIMIT 10'),
-      client.query('SELECT address, sessions, created_at as timestamp FROM leaderboard_scores ORDER BY sessions DESC LIMIT 10')
+      client.query('SELECT address, player_name, points, created_at as timestamp FROM leaderboard_scores WHERE points > 0 ORDER BY points DESC LIMIT 10'),
+      client.query('SELECT address, player_name, kills, created_at as timestamp FROM leaderboard_scores WHERE kills > 0 ORDER BY kills DESC LIMIT 10'),
+      client.query('SELECT address, player_name, asteroids, created_at as timestamp FROM leaderboard_scores WHERE asteroids > 0 ORDER BY asteroids DESC LIMIT 10'),
+      client.query('SELECT address, player_name, belt_time_sec as "beltTimeSec", created_at as timestamp FROM leaderboard_scores WHERE belt_time_sec > 0 AND belt_time_sec <= 600 ORDER BY belt_time_sec DESC LIMIT 10'),
+      client.query('SELECT address, player_name, survival_sec as "survivalSec", created_at as timestamp FROM leaderboard_scores WHERE survival_sec > 0 AND survival_sec <= 600 ORDER BY survival_sec DESC LIMIT 10'),
+      client.query('SELECT address, player_name, sessions, created_at as timestamp FROM leaderboard_scores ORDER BY sessions DESC LIMIT 10')
     ]);
 
     return {
       points: pointsResult.rows.map(row => ({
         address: row.address,
+        player_name: row.player_name,
         points: row.points,
         timestamp: new Date(row.timestamp).getTime()
       })),
       kills: killsResult.rows.map(row => ({
         address: row.address,
+        player_name: row.player_name,
         kills: row.kills,
         timestamp: new Date(row.timestamp).getTime()
       })),
       asteroids: asteroidsResult.rows.map(row => ({
         address: row.address,
+        player_name: row.player_name,
         asteroids: row.asteroids,
         timestamp: new Date(row.timestamp).getTime()
       })),
       belt: beltResult.rows.map(row => ({
         address: row.address,
+        player_name: row.player_name,
         beltTimeSec: row.beltTimeSec,
         timestamp: new Date(row.timestamp).getTime()
       })),
       survival: survivalResult.rows.map(row => ({
         address: row.address,
+        player_name: row.player_name,
         survivalSec: row.survivalSec,
         timestamp: new Date(row.timestamp).getTime()
       })),
       sessions: sessionsResult.rows.map(row => ({
         address: row.address,
+        player_name: row.player_name,
         sessions: row.sessions,
         timestamp: new Date(row.timestamp).getTime()
       }))

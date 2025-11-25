@@ -1545,9 +1545,23 @@ app.post("/blockchain/submit", async (req, res) => {
 
         // Submit to database or fallback to in-memory
         if (process.env.DATABASE_URL) {
+          // Look up Telegram handle if possible
+          let playerName = short(playerAddress);
+          try {
+            if (isLikelyDemosAddress(playerAddress)) {
+              const telegramHandle = await getTelegramUsernameForAddress(playerAddress);
+              if (telegramHandle && typeof telegramHandle === 'string') {
+                playerName = telegramHandle.startsWith('@') ? telegramHandle : `@${telegramHandle}`;
+                console.log('👤 Using Telegram handle for leaderboard:', playerName);
+              }
+            }
+          } catch (error) {
+            console.log('👤 Telegram lookup failed, using address:', error.message);
+          }
+          
           await submitScore({
             address: playerAddress,
-            name: short(playerAddress),
+            name: playerName,
             points: submission.points,
             kills: submission.kills,
             asteroids: submission.asteroids,

@@ -320,6 +320,17 @@
             return `${address.slice(0, 6)}...${address.slice(-4)}`;
         }
 
+        function formatPlayerName(entry) {
+            // Priority: player_name > name > formatted address
+            if (entry.player_name && entry.player_name.trim()) {
+                return entry.player_name.trim();
+            }
+            if (entry.name && entry.name.trim()) {
+                return entry.name.trim();
+            }
+            return formatAddress(entry.address || entry.player);
+        }
+
         function formatScore(value, key) {
             if (key === 'survival' || key === 'belt') {
                 // Value is already in seconds from the API
@@ -367,7 +378,7 @@
 
                         const playerName = document.createElement('div');
                         playerName.className = 'player-name';
-                        playerName.textContent = formatAddress(entry.address || entry.player);
+                        playerName.textContent = formatPlayerName(entry);
 
                         const timestamp = document.createElement('div');
                         timestamp.className = 'player-timestamp';
