@@ -64,8 +64,8 @@ async function getLeaderboards() {
       client.query('SELECT address, points, created_at as timestamp FROM leaderboard_scores WHERE points > 0 ORDER BY points DESC LIMIT 10'),
       client.query('SELECT address, kills, created_at as timestamp FROM leaderboard_scores WHERE kills > 0 ORDER BY kills DESC LIMIT 10'),
       client.query('SELECT address, asteroids, created_at as timestamp FROM leaderboard_scores WHERE asteroids > 0 ORDER BY asteroids DESC LIMIT 10'),
-      client.query('SELECT address, belt_time_sec as "beltTimeSec", created_at as timestamp FROM leaderboard_scores WHERE belt_time_sec > 0 ORDER BY belt_time_sec DESC LIMIT 10'),
-      client.query('SELECT address, survival_sec as "survivalSec", created_at as timestamp FROM leaderboard_scores WHERE survival_sec > 0 ORDER BY survival_sec DESC LIMIT 10'),
+      client.query('SELECT address, belt_time_sec as "beltTimeSec", created_at as timestamp FROM leaderboard_scores WHERE belt_time_sec > 0 AND belt_time_sec <= 600 ORDER BY belt_time_sec DESC LIMIT 10'),
+      client.query('SELECT address, survival_sec as "survivalSec", created_at as timestamp FROM leaderboard_scores WHERE survival_sec > 0 AND survival_sec <= 600 ORDER BY survival_sec DESC LIMIT 10'),
       client.query('SELECT address, sessions, created_at as timestamp FROM leaderboard_scores ORDER BY sessions DESC LIMIT 10')
     ]);
 
