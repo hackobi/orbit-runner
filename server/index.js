@@ -408,6 +408,21 @@ app.get("/leaderboards", async (_req, res) => {
   }
 });
 
+// Debug endpoint to manually initialize database
+app.post("/admin/init-db", async (_req, res) => {
+  try {
+    if (process.env.DATABASE_URL) {
+      await initDatabase();
+      res.json({ ok: true, message: "Database initialized successfully" });
+    } else {
+      res.json({ ok: false, message: "No DATABASE_URL found" });
+    }
+  } catch (error) {
+    console.error('Database initialization failed:', error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
 // Blockchain API endpoints
 let demosConnected = false;
 let walletConnected = false;
