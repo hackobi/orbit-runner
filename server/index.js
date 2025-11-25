@@ -1675,7 +1675,13 @@ const server = app.listen(PORT, () =>
 
 // Initialize database and leaderboards
 (async () => {
-  await initLeaderboards();
+  try {
+    await initLeaderboards();
+    console.log('✅ Leaderboards initialized successfully');
+  } catch (error) {
+    console.error('❌ Failed to initialize leaderboards:', error.message);
+    // Continue without database - fall back to file storage
+  }
 })();
 
 // Eagerly connect on boot to print the server wallet address
