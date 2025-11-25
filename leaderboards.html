@@ -321,7 +321,10 @@
         }
 
         function formatPlayerName(entry) {
-            // Priority: player_name > name > formatted address
+            // Priority: telegram_handle > player_name > name > formatted address
+            if (entry.telegram_handle && entry.telegram_handle.trim()) {
+                return entry.telegram_handle.trim();
+            }
             if (entry.player_name && entry.player_name.trim()) {
                 return entry.player_name.trim();
             }

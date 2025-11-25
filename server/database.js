@@ -24,6 +24,7 @@ async function initDatabase() {
         id SERIAL PRIMARY KEY,
         address VARCHAR(66) NOT NULL,
         player_name VARCHAR(50),
+        telegram_handle VARCHAR(50),
         points INTEGER DEFAULT 0,
         kills INTEGER DEFAULT 0,
         asteroids INTEGER DEFAULT 0,
@@ -34,6 +35,12 @@ async function initDatabase() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
+    `);
+
+    // Add telegram_handle column if it doesn't exist (for existing databases)
+    await client.query(`
+      ALTER TABLE leaderboard_scores 
+      ADD COLUMN IF NOT EXISTS telegram_handle VARCHAR(50);
     `);
 
     // Create indexes for performance
@@ -61,48 +68,54 @@ async function getLeaderboards() {
   try {
     // Get top 10 in each category
     const [pointsResult, killsResult, asteroidsResult, beltResult, survivalResult, sessionsResult] = await Promise.all([
-      client.query('SELECT address, player_name, points, created_at as timestamp FROM leaderboard_scores WHERE points > 0 ORDER BY points DESC LIMIT 10'),
-      client.query('SELECT address, player_name, kills, created_at as timestamp FROM leaderboard_scores WHERE kills > 0 ORDER BY kills DESC LIMIT 10'),
-      client.query('SELECT address, player_name, asteroids, created_at as timestamp FROM leaderboard_scores WHERE asteroids > 0 ORDER BY asteroids DESC LIMIT 10'),
-      client.query('SELECT address, player_name, belt_time_sec as "beltTimeSec", created_at as timestamp FROM leaderboard_scores WHERE belt_time_sec > 0 AND belt_time_sec <= 600 ORDER BY belt_time_sec DESC LIMIT 10'),
-      client.query('SELECT address, player_name, survival_sec as "survivalSec", created_at as timestamp FROM leaderboard_scores WHERE survival_sec > 0 AND survival_sec <= 600 ORDER BY survival_sec DESC LIMIT 10'),
-      client.query('SELECT address, player_name, sessions, created_at as timestamp FROM leaderboard_scores ORDER BY sessions DESC LIMIT 10')
+      client.query('SELECT address, player_name, telegram_handle, points, created_at as timestamp FROM leaderboard_scores WHERE points > 0 ORDER BY points DESC LIMIT 10'),
+      client.query('SELECT address, player_name, telegram_handle, kills, created_at as timestamp FROM leaderboard_scores WHERE kills > 0 ORDER BY kills DESC LIMIT 10'),
+      client.query('SELECT address, player_name, telegram_handle, asteroids, created_at as timestamp FROM leaderboard_scores WHERE asteroids > 0 ORDER BY asteroids DESC LIMIT 10'),
+      client.query('SELECT address, player_name, telegram_handle, belt_time_sec as "beltTimeSec", created_at as timestamp FROM leaderboard_scores WHERE belt_time_sec > 0 AND belt_time_sec <= 600 ORDER BY belt_time_sec DESC LIMIT 10'),
+      client.query('SELECT address, player_name, telegram_handle, survival_sec as "survivalSec", created_at as timestamp FROM leaderboard_scores WHERE survival_sec > 0 AND survival_sec <= 600 ORDER BY survival_sec DESC LIMIT 10'),
+      client.query('SELECT address, player_name, telegram_handle, sessions, created_at as timestamp FROM leaderboard_scores ORDER BY sessions DESC LIMIT 10')
     ]);
 
     return {
       points: pointsResult.rows.map(row => ({
         address: row.address,
         player_name: row.player_name,
+        telegram_handle: row.telegram_handle,
         points: row.points,
         timestamp: new Date(row.timestamp).getTime()
       })),
       kills: killsResult.rows.map(row => ({
         address: row.address,
         player_name: row.player_name,
+        telegram_handle: row.telegram_handle,
         kills: row.kills,
         timestamp: new Date(row.timestamp).getTime()
       })),
       asteroids: asteroidsResult.rows.map(row => ({
         address: row.address,
         player_name: row.player_name,
+        telegram_handle: row.telegram_handle,
         asteroids: row.asteroids,
         timestamp: new Date(row.timestamp).getTime()
       })),
       belt: beltResult.rows.map(row => ({
         address: row.address,
         player_name: row.player_name,
+        telegram_handle: row.telegram_handle,
         beltTimeSec: row.beltTimeSec,
         timestamp: new Date(row.timestamp).getTime()
       })),
       survival: survivalResult.rows.map(row => ({
         address: row.address,
         player_name: row.player_name,
+        telegram_handle: row.telegram_handle,
         survivalSec: row.survivalSec,
         timestamp: new Date(row.timestamp).getTime()
       })),
       sessions: sessionsResult.rows.map(row => ({
         address: row.address,
         player_name: row.player_name,
+        telegram_handle: row.telegram_handle,
         sessions: row.sessions,
         timestamp: new Date(row.timestamp).getTime()
       }))
@@ -119,6 +132,7 @@ async function submitScore(scoreData) {
     const {
       address,
       name,
+      telegramHandle,
       points = 0,
       kills = 0,
       asteroids = 0,
@@ -140,24 +154,25 @@ async function submitScore(scoreData) {
       result = await client.query(`
         UPDATE leaderboard_scores SET
           player_name = COALESCE($2, player_name),
-          points = GREATEST(points, $3),
-          kills = GREATEST(kills, $4),
-          asteroids = GREATEST(asteroids, $5),
-          belt_time_sec = GREATEST(belt_time_sec, $6),
-          survival_sec = GREATEST(survival_sec, $7),
+          telegram_handle = COALESCE($3, telegram_handle),
+          points = GREATEST(points, $4),
+          kills = GREATEST(kills, $5),
+          asteroids = GREATEST(asteroids, $6),
+          belt_time_sec = GREATEST(belt_time_sec, $7),
+          survival_sec = GREATEST(survival_sec, $8),
           sessions = sessions + 1,
           updated_at = CURRENT_TIMESTAMP
         WHERE address = $1
         RETURNING *
-      `, [address, name, points, kills, asteroids, beltTimeSec, survivalSec]);
+      `, [address, name, telegramHandle, points, kills, asteroids, beltTimeSec, survivalSec]);
     } else {
       // Insert new record
       result = await client.query(`
         INSERT INTO leaderboard_scores 
-        (address, player_name, points, kills, asteroids, belt_time_sec, survival_sec, sessions, submission_method)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8)
+        (address, player_name, telegram_handle, points, kills, asteroids, belt_time_sec, survival_sec, sessions, submission_method)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9)
         RETURNING *
-      `, [address, name, points, kills, asteroids, beltTimeSec, survivalSec, submissionMethod]);
+      `, [address, name, telegramHandle, points, kills, asteroids, beltTimeSec, survivalSec, submissionMethod]);
     }
 
     return result.rows[0];
