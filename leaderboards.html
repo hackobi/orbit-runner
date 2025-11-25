@@ -284,7 +284,7 @@
 
     <script>
         const apiBase = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-            ? `http://${window.location.hostname}:8787`
+            ? `http://${window.location.hostname}:${window.location.port || 8787}`
             : 'https://orbit-runner-production.up.railway.app';
 
         const leaderboardConfig = [
@@ -377,7 +377,16 @@
 
                         const score = document.createElement('span');
                         score.className = 'score-value';
-                        score.textContent = formatScore(entry.value || entry.score || 0, config.key);
+                        // Get the correct field value based on the leaderboard type
+                        let scoreValue = 0;
+                        if (config.key === 'belt') {
+                            scoreValue = entry.beltTimeSec || 0;
+                        } else if (config.key === 'survival') {
+                            scoreValue = entry.survivalSec || 0;
+                        } else {
+                            scoreValue = entry[config.key] || entry.value || entry.score || 0;
+                        }
+                        score.textContent = formatScore(scoreValue, config.key);
 
                         item.appendChild(rank);
                         item.appendChild(playerInfo);

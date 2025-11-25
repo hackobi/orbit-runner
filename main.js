@@ -964,7 +964,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   async function ensurePaymentForSession() {
     console.log("[Pay] Starting payment session with wallet:", walletAddress);
     if (!walletAddress) throw new Error("Connect your wallet first");
-    let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
+    let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:${location.port || 8787}`;
     const infoRes = await fetch(`${apiBase}/pay/info`);
     if (!infoRes.ok) throw new Error("Payment info unavailable");
     const info = await infoRes.json();
@@ -1097,7 +1097,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
     
     // Get server address for bomb purchases
-    let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
+    let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:${location.port || 8787}`;
     const infoRes = await fetch(`${apiBase}/pay/info`);
     if (!infoRes.ok) throw new Error("Payment info unavailable");
     const info = await infoRes.json();
@@ -1193,7 +1193,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       throw new Error("Wallet not connected. Please connect your Demos wallet and try again.");
     }
     
-    let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
+    let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:${location.port || 8787}`;
     const infoRes = await fetch(`${apiBase}/pay/info`);
     if (!infoRes.ok) throw new Error("Payment info unavailable");
     const info = await infoRes.json();
@@ -1300,7 +1300,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
     const stats = getSessionStats();
     // Ensure backend base URL is set; fall back to local server on 8787
-    let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
+    let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:${location.port || 8787}`;
     try {
       // If not previously detected, ping the server health endpoint quickly
       if (!window.ORBIT_RUNNER_API) {
@@ -5738,7 +5738,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   let statsSaved = false;
   let serverAvailable = false;
   async function detectServer() {
-    const defaultApi = `http://${location.hostname}:8787`;
+    const defaultApi = `http://${location.hostname}:${location.port || 8787}`;
     const url = window.ORBIT_RUNNER_API || defaultApi;
     try {
       const r = await fetch(url + "/health", { method: "GET", mode: "cors" });
@@ -5776,7 +5776,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (!serverAvailable || lbWs) return;
     try {
       const httpBase =
-        window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
+        window.ORBIT_RUNNER_API || `http://${location.hostname}:${location.port || 8787}`;
       const wsUrl = httpBase.replace(/^http/, "ws");
       lbWs = new WebSocket(wsUrl);
       lbWs.onmessage = (ev) => {
@@ -6028,7 +6028,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (!serverAvailable || MP.ws) return;
     try {
       const httpBase =
-        window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
+        window.ORBIT_RUNNER_API || `http://${location.hostname}:${location.port || 8787}`;
       const wsUrl = httpBase.replace(/^http/, "ws") + "/mp";
       const ws = new WebSocket(wsUrl);
       ws.binaryType = "arraybuffer";
