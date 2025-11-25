@@ -7,6 +7,8 @@ const https = require("https");
 const { randomUUID } = require("crypto");
 const { Demos } = require("@kynesyslabs/demosdk/websdk");
 const demos = new Demos();
+// Database integration
+const { initDatabase, getLeaderboards, submitScore, getTopScore, clearLeaderboards } = require('./database');
 // Separate Demos instance for treasury wallet operations
 const treasuryDemos = new Demos();
 // Known public RPCs to probe during payment verification (helps with propagation)
@@ -58,9 +60,8 @@ app.use(express.json());
 app.use(express.static("."));
 app.use("/node_modules", express.static("../node_modules"));
 
-// In-memory store (persisted to disk)
-const DATA_PATH = path.join(__dirname, "leaderboards.json");
-const top = {
+// Database storage (replaces file-based storage)
+let leaderboardsCache = {
   points: [],
   kills: [],
   asteroids: [],
@@ -68,24 +69,37 @@ const top = {
   survival: [],
   sessions: [],
 };
-try {
-  if (fs.existsSync(DATA_PATH)) {
-    const raw = JSON.parse(fs.readFileSync(DATA_PATH, "utf8"));
-    Object.assign(top, raw || {});
-  }
-} catch (e) {
-  console.warn("Failed to load persisted leaderboards:", e.message);
-}
-let saveTimer = null;
-function persist() {
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => {
-    try {
-      fs.writeFileSync(DATA_PATH, JSON.stringify(top, null, 2));
-    } catch (e) {
-      console.warn("Persist failed:", e.message);
+
+// Initialize database and cache leaderboards
+async function initLeaderboards() {
+  try {
+    if (process.env.DATABASE_URL) {
+      console.log('🗄️ Using PostgreSQL database for leaderboards');
+      await initDatabase();
+      leaderboardsCache = await getLeaderboards();
+    } else {
+      console.log('⚠️ No DATABASE_URL found, using fallback file storage');
+      // Fallback to file-based storage for local development
+      const DATA_PATH = path.join(__dirname, "leaderboards.json");
+      if (fs.existsSync(DATA_PATH)) {
+        const raw = JSON.parse(fs.readFileSync(DATA_PATH, "utf8"));
+        Object.assign(leaderboardsCache, raw || {});
+      }
     }
-  }, 250);
+  } catch (e) {
+    console.warn("Failed to initialize leaderboards:", e.message);
+  }
+}
+
+// Refresh leaderboards cache
+async function refreshLeaderboards() {
+  try {
+    if (process.env.DATABASE_URL) {
+      leaderboardsCache = await getLeaderboards();
+    }
+  } catch (e) {
+    console.warn("Failed to refresh leaderboards:", e.message);
+  }
 }
 // simple rate-limit per IP
 const lastSubmitByIp = new Map();
@@ -340,15 +354,25 @@ app.get("/test-telegram", async (_req, res) => {
 app.post("/admin/clear-leaderboard", async (_req, res) => {
   try {
     // Clear all leaderboard data
-    top.points = [];
-    top.kills = [];
-    top.asteroids = [];
-    top.belt = [];
-    top.survival = [];
-    top.sessions = [];
-    
-    // Persist the cleared data
-    persist();
+    if (process.env.DATABASE_URL) {
+      await clearLeaderboards();
+      leaderboardsCache = {
+        points: [],
+        kills: [],
+        asteroids: [],
+        belt: [],
+        survival: [],
+        sessions: [],
+      };
+    } else {
+      // Fallback to in-memory clearing for local development
+      leaderboardsCache.points = [];
+      leaderboardsCache.kills = [];
+      leaderboardsCache.asteroids = [];
+      leaderboardsCache.belt = [];
+      leaderboardsCache.survival = [];
+      leaderboardsCache.sessions = [];
+    }
     
     res.json({ 
       ok: true, 
@@ -365,15 +389,24 @@ app.post("/admin/clear-leaderboard", async (_req, res) => {
   }
 });
 
-app.get("/leaderboards", (_req, res) =>
-  res.json({
-    points: top.points,
-    kills: top.kills,
-    asteroids: top.asteroids,
-    belt: top.belt,
-    survival: top.survival,
-  })
-);
+app.get("/leaderboards", async (_req, res) => {
+  try {
+    // Refresh cache from database if available
+    await refreshLeaderboards();
+    
+    res.json({
+      points: leaderboardsCache.points,
+      kills: leaderboardsCache.kills,
+      asteroids: leaderboardsCache.asteroids,
+      belt: leaderboardsCache.belt,
+      survival: leaderboardsCache.survival,
+      sessions: leaderboardsCache.sessions
+    });
+  } catch (error) {
+    console.error('Failed to fetch leaderboards:', error);
+    res.status(500).json({ error: 'Failed to fetch leaderboards' });
+  }
+});
 
 // Blockchain API endpoints
 let demosConnected = false;
@@ -1472,10 +1505,12 @@ app.post("/blockchain/submit", async (req, res) => {
       console.log("✅ Broadcasted storage tx:", hash || sendRes);
 
       try {
-        const prevRecord =
-          Array.isArray(top.points) && top.points.length
-            ? Number(top.points[0]?.points || 0)
-            : 0;
+        // Get previous record for jackpot detection
+        const prevRecord = process.env.DATABASE_URL 
+          ? await getTopScore()
+          : (Array.isArray(leaderboardsCache.points) && leaderboardsCache.points.length
+              ? Number(leaderboardsCache.points[0]?.points || 0)
+              : 0);
         const nowTs = Date.now();
         const short = (addr) =>
           typeof addr === "string" && addr.startsWith("0x") && addr.length > 10
@@ -1492,21 +1527,39 @@ app.post("/blockchain/submit", async (req, res) => {
           ts: nowTs,
           metadata: { submissionMethod: "blockchain" },
         };
-        pushTop(top.sessions, submission, "ts", 100);
-        pushTop(top.points, submission, "points");
-        pushTop(top.kills, submission, "kills");
-        pushTop(top.asteroids, submission, "asteroids");
-        pushTop(top.belt, submission, "beltTimeSec");
-        pushTop(top.survival, submission, "survivalSec");
-        persist();
+
+        // Submit to database or fallback to in-memory
+        if (process.env.DATABASE_URL) {
+          await submitScore({
+            address: playerAddress,
+            name: short(playerAddress),
+            points: submission.points,
+            kills: submission.kills,
+            asteroids: submission.asteroids,
+            beltTimeSec: submission.beltTimeSec,
+            survivalSec: submission.survivalSec,
+            submissionMethod: "blockchain"
+          });
+          // Refresh cache from database
+          leaderboardsCache = await getLeaderboards();
+        } else {
+          // Fallback to in-memory storage (for local development)
+          pushTop(leaderboardsCache.sessions, submission, "ts", 100);
+          pushTop(leaderboardsCache.points, submission, "points");
+          pushTop(leaderboardsCache.kills, submission, "kills");
+          pushTop(leaderboardsCache.asteroids, submission, "asteroids");
+          pushTop(leaderboardsCache.belt, submission, "beltTimeSec");
+          pushTop(leaderboardsCache.survival, submission, "survivalSec");
+        }
+
         lbBroadcast({
           type: "leaderboards",
           payload: {
-            points: top.points,
-            kills: top.kills,
-            asteroids: top.asteroids,
-            belt: top.belt,
-            survival: top.survival,
+            points: leaderboardsCache.points,
+            kills: leaderboardsCache.kills,
+            asteroids: leaderboardsCache.asteroids,
+            belt: leaderboardsCache.belt,
+            survival: leaderboardsCache.survival,
           },
         });
         await announcePointsRecordIfBeaten({
@@ -1604,6 +1657,11 @@ app.post("/blockchain/submit", async (req, res) => {
 const server = app.listen(PORT, () =>
   console.log(`Leaderboard API listening on :${PORT}`)
 );
+
+// Initialize database and leaderboards
+(async () => {
+  await initLeaderboards();
+})();
 
 // Eagerly connect on boot to print the server wallet address
 (async () => {
