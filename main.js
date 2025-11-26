@@ -1477,39 +1477,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         console.log("🔐 About to request signature from wallet, message:", signedMessage);
         console.log("🔐 Provider being used:", provider);
         
-        // Ensure wallet is ready before signing (older wallets disconnect)
-        console.log("🔐 Ensuring wallet is ready before signing...");
-        try {
-          // For older wallets, always try to reconnect before signing
-          console.log("🔌 Attempting to refresh wallet connection before signing...");
-          try {
-            // Try to get accounts first to check if still connected
-            let accounts = await provider.request({ method: "accounts" });
-            if (!accounts || accounts.length === 0) {
-              console.log("⚠️ Wallet disconnected, reconnecting...");
-              // Force reconnection by clearing address first
-              walletAddress = "";
-              await ensureWalletReady(provider);
-            } else {
-              console.log("✅ Wallet still connected with accounts:", accounts);
-              // Update address if needed
-              if (accounts[0] && accounts[0] !== walletAddress) {
-                walletAddress = accounts[0];
-                console.log("📍 Updated wallet address to:", walletAddress);
-              }
-            }
-          } catch (accountError) {
-            console.log("⚠️ Could not get accounts, attempting reconnection:", accountError.message);
-            // Force reconnection by clearing address
-            walletAddress = "";
-            await ensureWalletReady(provider);
-          }
-          
-          console.log("🔐 Wallet ready, current address:", walletAddress);
-        } catch (e) {
-          console.error("🔐 Failed to ensure wallet ready:", e);
-          throw new Error("Could not reconnect wallet for signing");
-        }
+        // Skip pre-sign reconnection - it triggers extension bugs in some wallets
+        // The wallet was already connected when the game started, trust that connection
+        console.log("🔐 Using existing wallet connection, address:", walletAddress);
         
         // Helper function to add timeout to prevent hanging
         function withTimeout(promise, timeoutMs) {
