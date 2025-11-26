@@ -1594,7 +1594,7 @@ app.post("/blockchain/submit", async (req, res) => {
         });
         await announcePointsRecordIfBeaten({
           playerAddress: submission.uid,
-          playerName: submission.name,
+          playerName: telegramHandle || submission.name,
           points: submission.points,
           previousRecord: prevRecord,
         });
