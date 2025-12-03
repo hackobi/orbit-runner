@@ -38,6 +38,7 @@ app.use(cors({
     const allowedOrigins = [
       'http://localhost:3000',
       'http://localhost:8000',
+      'http://localhost:8080',
       'http://localhost:8787', 
       'https://strong-centaur-2dae15.netlify.app',
       'https://orbit-runner-production.up.railway.app',
@@ -1685,7 +1686,7 @@ const mpRoom = {
 
 // Bot configuration
 const BOT_CONFIG = {
-  MAX_BOTS: 3,
+  MAX_BOTS: 0,
   SPAWN_RADIUS: 800,
   SPEED: 12,
   RANGE: 100,
@@ -1922,6 +1923,8 @@ mpWss.on("connection", (ws) => {
         worldVersion: "v1",
         worldChecksum: worldChecksum(mpRoom.worldSeed),
         players: snapshot,
+        serverTime: Date.now(),
+        serverStartTime: mpRoom.startTime,
       });
 
       // Notify others
@@ -1955,15 +1958,18 @@ mpWss.on("connection", (ws) => {
     if (msg.type === "input") {
       const rec = mpRoom.players.get(playerId);
       if (rec) {
-        // Debug: Log ALL incoming input messages  
-        // Removed verbose input logging for performance
-        
-        // Sanitize input first (now preserves teleport fields)
         const sanitizedInput = sanitizeInput(msg, nowMs);
         rec.input = sanitizedInput;
         rec.lastSeen = nowMs;
         
-        // Handle demo teleport using sanitized input
+        if (msg.p && Array.isArray(msg.p) && msg.p.length >= 3) {
+          rec.state.p = [msg.p[0], msg.p[1], msg.p[2]];
+        }
+        if (msg.q && Array.isArray(msg.q) && msg.q.length >= 4) {
+          rec.state.q = [msg.q[0], msg.q[1], msg.q[2], msg.q[3]];
+        }
+        rec.state.t = nowMs;
+        
         if (sanitizedInput.demoTeleport && sanitizedInput.teleportPos && Array.isArray(sanitizedInput.teleportPos)) {
           // console.log(`🎯 TELEPORT REQUEST: ${playerId} to [${sanitizedInput.teleportPos[0]}, ${sanitizedInput.teleportPos[1]}, ${sanitizedInput.teleportPos[2]}]`);
           
@@ -2096,8 +2102,22 @@ mpWss.on("connection", (ws) => {
             victimId: targetId,
             victimName: target.name
           };
-          send(killEvent); // Send to killer
-          broadcastToOthers(killEvent); // Send to others
+          send(killEvent);
+          broadcastToOthers(killEvent);
+          
+          // Broadcast death event with position for explosion effects
+          const deathEvent = JSON.stringify({
+            type: "player-death",
+            victimId: targetId,
+            victimNumId: target.numId,
+            victimName: target.name,
+            position: target.pos
+          });
+          mpWss.clients.forEach((client) => {
+            if (client.readyState === 1) {
+              try { client.send(deathEvent); } catch (_) {}
+            }
+          });
         }
         
         broadcastRoomStats();
@@ -2156,6 +2176,7 @@ function sanitizeInput(msg, nowMs) {
     boost: !!msg.boost,
     fire: !!msg.fire,
     fenix: !!msg.fenix,
+    turbo: !!msg.turbo,
   };
   
   // Preserve teleport fields for demo mode
@@ -2173,7 +2194,7 @@ function sanitizeInput(msg, nowMs) {
 const TICK_HZ = 30;
 const TICK_MS = Math.floor(1000 / TICK_HZ);
 const MIN_SPEED = 5;
-const MAX_SPEED_BASE = 60;
+const MAX_SPEED_BASE = 60; // Normal ship max speed
 const FENIX_MULT = 1.05;
 const BOOST_MULT = 3.08;
 const YAW_RATE = 2.0; // rad/sec
@@ -2240,9 +2261,10 @@ function updateBots(dt) {
   }
   
   // Maintain bot population (disabled in demo mode)
-  if (!mpRoom.demoMode && mpRoom.bots.size < BOT_CONFIG.MAX_BOTS && mpRoom.players.size > 0) {
-    spawnBot();
-  }
+  // DISABLED FOR DEBUG: Commenting out bot spawning to isolate player sync issue
+  // if (!mpRoom.demoMode && mpRoom.bots.size < BOT_CONFIG.MAX_BOTS && mpRoom.players.size > 0) {
+  //   spawnBot();
+  // }
   
   for (const [botId, bot] of mpRoom.bots) {
     // Find nearest player to target
@@ -2406,15 +2428,18 @@ function integratePlayers(dt) {
     const HALF_PI = Math.PI / 2 - 0.05;
     if (s.pitch > HALF_PI) s.pitch = HALF_PI;
     if (s.pitch < -HALF_PI) s.pitch = -HALF_PI;
-    // Target speed from throttle with boost/fenix multipliers to match client
-    let effectiveMax = MAX_SPEED_BASE;
-    if (i?.fenix) {
-      effectiveMax *= FENIX_MULT;
-      s.fenix = true; // Store fenix state for broadcasting
+    // Target speed from throttle with turbo/fenix/boost multipliers to match client
+    let effectiveMax = MAX_SPEED_BASE; // 60
+    if (i?.turbo) {
+      effectiveMax = 500; // Dev turbo speed
+      s.fenix = false;
+    } else if (i?.fenix) {
+      effectiveMax = 80; // Fenix ship speed
+      s.fenix = true;
     } else {
       s.fenix = false;
     }
-    if (i?.boost) effectiveMax *= BOOST_MULT;
+    if (i?.boost && !i?.turbo) effectiveMax *= BOOST_MULT;
     const targetSp =
       MIN_SPEED +
       clampNum(i?.throttle ?? 0.25, 0, 1) * (effectiveMax - MIN_SPEED);
@@ -2423,15 +2448,14 @@ function integratePlayers(dt) {
     } else if (s.sp > targetSp) {
       s.sp = Math.max(targetSp, s.sp - SPEED_ACCEL * dt);
     }
-    // Move
+    // Move - client sends authoritative position, so only compute velocity for extrapolation
     const fwd = forwardFromYawPitch(s.yaw, s.pitch);
-    s.p = [
-      s.p[0] + fwd[0] * s.sp * dt,
-      s.p[1] + fwd[1] * s.sp * dt,
-      s.p[2] + fwd[2] * s.sp * dt,
-    ];
     s.v = [fwd[0] * s.sp, fwd[1] * s.sp, fwd[2] * s.sp];
-    s.q = eulerToQuatYXZ(s.pitch, s.yaw, s.roll || 0);
+    // Position and quaternion come from client input messages (rec.state.p, rec.state.q)
+    // Only compute quaternion if client didn't send one
+    if (!s.q || s.q.every(v => v === 0)) {
+      s.q = eulerToQuatYXZ(s.pitch, s.yaw, s.roll || 0);
+    }
     s.t = now();
   }
 }
@@ -2686,7 +2710,7 @@ setInterval(() => {
   const dt = Math.min(0.1, (nowMs - mpRoom.lastTick) / 1000);
   mpRoom.lastTick = nowMs;
   integratePlayers(dt);
-  updateBots(dt);
+  // DISABLED FOR DEBUG: updateBots(dt);
   // PvP collision check (pairwise naive for MVP)
   const players = Array.from(mpRoom.players.values());
   for (let i = 0; i < players.length; i++) {

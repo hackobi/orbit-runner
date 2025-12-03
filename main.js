@@ -253,7 +253,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   
   // Check for demo mode via URL parameter
   const urlParams = new URLSearchParams(window.location.search);
-  const isDemoMode = urlParams.get('demo') === 'true' || urlParams.get('test') === 'true';
+  let isDemoMode = urlParams.get('demo') === 'true' || urlParams.get('test') === 'true';
   if (isDemoMode) {
     // console.log("🎮 DEMO MODE ENABLED - Bypassing wallet requirements");
     // Set fake values for demo mode
@@ -299,6 +299,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           Number(v.z?.toFixed?.(1) ?? v[2] ?? 0),
         ]
       : [0, 0, 0];
+  }
+  function quatToArr(q) {
+    return q ? [q.x, q.y, q.z, q.w] : [0, 0, 0, 1];
   }
   function dbg(tag, data) {
     // Filter out spam self-state messages
@@ -444,192 +447,6 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       return d;
     })();
     
-  // Enhanced Multiplayer minimap
-  const minimap = (() => {
-    // Create minimap state
-    const state = {
-      width: 250,
-      height: 250,
-      x: 10,
-      y: window.innerHeight - 270,
-      manualZoom: 0.01,
-      isDragging: false,
-      isResizing: false,
-      dragOffset: { x: 0, y: 0 },
-      targetPosition: null,
-      showTrails: true,
-      showGrid: false,
-      playerTrails: new Map()
-    };
-
-    // Create container
-    const container = document.createElement("div");
-    container.className = "minimap-container";
-    container.style.left = state.x + "px";
-    container.style.bottom = (window.innerHeight - state.y - state.height) + "px";
-    container.style.width = state.width + "px";
-    container.style.height = (state.height + 32) + "px"; // +32 for toolbar
-    container.style.display = "none";
-
-    // Create toolbar
-    const toolbar = document.createElement("div");
-    toolbar.className = "minimap-toolbar";
-    toolbar.innerHTML = `
-      <button id="minimap-zoom-in" title="Zoom In">+</button>
-      <button id="minimap-zoom-out" title="Zoom Out">-</button>
-      <button id="minimap-fit" title="Fit All Players">⌂</button>
-      <button id="minimap-trails" title="Toggle Trails">⟲</button>
-      <button id="minimap-grid" title="Toggle Grid">⊞</button>
-      <span class="zoom-info" id="minimap-zoom-info">1:500</span>
-    `;
-
-    // Create canvas
-    const canvas = document.createElement("canvas");
-    canvas.className = "minimap-canvas";
-    canvas.width = state.width;
-    canvas.height = state.height;
-    canvas.style.display = "block";
-
-    // Create resize handle
-    const resizeHandle = document.createElement("div");
-    resizeHandle.className = "minimap-resize-handle";
-
-    // Assemble minimap
-    container.appendChild(toolbar);
-    container.appendChild(canvas);
-    container.appendChild(resizeHandle);
-    document.body.appendChild(container);
-
-    // Event handlers for zoom controls
-    document.getElementById("minimap-zoom-in").addEventListener("click", () => {
-      state.manualZoom = Math.min(state.manualZoom * 1.5, 0.1);
-      updateZoomInfo();
-    });
-
-    document.getElementById("minimap-zoom-out").addEventListener("click", () => {
-      state.manualZoom = Math.max(state.manualZoom / 1.5, 0.001);
-      updateZoomInfo();
-    });
-
-    document.getElementById("minimap-fit").addEventListener("click", () => {
-      if (MP.active && MP.remotes.size > 0) {
-        let maxDist = 1000;
-        for (const [numId, remote] of MP.remotes) {
-          if (remote.mesh && remote.mesh.position && shipPosition) {
-            const dist = shipPosition.distanceTo(remote.mesh.position);
-            maxDist = Math.max(maxDist, dist);
-          }
-        }
-        state.manualZoom = Math.min(0.05, state.width / (maxDist * 2.5));
-        updateZoomInfo();
-      }
-    });
-
-    document.getElementById("minimap-trails").addEventListener("click", () => {
-      state.showTrails = !state.showTrails;
-      document.getElementById("minimap-trails").style.background =
-        state.showTrails ? "rgba(0, 255, 255, 0.3)" : "rgba(0, 255, 255, 0.1)";
-    });
-
-    document.getElementById("minimap-grid").addEventListener("click", () => {
-      state.showGrid = !state.showGrid;
-      document.getElementById("minimap-grid").style.background =
-        state.showGrid ? "rgba(0, 255, 255, 0.3)" : "rgba(0, 255, 255, 0.1)";
-    });
-
-    // Update zoom info display
-    function updateZoomInfo() {
-      const scale = Math.round(1 / state.manualZoom);
-      document.getElementById("minimap-zoom-info").textContent = `1:${scale}`;
-    }
-
-    // Drag functionality for moving minimap
-    let isDragging = false;
-    let dragStart = { x: 0, y: 0 };
-
-    toolbar.addEventListener("mousedown", (e) => {
-      if (e.target.tagName !== "BUTTON") {
-        isDragging = true;
-        dragStart = { x: e.clientX - state.x, y: e.clientY - state.y };
-        container.classList.add("dragging");
-        e.preventDefault();
-      }
-    });
-
-    document.addEventListener("mousemove", (e) => {
-      if (isDragging) {
-        state.x = Math.max(0, Math.min(window.innerWidth - state.width, e.clientX - dragStart.x));
-        state.y = Math.max(32, Math.min(window.innerHeight - state.height - 32, e.clientY - dragStart.y));
-        container.style.left = state.x + "px";
-        container.style.bottom = (window.innerHeight - state.y - state.height - 32) + "px";
-      }
-    });
-
-    document.addEventListener("mouseup", () => {
-      if (isDragging) {
-        isDragging = false;
-        container.classList.remove("dragging");
-      }
-    });
-
-    // Click-to-navigate functionality
-    canvas.addEventListener("click", (e) => {
-      if (!MP.active || !shipPosition) return;
-
-      const rect = canvas.getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      const clickY = e.clientY - rect.top;
-
-      // Convert click position to world coordinates
-      const centerX = state.width / 2;
-      const centerY = state.height / 2;
-      const worldX = (clickX - centerX) / state.manualZoom + shipPosition.x;
-      const worldZ = (clickY - centerY) / state.manualZoom + shipPosition.z;
-
-      // Set navigation target
-      state.targetPosition = { x: worldX, z: worldZ };
-
-      // Visual feedback
-      // console.log(`🎯 Navigation target set: [${Math.round(worldX)}, ${Math.round(worldZ)}]`);
-    });
-
-    // Resize functionality
-    let isResizing = false;
-    resizeHandle.addEventListener("mousedown", (e) => {
-      isResizing = true;
-      e.preventDefault();
-      e.stopPropagation();
-    });
-
-    document.addEventListener("mousemove", (e) => {
-      if (isResizing) {
-        const newWidth = Math.max(150, Math.min(400, e.clientX - state.x));
-        const newHeight = Math.max(150, Math.min(400, e.clientY - state.y));
-
-        state.width = newWidth;
-        state.height = newHeight;
-
-        canvas.width = newWidth;
-        canvas.height = newHeight;
-        container.style.width = newWidth + "px";
-        container.style.height = (newHeight + 32) + "px";
-      }
-    });
-
-    document.addEventListener("mouseup", () => {
-      isResizing = false;
-    });
-
-    // Return enhanced minimap object
-    return {
-      container,
-      canvas,
-      state,
-      show: () => { container.style.display = "block"; },
-      hide: () => { container.style.display = "none"; },
-      getContext: () => canvas.getContext("2d")
-    };
-  })();
     
   const help =
     document.getElementById("help") ||
@@ -648,7 +465,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       d.style.borderRadius = "6px";
       d.style.display = "none";
       d.textContent =
-        "M toggle mouse • W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H target • N name • J toggle HUD • T dev 5000 • R restart (2 DEM)";
+        "M toggle mouse • W/↑ speed • S/↓ slow • A/D or ←/→ yaw • I/K pitch • Space shoot • H target • N name • J toggle HUD • T dev 500 • R restart (2 DEM)";
       document.body.appendChild(d);
       return d;
     })();
@@ -3682,7 +3499,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       // });
       // Start the 3-minute round at game launch
       roundActive = true;
-      roundEndsAt = Date.now() + 3 * 60 * 1000;
+      roundEndsAt = Infinity;
       canvas.focus();
     });
   }
@@ -3705,6 +3522,23 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       currentUrl.searchParams.set('demo', 'true');
       // console.log("🎮 Switching to demo mode...");
       window.location.href = currentUrl.toString();
+    });
+  }
+
+  // TEST LAUNCH button (temporary for development)
+  const testLaunchBtn = document.getElementById("test-launch-btn");
+  if (testLaunchBtn) {
+    testLaunchBtn.addEventListener("click", () => {
+      isDemoMode = true;
+      walletAddress = "0xTEST_" + Math.random().toString(36).substring(2, 8);
+      if (welcomeScreen) welcomeScreen.classList.add("hidden");
+      if (canvas) {
+        canvas.classList.remove("hidden");
+        canvas.style.display = "block";
+      }
+      startGame();
+      roundActive = true;
+      roundEndsAt = Infinity;
     });
   }
 
@@ -3907,6 +3741,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       // currentProvider: !!preservedCurrentProvider,
       // paidSessionToken: !!preservedPaidSessionToken
     // });
+    
+    // Hide ship until we receive spawn position from server
+    ship.visible = false;
     
     // FORCE HUD VISIBLE WITH DEBUG STYLING
     hudVisible = true;
@@ -4213,8 +4050,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   let speedUnitsPerSec = 20;
   let targetSpeedUnitsPerSec = 20;
   const minSpeed = 5;
-  const baseMaxSpeed = 60;
-  const DEV_TURBO_SPEED = 5000; // Increased for demo mode testing
+  const baseMaxSpeed = 60; // Normal ship max speed
+  const DEV_TURBO_SPEED = 500;
   const yawRate = 2.0; // rad/sec
   const pitchRate = 1.35; // rad/sec
   let yaw = 0,
@@ -4228,7 +4065,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   const shipPosition = new THREE.Vector3();
   const velocity = new THREE.Vector3();
   
-  // TEMP: Expose shipPosition for debugging teleport
+  // TEMP: Expose for debugging teleport
   window.debugShipPosition = shipPosition;
   
   // TEMP: Expose health for debugging
@@ -5718,8 +5555,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       const vel = randomVel(20);
       impactParticles.push({ mesh: p, vel, life: 0.6 + Math.random() * 0.2 });
     }
-    // Reduced impact burst shake to minimize unwanted shooter shake
-    cameraShake += 0.2;
+    // No camera shake here - shake only applies when LOCAL player takes damage
   }
 
   // Shield-specific explosion (green variants for pickup/shot)
@@ -5747,7 +5583,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   function shoot() {
     const q = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(pitch, yaw, roll, "YXZ")
+      new THREE.Euler(pitch, yaw, 0, "YXZ")  // Ignore roll for shooting direction
     );
     const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(q).normalize();
     const tipWorld = new THREE.Vector3()
@@ -5807,7 +5643,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     bombsAvailable--;
     
     const q = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(pitch, yaw, roll, "YXZ")
+      new THREE.Euler(pitch, yaw, 0, "YXZ")  // No roll - matches movement direction
     );
     const dir = new THREE.Vector3(0, 0, 1).applyQuaternion(q).normalize();
     const tipWorld = new THREE.Vector3()
@@ -6016,7 +5852,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       devTurboActive = !devTurboActive;
       if (devTurboActive) {
         targetSpeedUnitsPerSec = DEV_TURBO_SPEED;
-        spawnCenteredTextLabel("TURBO 5000", shipPosition, 0xffee88, 2.2, 1.4);
+        spawnCenteredTextLabel("TURBO 500", shipPosition, 0xffee88, 2.2, 1.4);
       } else {
         targetSpeedUnitsPerSec = Math.min(targetSpeedUnitsPerSec, baseMaxSpeed);
         spawnCenteredTextLabel("DEV OFF", shipPosition, 0xff8888, 2.0, 1.2);
@@ -6083,7 +5919,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       score = 0;
       lives = 3;
       kills = 0;
-      asteroids = 0;
+      asteroidsDestroyed = 0;
       t = 0;
       beltTimeSec = 0;
       survivalSec = 0;
@@ -6309,6 +6145,34 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         document.body.removeChild(notification);
       }, 2000);
     }
+    
+    if (e.code === "KeyG" && !e.repeat && MP.active && MP.remotes.size > 0) {
+      let nearest = null;
+      let nearestDist = Infinity;
+      for (const [numId, r] of MP.remotes) {
+        if (!r.samples || r.samples.length === 0) continue;
+        const latest = r.samples[r.samples.length - 1];
+        const p = vec3From(latest.p);
+        const dist = shipPosition.distanceTo(p);
+        if (dist < nearestDist) {
+          nearestDist = dist;
+          nearest = { numId, pos: p };
+        }
+      }
+      if (nearest) {
+        // Teleport 200m away from player in +X direction, face the player
+        shipPosition.copy(nearest.pos);
+        shipPosition.x += 200;
+        
+        // Face towards the player (-X direction from our position)
+        yaw = -Math.PI / 2; // Face -X direction (towards player)
+        pitch = 0;
+        roll = 0;
+        ship.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, roll, "YXZ"));
+        
+        console.log(`🚀 TELEPORTED to player ${nearest.numId} at 200m, facing them (was ${Math.round(nearestDist)}m away)`);
+      }
+    }
   });
   window.addEventListener("pointerup", () => {
     mouseDown = false;
@@ -6375,347 +6239,6 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     hud.textContent = `Speed ${speedTxt}${timeText} | HP ${hp}% | Shield ${sh}% | Points ${score} | Kills ${killsCount} | Ast ${asteroidsDestroyed}${ax2}${kx2} | Bombs ${bombsAvailable} | Dist ${distFromOrigin} | Target ${distToTarget}${mp}`;
   }
 
-  function updateMinimap() {
-    // Only show minimap in multiplayer mode
-    if (!MP.active) {
-      minimap.hide();
-      return;
-    }
-    
-    minimap.show();
-    const ctx = minimap.getContext();
-    const { width, height, manualZoom, showGrid, showTrails, targetPosition, playerTrails } = minimap.state;
-    
-    // Clear canvas with darker background
-    ctx.fillStyle = "rgba(0, 10, 20, 0.95)";
-    ctx.fillRect(0, 0, width, height);
-    
-    const centerX = width / 2;
-    const centerY = height / 2;
-    const mapScale = manualZoom;
-    
-    // Center on YOUR ship position
-    const mapCenterX = shipPosition ? shipPosition.x : 0;
-    const mapCenterZ = shipPosition ? shipPosition.z : 0;
-    
-    // Draw grid if enabled
-    if (showGrid) {
-      ctx.strokeStyle = "rgba(0, 255, 255, 0.1)";
-      ctx.lineWidth = 1;
-      const gridSize = Math.max(20, 100 * mapScale);
-      
-      for (let x = centerX % gridSize; x < width; x += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, height);
-        ctx.stroke();
-      }
-      for (let y = centerY % gridSize; y < height; y += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(width, y);
-        ctx.stroke();
-      }
-    }
-    
-    // Draw range circles
-    const ranges = [1000, 5000, 10000];
-    ranges.forEach((range, i) => {
-      const radius = range * mapScale;
-      if (radius > 10 && radius < width) {
-        ctx.beginPath();
-        ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(0, 255, 255, ${0.05 + i * 0.02})`;
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        
-        // Range label
-        ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
-        ctx.font = "10px monospace";
-        ctx.fillText(`${range/1000}km`, centerX + radius - 20, centerY + 5);
-      }
-    });
-    
-    // Update player trails
-    if (showTrails && shipPosition) {
-      const currentTime = Date.now();
-      
-      // Add current position to trails for remote players
-      if (MP.remotes && MP.remotes.size > 0) {
-        for (const [numId, remote] of MP.remotes) {
-          if (remote.mesh && remote.mesh.position) {
-            if (!playerTrails.has(numId)) {
-              playerTrails.set(numId, []);
-            }
-            const trail = playerTrails.get(numId);
-            trail.push({
-              x: remote.mesh.position.x,
-              z: remote.mesh.position.z,
-              time: currentTime
-            });
-            
-            // Keep only recent trail points (last 30 seconds)
-            while (trail.length > 0 && currentTime - trail[0].time > 30000) {
-              trail.shift();
-            }
-          }
-        }
-      }
-    }
-    
-    // Draw player trails
-    if (showTrails) {
-      for (const [numId, trail] of playerTrails) {
-        if (trail.length > 1) {
-          ctx.strokeStyle = `rgba(255, 255, 0, 0.3)`;
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          
-          for (let i = 0; i < trail.length; i++) {
-            const point = trail[i];
-            const relativeX = point.x - mapCenterX;
-            const relativeZ = point.z - mapCenterZ;
-            const trailX = centerX + relativeX * mapScale;
-            const trailY = centerY + relativeZ * mapScale;
-            
-            if (i === 0) {
-              ctx.moveTo(trailX, trailY);
-            } else {
-              ctx.lineTo(trailX, trailY);
-            }
-          }
-          ctx.stroke();
-        }
-      }
-    }
-    
-    // Draw navigation target if set
-    if (targetPosition) {
-      const relativeX = targetPosition.x - mapCenterX;
-      const relativeZ = targetPosition.z - mapCenterZ;
-      const targetX = centerX + relativeX * mapScale;
-      const targetY = centerY + relativeZ * mapScale;
-      
-      if (targetX >= 0 && targetX < width && targetY >= 0 && targetY < height) {
-        // Pulsing target marker
-        const pulse = Math.sin(Date.now() / 200) * 0.5 + 0.5;
-        ctx.strokeStyle = `rgba(255, 255, 0, ${0.5 + pulse * 0.5})`;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(targetX, targetY, 8 + pulse * 4, 0, Math.PI * 2);
-        ctx.stroke();
-        
-        // Target cross
-        ctx.beginPath();
-        ctx.moveTo(targetX - 12, targetY);
-        ctx.lineTo(targetX + 12, targetY);
-        ctx.moveTo(targetX, targetY - 12);
-        ctx.lineTo(targetX, targetY + 12);
-        ctx.stroke();
-      }
-    }
-    
-    // Draw self (player's ship) - ALWAYS at center
-    if (shipPosition) {
-      // Ship orientation arrow (if velocity available)
-      if (velocity && (velocity.x !== 0 || velocity.z !== 0)) {
-        const velAngle = Math.atan2(velocity.z, velocity.x);
-        const arrowLength = 12;
-        const endX = centerX + Math.cos(velAngle) * arrowLength;
-        const endY = centerY + Math.sin(velAngle) * arrowLength;
-        
-        ctx.strokeStyle = "#00ffff";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(centerX, centerY);
-        ctx.lineTo(endX, endY);
-        ctx.stroke();
-        
-        // Arrow head
-        const headLen = 4;
-        ctx.beginPath();
-        ctx.moveTo(endX, endY);
-        ctx.lineTo(endX - headLen * Math.cos(velAngle - Math.PI/6), endY - headLen * Math.sin(velAngle - Math.PI/6));
-        ctx.moveTo(endX, endY);
-        ctx.lineTo(endX - headLen * Math.cos(velAngle + Math.PI/6), endY - headLen * Math.sin(velAngle + Math.PI/6));
-        ctx.stroke();
-      }
-      
-      // Ship diamond marker
-      ctx.fillStyle = "#00ffff";
-      ctx.beginPath();
-      ctx.moveTo(centerX, centerY - 6);
-      ctx.lineTo(centerX + 6, centerY);
-      ctx.lineTo(centerX, centerY + 6);
-      ctx.lineTo(centerX - 6, centerY);
-      ctx.closePath();
-      ctx.fill();
-      
-      // White border
-      ctx.strokeStyle = "#ffffff";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-      
-      // Label
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 10px monospace";
-      ctx.fillText("YOU", centerX - 12, centerY - 10);
-    }
-    
-    // Draw remote players relative to YOUR position
-    if (MP.remotes && MP.remotes.size > 0) {
-      for (const [numId, remote] of MP.remotes) {
-        if (remote.mesh && remote.mesh.position) {
-          // Calculate position relative to YOUR ship
-          const relativeX = remote.mesh.position.x - mapCenterX;
-          const relativeZ = remote.mesh.position.z - mapCenterZ;
-          const remoteX = centerX + relativeX * mapScale;
-          const remoteY = centerY + relativeZ * mapScale;
-          
-          // Calculate distance for display
-          const distance = Math.sqrt(relativeX * relativeX + relativeZ * relativeZ);
-          
-          // Check if within canvas bounds (with buffer for better visibility)
-          const buffer = 20;
-          const isVisible = remoteX >= -buffer && remoteX <= width + buffer && 
-                           remoteY >= -buffer && remoteY <= height + buffer;
-          
-          // Check if this player's samples are stale (disconnected) - define outside if/else for both branches
-          const isStale = remote.samples.length === 0 || 
-                        (remote.samples[remote.samples.length - 1].t < Date.now() - 5000);
-          
-          if (isVisible) {
-            
-            // Enhanced ship orientation for remote players
-            const hasRotation = remote.samples && remote.samples.length > 0;
-            let shipAngle = 0;
-            if (hasRotation) {
-              const sample = remote.samples[remote.samples.length - 1];
-              shipAngle = sample.rY || 0;
-            }
-            
-            // Draw ship triangle pointing in direction
-            ctx.save();
-            ctx.translate(remoteX, remoteY);
-            ctx.rotate(shipAngle);
-            
-            // Ship triangle
-            ctx.fillStyle = isStale ? "#808080" : "#ff4444"; 
-            ctx.beginPath();
-            ctx.moveTo(8, 0);     // Point forward
-            ctx.lineTo(-6, -6);   // Back left
-            ctx.lineTo(-3, 0);    // Back center
-            ctx.lineTo(-6, 6);    // Back right
-            ctx.closePath();
-            ctx.fill();
-            
-            // White border for contrast
-            ctx.strokeStyle = isStale ? "#404040" : "#ffffff";
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            ctx.restore();
-            
-            // Enhanced player status indicators
-            const statusSize = 4;
-            const statusY = remoteY - 12;
-            
-            // Connection status indicator
-            ctx.fillStyle = isStale ? "#ff0000" : "#00ff00";
-            ctx.fillRect(remoteX - statusSize/2, statusY, statusSize, statusSize);
-            
-            // Player label with enhanced info
-            ctx.fillStyle = isStale ? "#888888" : "#ffff00";
-            ctx.font = "bold 10px monospace";
-            const playerLabel = `P${numId}${isStale ? " ⚫" : " ⚪"}`;
-            ctx.fillText(playerLabel, remoteX - 15, remoteY - 15);
-            
-            // Distance with better formatting
-            ctx.fillStyle = isStale ? "#666666" : "#ffffff";
-            ctx.font = "9px monospace";
-            const distText = distance < 1000 ? `${Math.round(distance)}m` : 
-                            distance < 10000 ? `${(distance/1000).toFixed(1)}km` : 
-                                               `${Math.round(distance/1000)}km`;
-            ctx.fillText(distText, remoteX - 12, remoteY + 18);
-          } else {
-            // Enhanced off-screen indicators
-            const angle = Math.atan2(relativeZ, relativeX);
-            const margin = 20;
-            
-            // Calculate edge position more precisely
-            const maxRadius = Math.min((width - margin * 2) / 2, (height - margin * 2) / 2);
-            const edgeX = centerX + Math.cos(angle) * maxRadius;
-            const edgeY = centerY + Math.sin(angle) * maxRadius;
-            
-            // Draw enhanced directional arrow
-            ctx.save();
-            ctx.translate(edgeX, edgeY);
-            ctx.rotate(angle);
-            
-            // Gradient arrow for better visibility
-            const gradient = ctx.createLinearGradient(-10, 0, 10, 0);
-            gradient.addColorStop(0, isStale ? "#404040" : "#ff6666");
-            gradient.addColorStop(1, isStale ? "#808080" : "#ff0000");
-            ctx.fillStyle = gradient;
-            
-            ctx.beginPath();
-            ctx.moveTo(12, 0);    // Arrow tip
-            ctx.lineTo(-8, -6);   // Back left
-            ctx.lineTo(-5, 0);    // Back center notch
-            ctx.lineTo(-8, 6);    // Back right
-            ctx.closePath();
-            ctx.fill();
-            
-            // Enhanced outline
-            ctx.strokeStyle = "#ffffff";
-            ctx.lineWidth = 1;
-            ctx.stroke();
-            ctx.restore();
-            
-            // Distance label with better positioning
-            ctx.fillStyle = isStale ? "#888888" : "#ffff00";
-            ctx.font = "bold 9px monospace";
-            const labelOffset = 15;
-            const labelX = edgeX + Math.cos(angle + Math.PI/2) * labelOffset;
-            const labelY = edgeY + Math.sin(angle + Math.PI/2) * labelOffset;
-            
-            const distText = distance < 1000 ? `P${numId}:${Math.round(distance)}m` : 
-                            distance < 10000 ? `P${numId}:${(distance/1000).toFixed(1)}km` : 
-                                               `P${numId}:${Math.round(distance/1000)}km`;
-            
-            // Background for text readability
-            const textWidth = ctx.measureText(distText).width;
-            ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-            ctx.fillRect(labelX - 2, labelY - 10, textWidth + 4, 12);
-            
-            ctx.fillStyle = isStale ? "#888888" : "#ffff00";
-            ctx.fillText(distText, labelX, labelY);
-          }
-        }
-      }
-    }
-    
-    // Enhanced compass with better visibility
-    ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
-    ctx.font = "bold 12px monospace";
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
-    ctx.lineWidth = 2;
-    
-    // North
-    ctx.strokeText("N", centerX - 6, 16);
-    ctx.fillText("N", centerX - 6, 16);
-    
-    // South  
-    ctx.strokeText("S", centerX - 6, height - 6);
-    ctx.fillText("S", centerX - 6, height - 6);
-    
-    // East
-    ctx.strokeText("E", width - 16, centerY + 4);
-    ctx.fillText("E", width - 16, centerY + 4);
-    
-    // West
-    ctx.strokeText("W", 6, centerY + 4);
-    ctx.fillText("W", 6, centerY + 4);
-  }
 
   function showGameOver() {
     gameOverEl.style.display = "block";
@@ -6821,6 +6344,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     remotes: new Map(), // numId -> { mesh, samples:[{t,p,q,v}], lastRender:{p,q} }
     selfServerState: null,
   };
+  window.MP = MP;
+  window.getScene = () => scene;
+  window.getShipPosition = () => shipPosition;
 
   function vec3From(arr) {
     return new THREE.Vector3(arr[0] || 0, arr[1] || 0, arr[2] || 0);
@@ -6839,31 +6365,28 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   function createRemoteShip(numId) {
     const m = buildDefaultShip();
-    m.matrixAutoUpdate = true;
-    // Use normal scale for accurate collision detection
-    m.scale.setScalar(1); // Normal size for realistic combat
-    // Make them red and white for high contrast
-    m.traverse((child) => {
-      if (child.isMesh) {
-        // Create alternating red and white pattern
-        const isRed = Math.random() > 0.5;
-        child.material = new THREE.MeshStandardMaterial({
-          color: isRed ? 0xff0000 : 0xffffff, // Red or white
-          emissive: isRed ? 0xff0000 : 0xffffff, // Self-illuminating
-          emissiveIntensity: 0.8, // Very bright
-          metalness: 0.5,
-          roughness: 0.2,
-        });
+    const REMOTE_COLOR = 0xff00ff;
+    m.traverse?.((n) => {
+      if (n.isMesh && n.material) {
+        if (Array.isArray(n.material))
+          n.material.forEach((mat) => {
+            mat.color?.setHex?.(REMOTE_COLOR);
+            mat.emissive?.setHex?.(REMOTE_COLOR);
+            if (mat.emissiveIntensity !== undefined) mat.emissiveIntensity = 2.0;
+          });
+        else {
+          n.material.color?.setHex?.(REMOTE_COLOR);
+          n.material.emissive?.setHex?.(REMOTE_COLOR);
+          if (n.material.emissiveIntensity !== undefined) n.material.emissiveIntensity = 2.0;
+        }
       }
     });
+    m.scale.setScalar(1.5);
+    m.visible = true;
     scene.add(m);
-    m.visible = true; // Ensure visibility
-    m.frustumCulled = false; // Disable frustum culling to always render
+    m.position.set(0, 0, 0);
+    console.log(`🚀 Created MAGENTA remote ship ${numId} using buildDefaultShip, in scene: ${m.parent === scene}`);
     
-    // Set initial position far but visible
-    m.position.set(0, 100, 0); // Start high up so it's visible
-    
-    // console.log(`🏗️ Created remote ship ${numId} with normal scale, red/white colors. Added to scene (${scene.children.length} children). Visible: ${m.visible}, Position will be set on first update.`);
     MP.remotes.set(numId, {
       mesh: m,
       samples: [],
@@ -6877,9 +6400,16 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     const r = MP.remotes.get(numId);
     if (!r) return;
     try {
-      scene.remove(r.mesh);
+      if (r.mesh) scene.remove(r.mesh);
+      if (r.shipMarker) {
+        scene.remove(r.shipMarker);
+        if (r.shipMarker.geometry) r.shipMarker.geometry.dispose();
+        if (r.shipMarker.material) r.shipMarker.material.dispose();
+      }
+      if (r.shipLight) scene.remove(r.shipLight);
     } catch (_) {}
     MP.remotes.delete(numId);
+    console.log(`🧹 Cleaned up remote player ${numId}`);
   }
 
   async function handleMpMessage(ev) {
@@ -6927,20 +6457,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         
         // Do not update offset here (use ping/pong for more stable estimate)
         if (numId === MP.myNumId) {
-          // Track authoritative self state for resync after tab visibility changes, but do not render from it in real-time
-          MP.selfServerState = { t, p, q, v, flags };
-          
-          // Debug: Log position differences
-          if (i % 30 === 0) { // Every ~1 second
-            const serverPos = vec3From(p);
-            const localError = shipPosition.distanceTo(serverPos);
-            // console.log(`🎯 Sync check: Local error ${localError.toFixed(1)}u, Server pos [${p[0].toFixed(0)}, ${p[1].toFixed(0)}, ${p[2].toFixed(0)}]`);
-          }
+          MP.selfServerState = { t: absT, p, q, v, flags };
           continue;
         }
+        
         let r = MP.remotes.get(numId);
         if (!r) {
-          // console.log(`✨ Creating remote ship for player ${numId}`);
           createRemoteShip(numId);
           r = MP.remotes.get(numId);
         }
@@ -6963,27 +6485,39 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         MP.active = true;
         MP.myId = msg.playerId;
         MP.worldSeed = msg.worldSeed;
-        MP.serverStartTime = Date.now() - (MP.serverOffsetEma || 0); // Initialize relative timestamp base
-        // Build id->num and remote meshes
-        // TEMPORARILY keeping old ships for testing
-        // console.log(`🔄 Reconnected - keeping ${MP.remotes.size} existing ships for testing`);
-        
-        // Don't clear existing ships for testing
-        // MP.idToNum.clear();
-        // for (const [nid, r] of MP.remotes) {
-        //   try {
-        //     scene.remove(r.mesh);
-        //   } catch (_) {}
-        // }
-        // MP.remotes.clear();
-        for (const p of msg.players || []) {
-          if (p.id === msg.playerId) {
-            MP.myNumId = p.numId;
+        // Use server's actual start time, adjusted to local clock
+        // Server sends relativeTime = serverNow - serverStartTime
+        // So to convert back: absT = relativeTime + serverStartTime
+        // But we need serverStartTime in local clock terms
+        MP.serverStartTime = msg.serverStartTime - (MP.serverOffsetEma || 0);
+        console.log(`🕐 Timestamp sync: serverStartTime=${msg.serverStartTime}, offset=${MP.serverOffsetEma}, localEquiv=${MP.serverStartTime}`);
+        // Clear old remotes on reconnect to avoid ghost markers
+        console.log(`🔄 Reconnected - clearing ${MP.remotes.size} old ships`);
+        for (const [nid, r] of MP.remotes) {
+          removeRemoteShipByNumId(nid);
+        }
+        MP.idToNum.clear();
+        MP.remotes.clear();
+        for (const pl of msg.players || []) {
+          if (pl.id === msg.playerId) {
+            MP.myNumId = pl.numId;
+            if (pl.state && pl.state.p) {
+              shipPosition.set(pl.state.p[0], pl.state.p[1], pl.state.p[2]);
+              ship.position.copy(shipPosition);
+              if (pl.state.q) {
+                ship.quaternion.set(pl.state.q[0], pl.state.q[1], pl.state.q[2], pl.state.q[3]);
+                const euler = new THREE.Euler().setFromQuaternion(ship.quaternion, "YXZ");
+                yaw = euler.y;
+                pitch = euler.x;
+                roll = euler.z;
+              }
+              ship.visible = true;
+            }
             continue;
           }
-          if (p.numId != null) {
-            MP.idToNum.set(p.id, p.numId);
-            createRemoteShip(p.numId);
+          if (pl.numId != null) {
+            MP.idToNum.set(pl.id, pl.numId);
+            createRemoteShip(pl.numId);
           }
         }
         return;
@@ -7022,25 +6556,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         return;
       }
       if (msg.type === "player-remove") {
-        // TEMPORARILY DISABLED for multiplayer testing
-        // Ships stay visible even when players disconnect
-        // console.log(`📌 Player ${msg.id} disconnected but keeping ship visible for testing`);
+        console.log(`👋 Player ${msg.id} disconnected - removing ship`);
         const numId = MP.idToNum.get(msg.id);
         if (numId != null) {
-          // Mark ship as disconnected but keep it visible
-          const r = MP.remotes.get(numId);
-          if (r && r.mesh) {
-            // Make disconnected ships semi-transparent
-            r.mesh.traverse((child) => {
-              if (child.isMesh && child.material) {
-                child.material.opacity = 0.5;
-                child.material.transparent = true;
-              }
-            });
-          }
-          // Don't actually remove the ship
-          // removeRemoteShipByNumId(numId);
-          // MP.idToNum.delete(msg.id);
+          removeRemoteShipByNumId(numId);
+          MP.idToNum.delete(msg.id);
         }
         return;
       }
@@ -7070,15 +6590,19 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         return;
       }
       if (msg.type === "shoot") {
-        // Handle incoming bullets from other players
-        // console.log(`🔫 SHOOT MESSAGE RECEIVED! From: ${msg.id}, My ID: ${MP.myId}`);
         if (msg.id === MP.myId) {
-          // console.log(`⏭️ Skipping own bullet`);
-          return; // Don't spawn our own bullets
+          return;
         }
         
-        // console.log(`🔫 Spawning ${msg.fenix ? 'fenix' : 'bullet'} from player ${msg.id}`);
-        // console.log(`📍 Bullet spawn: pos [${msg.p[0].toFixed(1)}, ${msg.p[1].toFixed(1)}, ${msg.p[2].toFixed(1)}], dir [${msg.dir[0].toFixed(2)}, ${msg.dir[1].toFixed(2)}, ${msg.dir[2].toFixed(2)}]`);
+        const numId = MP.idToNum.get(msg.id);
+        const remote = numId != null ? MP.remotes.get(numId) : null;
+        const shootPos = new THREE.Vector3(msg.p[0], msg.p[1], msg.p[2]);
+        const renderedPos = remote?.mesh?.position?.clone() || new THREE.Vector3(0, 0, 0);
+        const posDiff = shootPos.distanceTo(renderedPos);
+        console.log(`🔫 DEBUG: Shoot from ${msg.id} (numId=${numId})`);
+        console.log(`   Bullet origin: [${msg.p[0].toFixed(1)}, ${msg.p[1].toFixed(1)}, ${msg.p[2].toFixed(1)}]`);
+        console.log(`   Rendered ship: [${renderedPos.x.toFixed(1)}, ${renderedPos.y.toFixed(1)}, ${renderedPos.z.toFixed(1)}]`);
+        console.log(`   Position diff: ${posDiff.toFixed(1)} units`);
         
         const startPos = new THREE.Vector3(msg.p[0], msg.p[1], msg.p[2]);
         const direction = new THREE.Vector3(msg.dir[0], msg.dir[1], msg.dir[2]).normalize();
@@ -7292,24 +6816,79 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         return;
       }
       if (msg.type === "killed-by") {
-        // Check if this message is for us
-        if (msg.targetId && msg.targetId !== MP.playerId) {
-          return; // Message is for another player
+        try {
+          if (msg.targetId && msg.targetId !== MP.playerId) {
+            return;
+          }
+          
+          console.log(`💀 KILLED BY ${msg.killerName || msg.killerId}`);
+          
+          health = 0;
+          gameOver = true;
+          
+          try {
+            const explodeAt = shipPosition.clone();
+            for (let i = 0; i < 25; i++) {
+              const burst = acquireImpactMesh(0xff4422);
+              burst.position.copy(explodeAt).add(randomVel(1.5));
+              burst.scale.setScalar(1.0 + Math.random() * 1.5);
+              if (!burst.parent) scene.add(burst);
+              const vel = randomVel(40 + Math.random() * 50);
+              impactParticles.push({ mesh: burst, vel, life: 0.8 + Math.random() * 0.6 });
+            }
+          } catch (e) { console.error("Explosion error:", e); }
+          
+          ship.visible = false;
+          cameraShake += 1.5;
+          
+          try {
+            spawnCenteredTextLabel(`💀 KILLED BY ${msg.killerName || msg.killerId}`, shipPosition, 0xff0000, 2.5, 2.0);
+          } catch (e) { console.error("Label error:", e); }
+          
+          roundActive = false;
+          ensureEndOverlay();
+          if (endMsg) {
+            endMsg.innerHTML = `<div>Killed by ${msg.killerName || msg.killerId}! Score: ${score} | Kills: ${killsCount} | Asteroids: ${asteroidsDestroyed}</div><div style="opacity:0.85;margin-top:6px">Choose an option</div>`;
+          }
+          if (!roundSubmitted) {
+            try { if (!statsSaved) { saveLeaderboards(); statsSaved = true; } } catch (_) {}
+            roundSubmitted = true;
+          }
+          showEndOverlay();
+        } catch (e) {
+          console.error("killed-by handler error:", e);
         }
-        // Handle being killed by another player
-        // console.log(`💀 You were killed by ${msg.killerId}`);
-        
-        // Show death notification
-        spawnCenteredTextLabel(`💀 KILLED BY ${msg.killerId}`, shipPosition, 0xff0000, 2.5, 2.0);
         return;
       }
       if (msg.type === "player-kill") {
-        // Handle notification of another player's kill
-        // console.log(`📢 ${msg.killerId} killed ${msg.victimId}`);
-        
-        // Show kill feed notification in top right
-        const killFeedText = `${msg.killerId} ➤ ${msg.victimId}`;
+        const killFeedText = `${msg.killerName || msg.killerId} ➤ ${msg.victimName || msg.victimId}`;
         spawnCenteredTextLabel(killFeedText, new THREE.Vector3(shipPosition.x + 50, shipPosition.y + 30, shipPosition.z), 0xffff00, 1.5, 3.0);
+        return;
+      }
+      if (msg.type === "player-death") {
+        if (msg.victimId === MP.playerId) return;
+        
+        const deathPos = new THREE.Vector3(msg.position[0], msg.position[1], msg.position[2]);
+        const distance = shipPosition.distanceTo(deathPos);
+        
+        if (distance < 500) {
+          for (let i = 0; i < 20; i++) {
+            const burst = acquireImpactMesh(0xff4422);
+            burst.position.copy(deathPos).add(randomVel(1.5));
+            burst.scale.setScalar(0.9 + Math.random() * 1.2);
+            if (!burst.parent) scene.add(burst);
+            const vel = randomVel(35 + Math.random() * 40);
+            impactParticles.push({ mesh: burst, vel, life: 0.7 + Math.random() * 0.5 });
+          }
+        }
+        
+        const remote = MP.remotes.get(msg.victimNumId);
+        if (remote && remote.mesh) {
+          remote.mesh.visible = false;
+          setTimeout(() => {
+            if (remote.mesh) remote.mesh.visible = true;
+          }, 2000);
+        }
         return;
       }
     } catch (_) {}
@@ -7416,13 +6995,16 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     const msg = {
       type: "input",
       t: Date.now(),
+      p: vecToArr(shipPosition),
+      q: quatToArr(ship.quaternion),
       throttle,
       yaw: THREE.MathUtils.clamp(yawInput, -1, 1),
       pitch: THREE.MathUtils.clamp(pitchInput, -1, 1),
-      roll: roll, // Send actual roll angle to server
+      roll: roll,
       boost: boostActive,
       fire: !!input.fire,
       fenix: !!fenixActive,
+      turbo: !!devTurboActive,
     };
     
     // Include teleport data if pending
@@ -8679,11 +8261,15 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
       // Always run local physics for immediate response
       const forward = new THREE.Vector3(0, 0, 1)
-        .applyEuler(new THREE.Euler(pitch, yaw, roll, "YXZ"))
+        .applyEuler(new THREE.Euler(pitch, yaw, 0, "YXZ"))  // No roll in movement - matches server
         .normalize();
-      const speedMultiplier = fenixActive ? 1.05 : 1.0; // Fenix is 5% faster
+      const speedMultiplier = 1.0; // Fenix speed handled by effectiveMaxSpeed
       velocity.copy(forward).multiplyScalar(speedUnitsPerSec * speedMultiplier);
       shipPosition.addScaledVector(velocity, dt);
+      
+      // Clamp Y to prevent drifting too far vertically (must match server MAX_Y)
+      const MAX_Y = 500;
+      shipPosition.y = Math.max(-MAX_Y, Math.min(MAX_Y, shipPosition.y));
 
       // In multiplayer, blend with server state for correction
       if (MP.active && MP.selfServerState) {
@@ -8699,25 +8285,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           // console.log(`📍 Position error: ${posError.toFixed(1)} units`);
         }
         
-        // If error is significant, gently correct towards server state
-        if (posError > 2) {
-          // Blend local prediction with server state
-          // Use a small factor to avoid jarring corrections
-          const correctionFactor = Math.min(0.05, dt * 2); 
-          shipPosition.lerp(serverPos, correctionFactor);
-          
-          // Also blend rotation
-          const localQuat = new THREE.Quaternion().setFromEuler(
-            new THREE.Euler(pitch, yaw, roll, "YXZ")
-          );
-          localQuat.slerp(serverQuat, correctionFactor);
-          
-          // Update yaw/pitch/roll from blended quaternion
-          const euler = new THREE.Euler().setFromQuaternion(localQuat, "YXZ");
-          yaw = euler.y;
-          pitch = euler.x;
-          roll = euler.z;
-        }
+        // DISABLED: Position correction causing drift and warping issues
+        // Client relies purely on local physics - server state used only for game logic
+        // const isNotTurning = Math.abs(yawInput) < 0.1 && Math.abs(pitchInput) < 0.1;
+        // if (posError > 2 && isNotTurning) {
+        //   const correctionFactor = Math.min(0.05, dt * 2);
+        //   shipPosition.lerp(serverPos, correctionFactor);
+        // }
       }
 
       ship.position.copy(shipPosition);
@@ -9789,17 +9363,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             // Apply damage and show damage label
             health = Math.max(0, health - damage);
             spawnCenteredTextLabel(`-${damage} DMG`, shipPosition, 0xff0000, 2.0, 1.5);
-            updateHealthDisplay(); // Update HUD immediately
-            
-            // Check if player was killed
-            if (health <= 0) {
-              // console.log(`💀 KILLED BY REMOTE PLAYER! Health reduced to 0`);
-              gameOver = true;
-              if (roundActive) {
-                roundActive = false;
-                showGameOverRestart();
-              }
-            }
+            updateHealthDisplay();
             
             // Create impact effect on local ship
             spawnImpactBurst(shipPosition, 0xff0000, 20);
@@ -9810,17 +9374,37 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             if (b.kind === "remote-player") releasePlayerBulletMesh(b.mesh);
             else if (b.kind === "remote-fenix") releaseFenixBeamMesh(b.mesh);
             bullets.splice(i, 1);
-            if (health <= 0) {
-              // console.log(`💀 KILLED BY REMOTE PLAYER! Taking damage from ${b.kind}`);
-              gameOver = true;
-              // Stop the round and show end overlay
-              if (roundActive) {
-                roundActive = false;
-                showGameOverRestart();
-              }
-            }
             
-            // console.log(`💔 Health reduced to ${health}% by remote ${b.kind} bullet`);
+            // Check if player was killed by remote bullet
+            if (health <= 0) {
+              console.log(`💀 KILLED BY REMOTE PLAYER BULLET!`);
+              gameOver = true;
+              roundActive = false;
+              ship.visible = false;
+              
+              // Explosion effect
+              try {
+                for (let j = 0; j < 25; j++) {
+                  const burst = acquireImpactMesh(0xff4422);
+                  burst.position.copy(shipPosition).add(randomVel(1.5));
+                  burst.scale.setScalar(1.0 + Math.random() * 1.5);
+                  if (!burst.parent) scene.add(burst);
+                  const vel = randomVel(40 + Math.random() * 50);
+                  impactParticles.push({ mesh: burst, vel, life: 0.8 + Math.random() * 0.6 });
+                }
+              } catch (e) { console.error("Explosion error:", e); }
+              
+              // Show end overlay
+              ensureEndOverlay();
+              if (endMsg) {
+                endMsg.innerHTML = `<div>Destroyed by enemy fire! Score: ${score} | Kills: ${killsCount}</div><div style="opacity:0.85;margin-top:6px">Choose an option</div>`;
+              }
+              if (!roundSubmitted) {
+                try { if (!statsSaved) { saveLeaderboards(); statsSaved = true; } } catch (_) {}
+                roundSubmitted = true;
+              }
+              showEndOverlay();
+            }
             break;
           }
         }
@@ -9831,113 +9415,24 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     keepFieldPopulated();
     updateHud();
     
-    // Multiplayer minimap
-    updateMinimap();
-
-    // Multiplayer: render remotes with appropriate interpolation buffer
+    // Multiplayer: update remote ship positions
     if (MP.active && MP.remotes.size) {
-      // Use 50ms buffer - enough for smooth interpolation but responsive
-      // Server sends at 30Hz (33ms), so 50ms gives us ~1.5 frames of buffer
-      const renderNow = Date.now() + (MP.serverOffsetEma || 0) - 50;
       for (const [numId, r] of MP.remotes) {
         const s = r.samples;
+        if (!s || s.length === 0) continue;
         
-        // ALWAYS render ship even without samples - use last position
-        if (!s || s.length === 0) {
-          // Keep last known position if we have it
-          if (r.lastRender && r.lastRender.p) {
-            r.mesh.position.copy(r.lastRender.p);
-            r.mesh.quaternion.copy(r.lastRender.q);
-            // console.warn(`⚠️ Remote ${numId} has no samples, using last position`);
-          }
-          continue;
-        }
+        const latest = s[s.length - 1];
+        const p = vec3From(latest.p);
+        const q = quatFrom(latest.q);
         
-        // find two samples around renderNow
-        let a = null,
-          b = null;
-        for (let i = 0; i < s.length; i++) {
-          if (s[i].t <= renderNow) a = s[i];
-          if (s[i].t > renderNow) {
-            b = s[i];
-            break;
-          }
-        }
-        if (!a) a = s[0];
-        if (!b) b = s[s.length - 1];
-        
-        // Check if samples are too old (more than 5 seconds)
-        const sampleAge = renderNow - b.t;
-        if (sampleAge > 5000) {
-          // Samples are very stale, just use last position with warning
-          const p = vec3From(b.p);
-          const q = quatFrom(b.q);
+        if (r.mesh) {
           r.mesh.position.copy(p);
           r.mesh.quaternion.copy(q);
-          
-          // Make ship flash to indicate stale data
-          if (Math.floor(Date.now() / 500) % 2 === 0) {
-            r.mesh.visible = true;
-          } else {
-            r.mesh.visible = false; // Flash to show stale
-          }
-          
-          // console.warn(`⚠️ Remote ${numId} samples are ${Math.round(sampleAge/1000)}s old - showing last position with flashing`);
-          
-          // Store last render position
-          r.lastRender.p.copy(p);
-          r.lastRender.q.copy(q);
-          continue;
+          r.mesh.visible = true;
         }
         
-        const ta = a.t,
-          tb = Math.max(a.t + 1, b.t);
-        let t = (renderNow - ta) / (tb - ta);
-        if (!Number.isFinite(t)) t = 1;
-        t = THREE.MathUtils.clamp(t, 0, 1);
-        const pa = vec3From(a.p),
-          pb = vec3From(b.p);
-        const qa = quatFrom(a.q),
-          qb = quatFrom(b.q);
-        let p = pa.lerp(pb, t);
-        let q = lerpQuat(qa, qb, t);
-        
-        // If buffer underflow (renderNow beyond last sample), extrapolate with velocity
-        if (sampleAge > 24) {
-          const dtEx = Math.min(2.0, sampleAge / 1000); // Allow up to 2 seconds of extrapolation
-          const vv = vec3From(b.v);
-          p = vec3From(b.p).addScaledVector(vv, dtEx);
-          q = qb; // keep last orientation
-        }
-        
-        r.mesh.position.copy(p);
-        r.mesh.quaternion.copy(q);
-        r.mesh.visible = true; // Ensure visible for fresh samples
-        
-        // Store last render position
         r.lastRender.p.copy(p);
         r.lastRender.q.copy(q);
-        
-        // Ensure visibility
-        if (!r.mesh.visible) {
-          r.mesh.visible = true;
-          // console.warn(`⚠️ Remote ${numId} was invisible, forcing visible`);
-        }
-        
-        // Add a bright point light to make remote ships more visible
-        if (!r.mesh.userData.light) {
-          const light = new THREE.PointLight(0xffff00, 3, 500);
-          light.position.set(0, 10, 0);
-          r.mesh.add(light);
-          r.mesh.userData.light = light;
-        }
-        
-        // Debug log remote positions occasionally
-        if (numId && p && Math.random() < 0.01) { // 1% chance = ~once per second
-          const distance = ship.position.distanceTo(p);
-          const sampleCount = r.samples ? r.samples.length : 0;
-          // console.log(`👥 Remote ${numId}: Distance ${distance.toFixed(1)}u, Samples: ${sampleCount}, Interpolating to [${p.x.toFixed(0)}, ${p.y.toFixed(0)}, ${p.z.toFixed(0)}]`);
-        }
       }
     }
 
