@@ -4,6 +4,7 @@ dist/
 npm-debug.log*
 .env
 server/leaderboards.json
+server/pvp-state.json
 
 # Test files
 test-*.js

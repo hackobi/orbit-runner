@@ -553,7 +553,6 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   let endOverlay = null;
   let endMsg = null;
   let endRestartBtn = null;
-  let endFreeBtn = null;
   let endDemosBtn = null;
   let endShown = false;
   function ensureEndOverlay() {
@@ -606,7 +605,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       flexWrap: "wrap",
     });
     endRestartBtn = document.createElement("button");
-    endRestartBtn.textContent = "Restart (3 min)";
+    endRestartBtn.textContent = "Restart";
     Object.assign(endRestartBtn.style, {
       padding: "10px 14px",
       fontSize: "14px",
@@ -615,18 +614,6 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       borderRadius: "6px",
       background: "linear-gradient(45deg, #47e6ff, #66ff99)",
       color: "#001018",
-      cursor: "pointer",
-    });
-    endFreeBtn = document.createElement("button");
-    endFreeBtn.textContent = "Free Flight";
-    Object.assign(endFreeBtn.style, {
-      padding: "10px 14px",
-      fontSize: "14px",
-      fontWeight: "600",
-      border: "1px solid rgba(255,255,255,0.25)",
-      borderRadius: "6px",
-      background: "rgba(0,0,0,0.3)",
-      color: "#e8f8ff",
       cursor: "pointer",
     });
     endDemosBtn = document.createElement("button");
@@ -642,7 +629,6 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       cursor: "pointer",
     });
     btnRow.appendChild(endRestartBtn);
-    btnRow.appendChild(endFreeBtn);
     btnRow.appendChild(endDemosBtn);
     card.appendChild(title);
     card.appendChild(endMsg);
@@ -661,6 +647,338 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (endOverlay) endOverlay.style.display = "none";
     endShown = false;
   }
+  
+  // Longest survivor death screen with Submit Score button
+  let longestSurvivorOverlay = null;
+  function showLongestSurvivorDeathScreen(payoutInfo, killerName) {
+    if (longestSurvivorOverlay) {
+      longestSurvivorOverlay.remove();
+    }
+    
+    const survMins = Math.floor(payoutInfo.survivalSec / 60);
+    const survSecs = payoutInfo.survivalSec % 60;
+    
+    const ov = document.createElement("div");
+    Object.assign(ov.style, {
+      position: "absolute",
+      top: "0",
+      left: "0",
+      width: "100%",
+      height: "100%",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      backdropFilter: "blur(4px)",
+      background: "rgba(0,0,0,0.7)",
+      zIndex: 9999,
+    });
+    
+    const card = document.createElement("div");
+    Object.assign(card.style, {
+      padding: "30px 40px",
+      borderRadius: "16px",
+      background: "linear-gradient(135deg, rgba(20,30,40,0.95), rgba(40,50,60,0.95))",
+      border: "2px solid rgba(255,215,0,0.6)",
+      color: "#fff",
+      textAlign: "center",
+      minWidth: "340px",
+      boxShadow: "0 0 60px rgba(255,215,0,0.4)",
+    });
+    
+    const crown = document.createElement("div");
+    crown.textContent = "👑";
+    Object.assign(crown.style, { fontSize: "48px", marginBottom: "10px" });
+    
+    const title = document.createElement("div");
+    title.textContent = "LONGEST SURVIVOR";
+    Object.assign(title.style, {
+      fontSize: "24px",
+      fontWeight: "bold",
+      color: "#ffd700",
+      marginBottom: "15px",
+      textShadow: "0 0 10px rgba(255,215,0,0.5)",
+    });
+    
+    const stats = document.createElement("div");
+    stats.innerHTML = `
+      <div style="margin-bottom:8px;font-size:16px;">Survived: <strong>${survMins}m ${survSecs}s</strong></div>
+      <div style="margin-bottom:8px;font-size:16px;">Kills: <strong>${payoutInfo.kills}</strong></div>
+      <div style="margin-bottom:8px;font-size:16px;">Killed by: <strong>${killerName || "Abandoned"}</strong></div>
+    `;
+    Object.assign(stats.style, { marginBottom: "20px" });
+    
+    const rewardBox = document.createElement("div");
+    rewardBox.innerHTML = `
+      <div style="font-size:14px;opacity:0.8;">Your Reward</div>
+      <div style="font-size:32px;font-weight:bold;color:#00ff88;">${payoutInfo.survivorAmount} DEM</div>
+    `;
+    Object.assign(rewardBox.style, {
+      padding: "15px",
+      background: "rgba(0,255,136,0.15)",
+      borderRadius: "10px",
+      border: "1px solid rgba(0,255,136,0.4)",
+      marginBottom: "20px",
+    });
+    
+    const submitBtn = document.createElement("button");
+    submitBtn.textContent = "🏆 Submit Score to Demos";
+    Object.assign(submitBtn.style, {
+      padding: "14px 28px",
+      fontSize: "16px",
+      fontWeight: "bold",
+      border: "none",
+      borderRadius: "8px",
+      background: "linear-gradient(45deg, #ffd700, #ffaa00)",
+      color: "#000",
+      cursor: "pointer",
+      marginBottom: "10px",
+      width: "100%",
+    });
+    
+    const statusText = document.createElement("div");
+    Object.assign(statusText.style, {
+      fontSize: "12px",
+      opacity: "0.7",
+      marginTop: "10px",
+    });
+    statusText.textContent = "Click to record your achievement on blockchain and receive your payout";
+    
+    submitBtn.onclick = async () => {
+      submitBtn.disabled = true;
+      submitBtn.textContent = "⏳ Submitting...";
+      statusText.textContent = "Recording to blockchain...";
+      
+      try {
+        let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
+        const res = await fetch(`${apiBase}/pvp/submit-score`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            playerAddress: walletAddress,
+            survivalSec: payoutInfo.survivalSec,
+            kills: payoutInfo.kills,
+          }),
+        });
+        
+        const data = await res.json();
+        if (data.ok) {
+          submitBtn.textContent = "✅ Payout Complete!";
+          submitBtn.style.background = "linear-gradient(45deg, #00ff88, #00cc66)";
+          statusText.innerHTML = `<div style="color:#00ff88;">Received ${data.survivorAmount} DEM!</div>
+            ${data.blockchainTxHash ? `<div style="margin-top:5px;font-size:10px;">TX: ${data.blockchainTxHash.slice(0,16)}...</div>` : ""}`;
+          
+          pvpPendingPayout = null;
+          
+          // Show restart button after success
+          setTimeout(() => {
+            const restartBtn = document.createElement("button");
+            restartBtn.textContent = "Play Again";
+            Object.assign(restartBtn.style, {
+              padding: "12px 24px",
+              fontSize: "14px",
+              fontWeight: "600",
+              border: "none",
+              borderRadius: "6px",
+              background: "linear-gradient(45deg, #47e6ff, #66ff99)",
+              color: "#001018",
+              cursor: "pointer",
+              marginTop: "15px",
+              width: "100%",
+            });
+            restartBtn.onclick = () => {
+              ov.remove();
+              longestSurvivorOverlay = null;
+              location.reload();
+            };
+            card.appendChild(restartBtn);
+          }, 1000);
+        } else {
+          throw new Error(data.error || "Submission failed");
+        }
+      } catch (e) {
+        console.error("Submit score error:", e);
+        submitBtn.disabled = false;
+        submitBtn.textContent = "❌ Try Again";
+        statusText.textContent = `Error: ${e.message}. Click to retry.`;
+      }
+    };
+    
+    card.appendChild(crown);
+    card.appendChild(title);
+    card.appendChild(stats);
+    card.appendChild(rewardBox);
+    card.appendChild(submitBtn);
+    card.appendChild(statusText);
+    ov.appendChild(card);
+    document.body.appendChild(ov);
+    longestSurvivorOverlay = ov;
+  }
+  
+  // Check for pending payout on reconnect
+  async function checkPendingPayout() {
+    if (!walletAddress) return;
+    
+    try {
+      let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
+      const res = await fetch(`${apiBase}/pvp/pending-payout?address=${encodeURIComponent(walletAddress)}`);
+      const data = await res.json();
+      
+      if (data.ok && data.hasPending) {
+        console.log("💰 Found pending payout:", data.payout);
+        showPendingPayoutModal(data.payout);
+      }
+    } catch (e) {
+      console.error("Error checking pending payout:", e);
+    }
+  }
+  
+  // Modal for claiming or forfeiting pending payout
+  function showPendingPayoutModal(payout) {
+    const survMins = Math.floor(payout.survivalSec / 60);
+    const survSecs = payout.survivalSec % 60;
+    
+    const ov = document.createElement("div");
+    Object.assign(ov.style, {
+      position: "absolute",
+      top: "0",
+      left: "0",
+      width: "100%",
+      height: "100%",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      backdropFilter: "blur(4px)",
+      background: "rgba(0,0,0,0.8)",
+      zIndex: 10000,
+    });
+    
+    const card = document.createElement("div");
+    Object.assign(card.style, {
+      padding: "30px 40px",
+      borderRadius: "16px",
+      background: "rgba(20,40,60,0.95)",
+      border: "2px solid rgba(0,255,136,0.5)",
+      color: "#fff",
+      textAlign: "center",
+      minWidth: "320px",
+      boxShadow: "0 0 40px rgba(0,255,136,0.3)",
+    });
+    
+    const title = document.createElement("div");
+    title.textContent = "💰 Unclaimed Payout!";
+    Object.assign(title.style, {
+      fontSize: "22px",
+      fontWeight: "bold",
+      color: "#00ff88",
+      marginBottom: "15px",
+    });
+    
+    const info = document.createElement("div");
+    info.innerHTML = `
+      <div style="margin-bottom:10px;">You were the longest survivor!</div>
+      <div style="margin-bottom:5px;">Survived: <strong>${survMins}m ${survSecs}s</strong></div>
+      <div style="margin-bottom:5px;">Kills: <strong>${payout.kills}</strong></div>
+      <div style="margin-top:15px;font-size:24px;color:#00ff88;font-weight:bold;">${payout.survivorAmount} DEM</div>
+    `;
+    Object.assign(info.style, { marginBottom: "20px" });
+    
+    const btnRow = document.createElement("div");
+    Object.assign(btnRow.style, { display: "flex", gap: "10px", justifyContent: "center" });
+    
+    const claimBtn = document.createElement("button");
+    claimBtn.textContent = "Claim Payout";
+    Object.assign(claimBtn.style, {
+      padding: "12px 20px",
+      fontSize: "14px",
+      fontWeight: "bold",
+      border: "none",
+      borderRadius: "6px",
+      background: "linear-gradient(45deg, #00ff88, #00cc66)",
+      color: "#000",
+      cursor: "pointer",
+    });
+    
+    const forfeitBtn = document.createElement("button");
+    forfeitBtn.textContent = "Forfeit & Play";
+    Object.assign(forfeitBtn.style, {
+      padding: "12px 20px",
+      fontSize: "14px",
+      fontWeight: "600",
+      border: "1px solid rgba(255,100,100,0.5)",
+      borderRadius: "6px",
+      background: "rgba(100,0,0,0.3)",
+      color: "#ff8888",
+      cursor: "pointer",
+    });
+    
+    const statusText = document.createElement("div");
+    Object.assign(statusText.style, { fontSize: "11px", opacity: "0.6", marginTop: "15px" });
+    statusText.textContent = "Forfeit returns the reward to the pot";
+    
+    claimBtn.onclick = async () => {
+      claimBtn.disabled = true;
+      claimBtn.textContent = "⏳ Claiming...";
+      
+      try {
+        let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
+        const res = await fetch(`${apiBase}/pvp/submit-score`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ playerAddress: walletAddress }),
+        });
+        
+        const data = await res.json();
+        if (data.ok) {
+          claimBtn.textContent = "✅ Claimed!";
+          claimBtn.style.background = "#00ff88";
+          statusText.textContent = `Received ${data.survivorAmount} DEM!`;
+          setTimeout(() => ov.remove(), 2000);
+        } else {
+          throw new Error(data.error || "Claim failed");
+        }
+      } catch (e) {
+        claimBtn.disabled = false;
+        claimBtn.textContent = "❌ Retry";
+        statusText.textContent = `Error: ${e.message}`;
+      }
+    };
+    
+    forfeitBtn.onclick = async () => {
+      forfeitBtn.disabled = true;
+      forfeitBtn.textContent = "⏳ Forfeiting...";
+      
+      try {
+        let apiBase = window.ORBIT_RUNNER_API || `http://${location.hostname}:8787`;
+        const res = await fetch(`${apiBase}/pvp/forfeit-payout`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ playerAddress: walletAddress }),
+        });
+        
+        const data = await res.json();
+        if (data.ok) {
+          statusText.textContent = `Returned ${data.returnedAmount} DEM to pot`;
+          setTimeout(() => ov.remove(), 1000);
+        } else {
+          throw new Error(data.error || "Forfeit failed");
+        }
+      } catch (e) {
+        forfeitBtn.disabled = false;
+        forfeitBtn.textContent = "❌ Retry";
+        statusText.textContent = `Error: ${e.message}`;
+      }
+    };
+    
+    btnRow.appendChild(claimBtn);
+    btnRow.appendChild(forfeitBtn);
+    card.appendChild(title);
+    card.appendChild(info);
+    card.appendChild(btnRow);
+    card.appendChild(statusText);
+    ov.appendChild(card);
+    document.body.appendChild(ov);
+  }
+  
   // Wallet functions
   function updateLaunchButton() {
     // In demo mode, always allow launch
@@ -1226,9 +1544,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     if (!infoRes.ok) throw new Error("Payment info unavailable");
     const info = await infoRes.json();
     if (!info?.ok) throw new Error(info?.error || "Payment info error");
-    const { treasuryAddress, serverAddress, price } = info;
+    const { treasuryAddress, serverAddress, price, serverShare, potShare, currentPot } = info;
     if (!treasuryAddress) throw new Error("Treasury address missing");
     if (!serverAddress) throw new Error("Server address missing");
+    
+    // Update local pot display before payment
+    if (typeof currentPot === "number") {
+      pvpCurrentPot = currentPot;
+    }
 
     const provider = await getDemosProvider();
     if (!provider || typeof provider.request !== "function") {
@@ -1242,11 +1565,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       throw new Error("Wallet address was cleared during wallet preparation");
     }
     
-    // Send 2 DEM to server wallet only (server handles jackpot and gas)
-    // console.log("[Pay] Sending 2 DEM to server:", serverAddress);
+    // PvP Entry: Send 2 DEM to server (for ops + contests) + 1 DEM goes to pot via server verification
+    const serverPayment = serverShare || 2;
+    console.log(`[Pay] PvP Entry: ${price} DEM total (${serverPayment} to server, ${potShare || 1} to pot)`);
+    console.log(`[Pay] Current pot: ${currentPot} DEM`);
+    
     const resp = await provider.request({
       method: "nativeTransfer", 
-      params: [{ recipientAddress: serverAddress, amount: 2 }],
+      params: [{ recipientAddress: serverAddress, amount: serverPayment }],
     });
     try {
       // console.log("[Pay] Dual payment response:", resp);
@@ -2423,6 +2749,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       } catch (balanceError) {
         // console.log("⚠️ Balance fetch failed:", balanceError);
       }
+      
+      // Check for pending PvP payouts
+      setTimeout(() => checkPendingPayout(), 500);
 
       return address;
     } catch (error) {
@@ -3681,7 +4010,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         speedUnitsPerSec = 20;
         targetSpeedUnitsPerSec = 20;
         velocity.set(0, 0, 0);
-        shipPosition.set(0, 0, 0);
+        const beltSpawn = getRandomBeltPosition();
+        shipPosition.copy(beltSpawn);
         ship.position.copy(shipPosition);
         yaw = 0;
         pitch = 0;
@@ -3705,16 +4035,6 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           ensurePayButton();
           updatePayButtonState();
         }
-      }
-      if (e.target === endFreeBtn) {
-        e.preventDefault();
-        e.stopPropagation();
-        hideEndOverlay();
-        // Free flight: stop round and prevent further score submissions
-        roundActive = false;
-        try {
-          canvas.focus();
-        } catch (_) {}
       }
       if (e.target === endDemosBtn) {
         e.preventDefault();
@@ -3870,13 +4190,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   function buildDefaultShip() {
     const group = new THREE.Group();
     
-    // Main saucer body - matte black
+    // Main saucer body - bright silver, highly visible
     const saucerMat = new THREE.MeshStandardMaterial({
-      color: 0x1a1a1a,
-      emissive: 0x000000,
-      emissiveIntensity: 0.0,
-      metalness: 0.1,
-      roughness: 0.9,
+      color: 0xf5f5f5,
+      emissive: 0x666666,
+      emissiveIntensity: 0.5,
+      metalness: 0.7,
+      roughness: 0.2,
     });
     
     // Create the main saucer disc shape
@@ -3889,15 +4209,18 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     saucerBottomGeo.scale(1, 0.25, 1);
     const saucerBottom = new THREE.Mesh(saucerBottomGeo, saucerMat);
     
-    // Central dome/cockpit - glowing cyan
-    const domeMat = new THREE.MeshStandardMaterial({
-      color: 0x00ffff,
-      emissive: 0x00cccc,
-      emissiveIntensity: 2,
-      metalness: 0.3,
-      roughness: 0.1,
+    // Central dome/cockpit - glass-like transparent
+    const domeMat = new THREE.MeshPhysicalMaterial({
+      color: 0x88ccff,
+      emissive: 0x000000,
+      emissiveIntensity: 0,
+      metalness: 0.0,
+      roughness: 0.05,
       transparent: true,
-      opacity: 0.9,
+      opacity: 0.4,
+      transmission: 0.8,
+      thickness: 0.5,
+      ior: 1.5,
     });
     const domeGeo = new THREE.SphereGeometry(0.6, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5);
     const dome = new THREE.Mesh(domeGeo, domeMat);
@@ -3948,6 +4271,30 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
   let ship = buildDefaultShip();
   scene.add(ship);
+  
+  const playerShipOriginalColors = new Map();
+  ship.traverse((child) => {
+    if (child.isMesh && child.material) {
+      playerShipOriginalColors.set(child.uuid, child.material.color.getHex());
+    }
+  });
+  
+  function flashPlayerShipRed() {
+    let meshCount = 0;
+    ship.traverse((child) => {
+      if (child.isMesh && child.material) {
+        meshCount++;
+        child.material.color.setHex(0xff0000);
+        const storedColor = playerShipOriginalColors.get(child.uuid) ?? 0xc0c0c0;
+        setTimeout(() => {
+          if (child.material) {
+            child.material.color.setHex(storedColor);
+          }
+        }, 150);
+      }
+    });
+    console.log(`🔴 Flashed ${meshCount} meshes on player ship`);
+  }
 
   // Stats
   let health = 100; // %
@@ -3961,6 +4308,66 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Demo mode teleport state
   let pendingTeleport = null;
   let graceStartTime = null; // Track grace period start time
+
+  // Ship disintegration debris system
+  const shipDebris = [];
+  function spawnShipDisintegration(position, shipMesh) {
+    const debrisColors = [0xc0c0c0, 0x888888, 0xff6600, 0xff4400, 0xffaa00];
+    const debrisCount = 25;
+    
+    for (let i = 0; i < debrisCount; i++) {
+      const geo = Math.random() > 0.5 
+        ? new THREE.BoxGeometry(0.3 + Math.random() * 0.5, 0.1 + Math.random() * 0.3, 0.3 + Math.random() * 0.5)
+        : new THREE.TetrahedronGeometry(0.2 + Math.random() * 0.4);
+      const mat = new THREE.MeshStandardMaterial({
+        color: debrisColors[Math.floor(Math.random() * debrisColors.length)],
+        emissive: 0xff4400,
+        emissiveIntensity: Math.random() * 0.8,
+        metalness: 0.8,
+        roughness: 0.3,
+      });
+      const debris = new THREE.Mesh(geo, mat);
+      debris.position.copy(position);
+      debris.position.x += (Math.random() - 0.5) * 3;
+      debris.position.y += (Math.random() - 0.5) * 3;
+      debris.position.z += (Math.random() - 0.5) * 3;
+      debris.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+      scene.add(debris);
+      
+      const speed = 15 + Math.random() * 35;
+      const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+      shipDebris.push({
+        mesh: debris,
+        vel: dir.multiplyScalar(speed),
+        rotVel: new THREE.Vector3((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10),
+        life: 1.5 + Math.random() * 1.0,
+        fadeStart: 1.0,
+      });
+    }
+  }
+  
+  function updateShipDebris(dt) {
+    for (let i = shipDebris.length - 1; i >= 0; i--) {
+      const d = shipDebris[i];
+      d.life -= dt;
+      if (d.life <= 0) {
+        scene.remove(d.mesh);
+        d.mesh.geometry.dispose();
+        d.mesh.material.dispose();
+        shipDebris.splice(i, 1);
+        continue;
+      }
+      d.mesh.position.add(d.vel.clone().multiplyScalar(dt));
+      d.mesh.rotation.x += d.rotVel.x * dt;
+      d.mesh.rotation.y += d.rotVel.y * dt;
+      d.mesh.rotation.z += d.rotVel.z * dt;
+      d.vel.multiplyScalar(0.98);
+      if (d.life < d.fadeStart) {
+        d.mesh.material.opacity = d.life / d.fadeStart;
+        d.mesh.material.transparent = true;
+      }
+    }
+  }
   
   // Create health display HUD
   function createHealthDisplay() {
@@ -4101,12 +4508,10 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     return m;
   }
   const targetPlanet = addPlanet(
-    new THREE.Vector3(0, 0, -20000),
+    new THREE.Vector3(0, 0, 0),
     1200,
     0x3355aa
   );
-  addPlanet(new THREE.Vector3(15000, 6000, 12000), 900, 0xaa7755);
-  addPlanet(new THREE.Vector3(-18000, -4000, -9000), 700, 0x669966);
 
   // Removed belt "veil" halo for a cleaner look
 
@@ -4159,13 +4564,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
   const motherShip = addMotherShip(targetPlanet, 4400);
 
-  // Starfield
+  // Starfield (smaller for compact map)
   (function makeStars() {
-    const count = 7000;
+    const count = 4000;
     const geo = new THREE.BufferGeometry();
     const positions = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      const r = 22000 + rand() * 32000;
+      const r = 8000 + rand() * 12000;
       const theta = rand() * Math.PI * 2;
       const phi = Math.acos(2 * rand() - 1);
       positions[i * 3 + 0] = r * Math.sin(phi) * Math.cos(theta);
@@ -4186,6 +4591,15 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   // Belt helpers and scoring
   const RING_INNER = 3600;
   const RING_OUTER = 5200;
+  function getRandomBeltPosition() {
+    const angle = Math.random() * Math.PI * 2;
+    const radius = RING_INNER + Math.random() * (RING_OUTER - RING_INNER);
+    return new THREE.Vector3(
+      targetPlanet.position.x + Math.cos(angle) * radius,
+      targetPlanet.position.y + (Math.random() - 0.5) * 100,
+      targetPlanet.position.z + Math.sin(angle) * radius
+    );
+  }
   function isWithinBeltXZ(pos) {
     const dx = pos.x - targetPlanet.position.x;
     const dz = pos.z - targetPlanet.position.z;
@@ -4346,7 +4760,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       r * Math.cos(phi),
       r * Math.sin(phi) * Math.sin(theta)
     ).add(center);
-    const scale = 0.8 + rand() * 3.2;
+    const scale = 2.5 + rand() * 10;
     const mat = new THREE.MeshStandardMaterial({
       color: 0xb0b0b0,
       roughness: 0.95,
@@ -4376,7 +4790,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       r * Math.cos(phi),
       r * Math.sin(phi) * Math.sin(theta)
     ).add(center);
-    const scale = 1.2 + rand() * 2.5;
+    const scale = 3 + rand() * 8;
     const mat = new THREE.MeshStandardMaterial({
       color: 0xc0c0c0,
       roughness: 0.9,
@@ -4398,10 +4812,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     });
   }
   function seedAsteroids(countFar, countNear, around) {
-    for (let i = 0; i < countFar; i++) spawnAsteroidAround(around, 1500, 9000);
-    for (let i = 0; i < countNear; i++) spawnAsteroidClose(around, 300, 1200);
+    for (let i = 0; i < countFar; i++) spawnAsteroidAround(around, 800, 3000);
+    for (let i = 0; i < countNear; i++) spawnAsteroidClose(around, 200, 600);
   }
-  seedAsteroids(7000, 1400, shipPosition);
+  const initialSpawnPos = getRandomBeltPosition();
+  shipPosition.copy(initialSpawnPos);
+  seedAsteroids(200, 50, shipPosition);
 
   function createRings(planet, innerR, outerR, count) {
     for (let i = 0; i < count; i++) {
@@ -4411,7 +4827,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       const x = planet.position.x + Math.cos(a) * r;
       const z = planet.position.z + Math.sin(a) * r;
       const pos = new THREE.Vector3(x, planet.position.y + yJitter, z);
-      const scale = 0.9 + rand() * 3.2;
+      const scale = 2 + rand() * 7;
       const mat = new THREE.MeshStandardMaterial({
         color: 0xa8a8a8,
         roughness: 0.95,
@@ -4439,8 +4855,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       });
     }
   }
-  // Double the number of ring asteroids for richer belts
-  createRings(targetPlanet, 3600, 5200, 13000);
+  // Reduced ring asteroids with larger sizes for better performance
+  createRings(targetPlanet, 3600, 5200, 2000);
 
   // Grouped InstancedMesh rendering for ring asteroids (2-3 batches)
   let ringInstancedGroups = [];
@@ -6218,6 +6634,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       asteroidMultTimer > 0 ? ` | Ax2 ${Math.ceil(asteroidMultTimer)}s` : "";
     const kx2 = killMultTimer > 0 ? ` | Kx2 ${Math.ceil(killMultTimer)}s` : "";
     let mp = "";
+    let potInfo = "";
+    let crownInfo = "";
     if (MP && MP.ws) {
       const st = MP.ws.readyState;
       const status =
@@ -6227,16 +6645,18 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           ? "CONNECTING"
           : "OFF";
       mp = ` | MP ${status}`;
+      
+      // Show pot
+      if (pvpCurrentPot > 0) {
+        potInfo = ` | 💰 POT: ${pvpCurrentPot} DEM`;
+      }
+      
+      // Show crown if longest survivor
+      if (pvpLongestSurvivorId === MP.myId) {
+        crownInfo = " | 👑 LONGEST";
+      }
     }
-    const timeLeftSec = roundActive
-      ? Math.max(0, Math.ceil((roundEndsAt - Date.now()) / 1000))
-      : 0;
-    const timeText = roundActive
-      ? ` | Time ${Math.floor(timeLeftSec / 60)}:${String(
-          timeLeftSec % 60
-        ).padStart(2, "0")}`
-      : "";
-    hud.textContent = `Speed ${speedTxt}${timeText} | HP ${hp}% | Shield ${sh}% | Points ${score} | Kills ${killsCount} | Ast ${asteroidsDestroyed}${ax2}${kx2} | Bombs ${bombsAvailable} | Dist ${distFromOrigin} | Target ${distToTarget}${mp}`;
+    hud.textContent = `Speed ${speedTxt} | HP ${hp}% | Shield ${sh}% | Points ${score} | Kills ${killsCount} | Ast ${asteroidsDestroyed}${ax2}${kx2} | Bombs ${bombsAvailable}${mp}${potInfo}${crownInfo}`;
   }
 
 
@@ -6245,6 +6665,17 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   }
   function hideGameOver() {
     gameOverEl.style.display = "none";
+  }
+
+  function disconnectMP() {
+    if (MP.ws) {
+      try { MP.ws.close(); } catch (_) {}
+      MP.ws = null;
+    }
+    MP.myId = null;
+    MP.myNumId = null;
+    MP.remotes.clear();
+    MP.deadNumIds.clear();
   }
 
   // Leaderboards (local with optional server sync)
@@ -6331,6 +6762,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   // try to connect shortly after detection
   setTimeout(connectLbWS, 500);
 
+  // --- PvP Economy State ---
+  let pvpCurrentPot = 0;
+  let pvpLongestSurvivorId = null;
+  let pvpPendingPayout = null; // { survivorAmount, survivalSec, kills } if we were longest survivor
+  
   // --- Multiplayer (input → server, binary state ← server) ---
   const MP = {
     active: false,
@@ -6342,9 +6778,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     serverOffsetEma: null,
     idToNum: new Map(), // string id -> numId
     remotes: new Map(), // numId -> { mesh, samples:[{t,p,q,v}], lastRender:{p,q} }
+    deadNumIds: new Set(), // numIds of players who died - don't recreate their ships
     selfServerState: null,
   };
   window.MP = MP;
+  window.pvpCurrentPot = () => pvpCurrentPot;
   window.getScene = () => scene;
   window.getShipPosition = () => shipPosition;
 
@@ -6365,27 +6803,34 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
 
   function createRemoteShip(numId) {
     const m = buildDefaultShip();
-    const REMOTE_COLOR = 0xff00ff;
     m.traverse?.((n) => {
       if (n.isMesh && n.material) {
+        const applyChrome = (mat) => {
+          mat.color?.setHex?.(0xf5f5f5);
+          mat.metalness = 0.7;
+          mat.roughness = 0.2;
+          mat.envMapIntensity = 1.5;
+          mat.emissive?.setHex?.(0x666666);
+          if (mat.emissiveIntensity !== undefined) mat.emissiveIntensity = 0.5;
+        };
         if (Array.isArray(n.material))
-          n.material.forEach((mat) => {
-            mat.color?.setHex?.(REMOTE_COLOR);
-            mat.emissive?.setHex?.(REMOTE_COLOR);
-            if (mat.emissiveIntensity !== undefined) mat.emissiveIntensity = 2.0;
-          });
-        else {
-          n.material.color?.setHex?.(REMOTE_COLOR);
-          n.material.emissive?.setHex?.(REMOTE_COLOR);
-          if (n.material.emissiveIntensity !== undefined) n.material.emissiveIntensity = 2.0;
-        }
+          n.material.forEach(applyChrome);
+        else
+          applyChrome(n.material);
       }
     });
     m.scale.setScalar(1.5);
     m.visible = true;
     scene.add(m);
     m.position.set(0, 0, 0);
-    console.log(`🚀 Created MAGENTA remote ship ${numId} using buildDefaultShip, in scene: ${m.parent === scene}`);
+    console.log(`🚀 Created chrome remote ship ${numId}, in scene: ${m.parent === scene}`);
+    
+    const originalColors = new Map();
+    m.traverse((child) => {
+      if (child.isMesh && child.material) {
+        originalColors.set(child.uuid, child.material.color.getHex());
+      }
+    });
     
     MP.remotes.set(numId, {
       mesh: m,
@@ -6394,19 +6839,36 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         p: new THREE.Vector3(0, 100, 0), 
         q: new THREE.Quaternion() 
       },
+      originalColors: originalColors,
     });
   }
   function removeRemoteShipByNumId(numId) {
     const r = MP.remotes.get(numId);
     if (!r) return;
     try {
-      if (r.mesh) scene.remove(r.mesh);
+      if (r.mesh) {
+        r.mesh.visible = false;
+        scene.remove(r.mesh);
+        r.mesh.traverse((child) => {
+          if (child.geometry) child.geometry.dispose();
+          if (child.material) {
+            if (Array.isArray(child.material)) {
+              child.material.forEach(m => m.dispose());
+            } else {
+              child.material.dispose();
+            }
+          }
+        });
+      }
       if (r.shipMarker) {
+        r.shipMarker.visible = false;
         scene.remove(r.shipMarker);
         if (r.shipMarker.geometry) r.shipMarker.geometry.dispose();
         if (r.shipMarker.material) r.shipMarker.material.dispose();
       }
-      if (r.shipLight) scene.remove(r.shipLight);
+      if (r.shipLight) {
+        scene.remove(r.shipLight);
+      }
     } catch (_) {}
     MP.remotes.delete(numId);
     console.log(`🧹 Cleaned up remote player ${numId}`);
@@ -6461,6 +6923,14 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           continue;
         }
         
+        if (MP.deadNumIds.has(numId)) {
+          const existing = MP.remotes.get(numId);
+          if (existing) {
+            removeRemoteShipByNumId(numId);
+          }
+          continue;
+        }
+        
         let r = MP.remotes.get(numId);
         if (!r) {
           createRemoteShip(numId);
@@ -6485,6 +6955,15 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         MP.active = true;
         MP.myId = msg.playerId;
         MP.worldSeed = msg.worldSeed;
+        // PvP pot info
+        if (typeof msg.pot === "number") {
+          pvpCurrentPot = msg.pot;
+          console.log(`💰 Current pot: ${pvpCurrentPot} DEM`);
+        }
+        if (msg.longestSurvivorId) {
+          pvpLongestSurvivorId = msg.longestSurvivorId;
+          console.log(`👑 Current longest survivor: ${pvpLongestSurvivorId}`);
+        }
         // Use server's actual start time, adjusted to local clock
         // Server sends relativeTime = serverNow - serverStartTime
         // So to convert back: absT = relativeTime + serverStartTime
@@ -6511,8 +6990,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
                 pitch = euler.x;
                 roll = euler.z;
               }
-              ship.visible = true;
             }
+            ship.visible = true;
             continue;
           }
           if (pl.numId != null) {
@@ -6520,36 +6999,18 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             createRemoteShip(pl.numId);
           }
         }
-        return;
-      }
-      if (msg.type === "respawn") {
-        dbg("respawn", { id: msg.id, p: msg.p });
-        if (msg.id === MP.myId) {
-          const p = vec3From(msg.p),
-            q = quatFrom(msg.q);
-          shipPosition.copy(p);
-          ship.position.copy(p);
-          ship.quaternion.copy(q);
-        } else {
-          const numId = MP.idToNum.get(msg.id);
-          const r = numId != null ? MP.remotes.get(numId) : null;
-          if (r) {
-            r.mesh.position.copy(vec3From(msg.p));
-            r.mesh.quaternion.copy(quatFrom(msg.q));
-            r.samples.length = 0;
-          }
-        }
+        ship.visible = true;
         return;
       }
       if (msg.type === "hit") {
         if (msg.id === MP.myId) {
-          cameraShake += 0.4;
+          cameraShake += 0.1;
         }
         return;
       }
       if (msg.type === "player-add") {
         if (msg.id === MP.myId) return;
-        if (msg.numId != null) {
+        if (msg.numId != null && !MP.deadNumIds.has(msg.numId)) {
           MP.idToNum.set(msg.id, msg.numId);
           createRemoteShip(msg.numId);
         }
@@ -6570,7 +7031,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         for (const p of latestRoomStats) {
           if (p.id && p.id !== MP.myId) {
             const numId = MP.idToNum.get(p.id);
-            if (numId != null) {
+            if (numId != null && !MP.deadNumIds.has(numId)) {
               if (!MP.remotes.get(numId)) createRemoteShip(numId);
             }
           }
@@ -6796,12 +7257,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
       if (msg.type === "health-update") {
         // Health update is broadcast to all - only apply if it's for us
-        if (msg.targetId !== MP.playerId) {
+        if (msg.targetId !== MP.myId) {
           // This health update is for another player, ignore it
           return;
         }
         
-        // console.log(`🩹 Health update received: health=${msg.health}, damage=${msg.damage} from ${msg.attackerId}`);
+        console.log(`🩹 Health update received: health=${msg.health}, damage=${msg.damage} from ${msg.attackerId}`);
         
         // Apply the health update (server is authoritative)
         health = msg.health;
@@ -6811,17 +7272,22 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         // Show damage taken if health decreased
         if (msg.damage) {
           spawnCenteredTextLabel(`-${msg.damage} HP`, shipPosition, 0xff0000, 1.5, 1.0);
-          cameraShake += 0.8;
+          cameraShake += 0.2;
+          console.log(`🔴 Flashing player ship red!`);
+          flashPlayerShipRed();
         }
         return;
       }
       if (msg.type === "killed-by") {
         try {
-          if (msg.targetId && msg.targetId !== MP.playerId) {
+          if (msg.targetId && msg.targetId !== MP.myId) {
             return;
           }
           
           console.log(`💀 KILLED BY ${msg.killerName || msg.killerId}`);
+          if (msg.wasLongestSurvivor) {
+            console.log(`👑 YOU WERE THE LONGEST SURVIVOR!`);
+          }
           
           health = 0;
           gameOver = true;
@@ -6839,25 +7305,63 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           } catch (e) { console.error("Explosion error:", e); }
           
           ship.visible = false;
-          cameraShake += 1.5;
+          cameraShake += 0.3;
           
           try {
-            spawnCenteredTextLabel(`💀 KILLED BY ${msg.killerName || msg.killerId}`, shipPosition, 0xff0000, 2.5, 2.0);
+            if (msg.wasLongestSurvivor) {
+              spawnCenteredTextLabel(`👑 LONGEST SURVIVOR FALLEN!`, shipPosition, 0xffd700, 2.5, 2.0);
+            } else {
+              spawnCenteredTextLabel(`💀 KILLED BY ${msg.killerName || msg.killerId}`, shipPosition, 0xff0000, 2.5, 2.0);
+            }
           } catch (e) { console.error("Label error:", e); }
           
           roundActive = false;
           ensureEndOverlay();
-          if (endMsg) {
-            endMsg.innerHTML = `<div>Killed by ${msg.killerName || msg.killerId}! Score: ${score} | Kills: ${killsCount} | Asteroids: ${asteroidsDestroyed}</div><div style="opacity:0.85;margin-top:6px">Choose an option</div>`;
+          
+          // Check if we were the longest survivor with payout pending
+          if (msg.wasLongestSurvivor && msg.payoutInfo) {
+            pvpPendingPayout = msg.payoutInfo;
+            showLongestSurvivorDeathScreen(msg.payoutInfo, msg.killerName);
+          } else {
+            if (endMsg) {
+              endMsg.innerHTML = `<div>Killed by ${msg.killerName || msg.killerId}! Score: ${score} | Kills: ${killsCount} | Asteroids: ${asteroidsDestroyed}</div><div style="opacity:0.85;margin-top:6px">Choose an option</div>`;
+            }
+            showEndOverlay();
           }
+          
           if (!roundSubmitted) {
             try { if (!statsSaved) { saveLeaderboards(); statsSaved = true; } } catch (_) {}
             roundSubmitted = true;
           }
-          showEndOverlay();
+          
+          disconnectMP();
         } catch (e) {
           console.error("killed-by handler error:", e);
         }
+        return;
+      }
+      // PvP pot update
+      if (msg.type === "pot-update") {
+        pvpCurrentPot = msg.pot;
+        console.log(`💰 Pot updated: ${pvpCurrentPot} DEM`);
+        return;
+      }
+      // Longest survivor changed
+      if (msg.type === "longest-survivor-update") {
+        pvpLongestSurvivorId = msg.playerId;
+        if (msg.playerId === MP.myId) {
+          console.log(`👑 YOU ARE NOW THE LONGEST SURVIVOR!`);
+          spawnCenteredTextLabel(`👑 YOU ARE THE LONGEST SURVIVOR!`, shipPosition.clone().add(new THREE.Vector3(0, 10, 0)), 0xffd700, 2.0, 3.0);
+        } else {
+          console.log(`👑 New longest survivor: ${msg.playerId}`);
+        }
+        return;
+      }
+      // Champion payout announcement
+      if (msg.type === "champion-payout") {
+        const p = msg.payload;
+        console.log(`🏆 Champion payout: ${p.winner} won ${p.survivorAmount} DEM after ${p.survivalSec}s`);
+        spawnCenteredTextLabel(`🏆 CHAMPION PAYOUT: ${p.survivorAmount} DEM`, shipPosition.clone().add(new THREE.Vector3(0, 20, 0)), 0xffd700, 2.0, 4.0);
         return;
       }
       if (msg.type === "player-kill") {
@@ -6866,28 +7370,37 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         return;
       }
       if (msg.type === "player-death") {
-        if (msg.victimId === MP.playerId) return;
+        console.log(`💀 player-death received: victimId=${msg.victimId}, victimNumId=${msg.victimNumId}, myId=${MP.myId}`);
+        if (msg.victimId === MP.myId) return;
         
-        const deathPos = new THREE.Vector3(msg.position[0], msg.position[1], msg.position[2]);
-        const distance = shipPosition.distanceTo(deathPos);
+        const remote = msg.victimNumId != null ? MP.remotes.get(msg.victimNumId) : null;
+        const explodePos = remote?.mesh?.position?.clone() || 
+          (msg.position ? new THREE.Vector3(msg.position[0], msg.position[1], msg.position[2]) : null);
         
-        if (distance < 500) {
-          for (let i = 0; i < 20; i++) {
-            const burst = acquireImpactMesh(0xff4422);
-            burst.position.copy(deathPos).add(randomVel(1.5));
-            burst.scale.setScalar(0.9 + Math.random() * 1.2);
-            if (!burst.parent) scene.add(burst);
-            const vel = randomVel(35 + Math.random() * 40);
-            impactParticles.push({ mesh: burst, vel, life: 0.7 + Math.random() * 0.5 });
+        if (msg.victimNumId != null) {
+          console.log(`🧹 Removing remote ship ${msg.victimNumId} after death`);
+          MP.deadNumIds.add(msg.victimNumId);
+          removeRemoteShipByNumId(msg.victimNumId);
+          if (msg.victimId) {
+            MP.idToNum.delete(msg.victimId);
           }
         }
         
-        const remote = MP.remotes.get(msg.victimNumId);
-        if (remote && remote.mesh) {
-          remote.mesh.visible = false;
-          setTimeout(() => {
-            if (remote.mesh) remote.mesh.visible = true;
-          }, 2000);
+        if (explodePos) {
+          const distance = shipPosition.distanceTo(explodePos);
+          console.log(`💥 Death explosion at distance ${distance.toFixed(0)}m`);
+          
+          if (distance < 1000) {
+            spawnShipDisintegration(explodePos, null);
+            for (let i = 0; i < 30; i++) {
+              const burst = acquireImpactMesh(i < 12 ? 0xff4422 : 0xffcc00);
+              burst.position.copy(explodePos).add(randomVel(2.0));
+              burst.scale.setScalar(0.8 + Math.random() * 1.5);
+              if (!burst.parent) scene.add(burst);
+              const vel = randomVel(45 + Math.random() * 50);
+              impactParticles.push({ mesh: burst, vel, life: 0.8 + Math.random() * 0.6 });
+            }
+          }
         }
         return;
       }
@@ -6909,7 +7422,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       return;
     }
     if (MP.ws) {
-      // console.log("⚠️ WebSocket already exists, aborting");
+      ship.visible = true;
       return;
     }
     try {
@@ -7090,8 +7603,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     hunterOrbs.length = 0;
 
     // Reseed deterministic world
-    seedAsteroids(7000, 1400, new THREE.Vector3());
-    createRings(targetPlanet, 3600, 5200, 13000);
+    seedAsteroids(800, 200, new THREE.Vector3());
+    createRings(targetPlanet, 3600, 5200, 2000);
     buildRingInstancedGroups(3);
     seedAllOrbsInRingByProportion(targetPlanet, 3600, 5200);
   }
@@ -7494,17 +8007,6 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         action: () => {
           bombsAvailable += bombQuantityToBuy;
           showStatusMessage(`💣 Purchased ${bombQuantityToBuy} bomb${bombQuantityToBuy > 1 ? 's' : ''}!`, true);
-        },
-      },
-      {
-        key: "time",
-        label: "Extend Time +60s (Cost: 6000 points or 10 DEM)",
-        cost: 6000,
-        action: () => {
-          if (roundActive && roundEndsAt > Date.now()) {
-            roundEndsAt += 60 * 1000; // Add 60 seconds (1 minute)
-            updateHud();
-          }
         },
       },
     ];
@@ -7974,22 +8476,24 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     }
     damageCooldown = 0.6;
     if (health <= 0) {
-      // Ship explosion on death (reduced particles)
       const explodeAt = (hitPosition || shipPosition).clone();
-      for (let i = 0; i < 15; i++) {  // Reduced from 30 to 15
-        const burst = acquireImpactMesh(0xff8855);
-        burst.position.copy(explodeAt).add(randomVel(1.2));
-        burst.scale.setScalar(0.9 + Math.random() * 1.2);
+      spawnShipDisintegration(explodeAt, ship);
+      for (let i = 0; i < 25; i++) {
+        const burst = acquireImpactMesh(i < 10 ? 0xff8855 : 0xffcc00);
+        burst.position.copy(explodeAt).add(randomVel(2.0));
+        burst.scale.setScalar(0.8 + Math.random() * 1.5);
         if (!burst.parent) scene.add(burst);
-        const vel = randomVel(30 + Math.random() * 40);
+        const vel = randomVel(40 + Math.random() * 50);
         impactParticles.push({
           mesh: burst,
           vel,
-          life: 0.6 + Math.random() * 0.5,
+          life: 0.8 + Math.random() * 0.6,
         });
       }
+      cameraShake += 0.8;
       ship.visible = false;
       gameOver = true;
+      disconnectMP();
 
       // Stop the round and show end overlay immediately
       if (roundActive) {
@@ -8080,11 +8584,12 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     roll = 0;
     speedUnitsPerSec = 20;
     targetSpeedUnitsPerSec = 20;
-    shipPosition.set(0, 0, 0);
+    const spawnPos = getRandomBeltPosition();
+    shipPosition.copy(spawnPos);
     velocity.set(0, 0, 0);
 
-    seedAsteroids(7000, 1400, shipPosition);
-    createRings(targetPlanet, 3600, 5200, 13000);
+    seedAsteroids(200, 50, shipPosition);
+    createRings(targetPlanet, 3600, 5200, 2000);
     // Focus orb population into the planet ring with proportional counts
     seedAllOrbsInRingByProportion(targetPlanet, 3600, 5200);
   }
@@ -8325,7 +8830,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     // Camera follow + shake
     const camLocal = cameraOffsetLocal.clone().applyQuaternion(ship.quaternion);
     const camPos = ship.position.clone().add(camLocal);
-    cameraShake = Math.max(0, cameraShake - 2.2 * dt);
+    cameraShake = Math.max(0, cameraShake - 6.0 * dt);
     if (cameraShake > 0) {
       camPos.x += (Math.random() * 2 - 1) * cameraShake;
       camPos.y += (Math.random() * 2 - 1) * cameraShake * 0.6;
@@ -9123,6 +9628,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       const mat2 = p.mesh.material;
       mat2.opacity = Math.max(0, mat2.opacity - 2.8 * dt);
     }
+    
+    updateShipDebris(dt);
 
     // Animate ring bursts
     for (let i = ringBursts.length - 1; i >= 0; i--) {
@@ -9170,6 +9677,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             health = Math.max(0, health - healthDamage);
             if (health <= 0) {
               gameOver = true;
+              disconnectMP();
 
               // Stop the round and show end overlay immediately
               if (roundActive) {
@@ -9291,11 +9799,11 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
               // Make remote ship flash red to show hit
               remote.mesh.traverse((child) => {
                 if (child.isMesh && child.material) {
-                  const originalColor = child.material.color.getHex();
+                  const storedColor = remote.originalColors?.get(child.uuid) ?? 0xf5f5f5;
                   child.material.color.setHex(0xff0000); // Flash red
                   setTimeout(() => {
                     if (child.material) {
-                      child.material.color.setHex(originalColor);
+                      child.material.color.setHex(storedColor);
                     }
                   }, 150);
                 }
@@ -9332,9 +9840,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
                       damage: b.kind === "fenix" ? 30 : 15,
                       position: [remote.mesh.position.x, remote.mesh.position.y, remote.mesh.position.z]
                     }));
-                    // console.log(`🎯 HIT! Shot remote player ${targetPlayerId} with ${b.kind} bullet for ${b.kind === "fenix" ? 30 : 15} damage`);
+                    console.log(`🎯 HIT SENT! Shot remote player ${targetPlayerId} (numId=${numId}) with ${b.kind} bullet for ${b.kind === "fenix" ? 30 : 15} damage`);
                   } else {
-                    // console.warn(`⚠️ Could not find player ID for numId ${numId}`);
+                    console.warn(`⚠️ Could not find player ID for numId ${numId}. MP.idToNum:`, [...MP.idToNum.entries()]);
                   }
                 } catch (_) {}
               }
@@ -9379,6 +9887,7 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
             if (health <= 0) {
               console.log(`💀 KILLED BY REMOTE PLAYER BULLET!`);
               gameOver = true;
+              disconnectMP();
               roundActive = false;
               ship.visible = false;
               
@@ -9415,45 +9924,45 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     keepFieldPopulated();
     updateHud();
     
-    // Multiplayer: update remote ship positions
+    // Multiplayer: update remote ship positions with continuous velocity movement
     if (MP.active && MP.remotes.size) {
+      const now = Date.now();
       for (const [numId, r] of MP.remotes) {
         const s = r.samples;
         if (!s || s.length === 0) continue;
         
-        const latest = s[s.length - 1];
-        const p = vec3From(latest.p);
-        const q = quatFrom(latest.q);
-        
         if (r.mesh) {
-          r.mesh.position.copy(p);
-          r.mesh.quaternion.copy(q);
-          r.mesh.visible = true;
-        }
-        
-        r.lastRender.p.copy(p);
-        r.lastRender.q.copy(q);
-      }
-    }
-
-    // Round timer end: stop round when time elapses
-    if (roundActive && Date.now() >= roundEndsAt) {
-      roundActive = false;
-      // Ensure overlay exists, then set message and submit
-      ensureEndOverlay();
-      if (endMsg) {
-        endMsg.innerHTML = `<div>Final score: ${score} | Enemies killed: ${killsCount} | Asteroids: ${asteroidsDestroyed}</div><div style="opacity:0.85;margin-top:6px">Choose an option</div>`;
-      }
-      if (!roundSubmitted) {
-        try {
-          if (!statsSaved) {
-            saveLeaderboards();
-            statsSaved = true;
+          const latest = s[s.length - 1];
+          
+          // Apply velocity directly each frame for continuous movement
+          if (latest.v) {
+            r.mesh.position.x += latest.v[0] * dt;
+            r.mesh.position.y += latest.v[1] * dt;
+            r.mesh.position.z += latest.v[2] * dt;
           }
-        } catch (_) {}
-        roundSubmitted = true;
+          
+          // Gently correct toward server's extrapolated position to prevent drift
+          const elapsed = (now - latest.t) / 1000;
+          if (elapsed < 0.5) {
+            const serverP = vec3From(latest.p);
+            if (latest.v) {
+              serverP.x += latest.v[0] * elapsed;
+              serverP.y += latest.v[1] * elapsed;
+              serverP.z += latest.v[2] * elapsed;
+            }
+            // Very gentle correction (2% per frame) to avoid jerky snapping
+            r.mesh.position.lerp(serverP, 0.02);
+          }
+          
+          // Smooth rotation toward server quaternion
+          const targetQ = quatFrom(latest.q);
+          r.mesh.quaternion.slerp(targetQ, Math.min(1.0, dt * 8));
+          
+          r.mesh.visible = true;
+          r.lastRender.p.copy(r.mesh.position);
+          r.lastRender.q.copy(r.mesh.quaternion);
+        }
       }
-      showEndOverlay();
     }
 
     renderer.render(scene, camera);
