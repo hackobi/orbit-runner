@@ -6636,25 +6636,25 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     let mp = "";
     let potInfo = "";
     let crownInfo = "";
+    
+    // Show MP status
     if (MP && MP.ws) {
       const st = MP.ws.readyState;
-      const status =
-        st === 1
-          ? `ON (${MP.remotes.size + 1 || 1})`
-          : st === 0
-          ? "CONNECTING"
-          : "OFF";
-      mp = ` | MP ${status}`;
-      
-      // Show pot
-      if (pvpCurrentPot > 0) {
-        potInfo = ` | 💰 POT: ${pvpCurrentPot} DEM`;
+      if (st === 1) {
+        mp = ` | MP ON (${MP.remotes.size + 1 || 1})`;
+      } else if (st === 0) {
+        mp = ` | MP ...`;
       }
-      
-      // Show crown if longest survivor
-      if (pvpLongestSurvivorId === MP.myId) {
-        crownInfo = " | 👑 LONGEST";
-      }
+    }
+    
+    // Show pot (persist even during reconnect)
+    if (pvpCurrentPot > 0) {
+      potInfo = ` | 💰 POT: ${pvpCurrentPot} DEM`;
+    }
+    
+    // Show crown if longest survivor (persist even during reconnect)
+    if (pvpLongestSurvivorId && MP.myId && pvpLongestSurvivorId === MP.myId) {
+      crownInfo = " | 👑 LONGEST";
     }
     hud.textContent = `Speed ${speedTxt} | HP ${hp}% | Shield ${sh}% | Points ${score} | Kills ${killsCount} | Ast ${asteroidsDestroyed}${ax2}${kx2} | Bombs ${bombsAvailable}${mp}${potInfo}${crownInfo}`;
   }
