@@ -6997,6 +6997,15 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
           if (pl.numId != null) {
             MP.idToNum.set(pl.id, pl.numId);
             createRemoteShip(pl.numId);
+            // Set initial position from welcome snapshot
+            const r = MP.remotes.get(pl.numId);
+            if (r && r.mesh && pl.state && pl.state.p) {
+              r.mesh.position.set(pl.state.p[0], pl.state.p[1], pl.state.p[2]);
+              if (pl.state.q) {
+                r.mesh.quaternion.set(pl.state.q[0], pl.state.q[1], pl.state.q[2], pl.state.q[3]);
+              }
+              r.samples.push({ t: Date.now(), p: pl.state.p, q: pl.state.q || [0,0,0,1], v: pl.state.v || [0,0,0], flags: 0 });
+            }
           }
         }
         ship.visible = true;
@@ -7013,6 +7022,15 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         if (msg.numId != null && !MP.deadNumIds.has(msg.numId)) {
           MP.idToNum.set(msg.id, msg.numId);
           createRemoteShip(msg.numId);
+          // Set initial position from player-add state
+          const r = MP.remotes.get(msg.numId);
+          if (r && r.mesh && msg.state && msg.state.p) {
+            r.mesh.position.set(msg.state.p[0], msg.state.p[1], msg.state.p[2]);
+            if (msg.state.q) {
+              r.mesh.quaternion.set(msg.state.q[0], msg.state.q[1], msg.state.q[2], msg.state.q[3]);
+            }
+            r.samples.push({ t: Date.now(), p: msg.state.p, q: msg.state.q || [0,0,0,1], v: msg.state.v || [0,0,0], flags: 0 });
+          }
         }
         return;
       }
