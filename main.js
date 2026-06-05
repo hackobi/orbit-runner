@@ -1043,7 +1043,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         // Use existing SDK connection
         const balance = await window.demosSDK.getAddressInfo(address);
         if (balance && balance.balance !== undefined) {
-          return parseFloat(balance.balance) || 0;
+          // Post-fork nodes return balance in OS units (1 DEM = 1e9 OS)
+          return (parseFloat(balance.balance) || 0) / 1e9;
         }
       }
       
@@ -1067,7 +1068,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
         if (response.ok) {
           const data = await response.json();
           if (data.result && data.result.balance !== undefined) {
-            return parseFloat(data.result.balance) || 0;
+            // Post-fork nodes return balance in OS units (1 DEM = 1e9 OS)
+            return (parseFloat(data.result.balance) || 0) / 1e9;
           }
         }
       } catch (rpcError) {

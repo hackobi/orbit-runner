@@ -5,7 +5,29 @@ const path = require("path");
 const { WebSocketServer } = require("ws");
 const https = require("https");
 const { randomUUID } = require("crypto");
+// demosdk 4.x is ESM-only with extension-less internal imports — the resolve
+// shim must be registered before the first require of the SDK.
+require("./demosdk-esm-compat");
 const { Demos } = require("@kynesyslabs/demosdk/websdk");
+// DEM/OS denomination helpers (1 DEM = 10^9 OS). Resolved relative to the
+// websdk entry because the SDK's root export cannot load under plain Node
+// (tweetnacl-util named-import incompatibility) and the exports map does not
+// expose ./denomination directly.
+const { demToOs, parseOsString } = require(path.join(
+  path.dirname(require.resolve("@kynesyslabs/demosdk/websdk")),
+  "../denomination/index.js"
+));
+// Coerce a wire-format amount to OS bigint: post-fork nodes/clients send OS
+// decimal strings; legacy clients sent DEM numbers. Returns null when
+// unparseable so comparisons fail closed (mismatch -> reject).
+function wireAmountToOs(value) {
+  try {
+    if (typeof value === "bigint") return value;
+    if (typeof value === "string") return parseOsString(value);
+    if (typeof value === "number" && Number.isFinite(value)) return demToOs(value);
+  } catch (_) {}
+  return null;
+}
 const demos = new Demos();
 // Separate Demos instance for treasury wallet operations
 const treasuryDemos = new Demos();
@@ -479,8 +501,9 @@ async function connectWallet() {
       );
     }
 
-    // Connect wallet using the provided mnemonic
-    await demos.connectWallet(envMnemonic, { isSeed: true });
+    // Connect wallet using the provided mnemonic (seed vs mnemonic is
+    // auto-detected by the SDK; the old { isSeed } option never existed)
+    await demos.connectWallet(envMnemonic);
     walletConnected = true;
 
     // Get wallet address
@@ -510,7 +533,7 @@ async function connectTreasuryWallet() {
 
     // Ensure node connection ready for this instance as well
     await treasuryDemos.connect("https://node2.demos.sh");
-    await treasuryDemos.connectWallet(envMnemonic, { isSeed: true });
+    await treasuryDemos.connectWallet(envMnemonic);
     treasuryConnected = true;
 
     const address = treasuryDemos.getAddress();
@@ -523,6 +546,8 @@ async function connectTreasuryWallet() {
 }
 
 // Treasury helpers
+// Returns the treasury balance in OS units (1 DEM = 10^9 OS) — post-fork
+// getAddressInfo().balance is OS, not DEM.
 async function getTreasuryBalance() {
   const addr = treasuryDemos.getAddress();
   const info = await treasuryDemos.getAddressInfo(addr);
@@ -544,30 +569,31 @@ async function payoutTreasuryAll(recipientAddress) {
     }
 
     // Keep a configurable reserve to cover future payouts + gas
+    // (env values are whole DEM; balance/transfer math is in OS)
     const minReserve = (() => {
       const raw = String(process.env.TREASURY_MIN_RESERVE || "2");
       try {
-        return BigInt(raw);
+        return demToOs(raw);
       } catch {
-        return 2n;
+        return demToOs(2);
       }
     })();
 
     const gasReserve = (() => {
       const raw = String(process.env.TREASURY_GAS_RESERVE || "1"); // default 1 DEM gas
       try {
-        return BigInt(raw);
+        return demToOs(raw);
       } catch {
-        return 1n;
+        return demToOs(1);
       }
     })();
 
     const minPrize = (() => {
       const raw = String(process.env.PAYOUT_MIN_PRIZE || "1");
       try {
-        return BigInt(raw);
+        return demToOs(raw);
       } catch {
-        return 1n;
+        return demToOs(1);
       }
     })();
 
@@ -588,17 +614,13 @@ async function payoutTreasuryAll(recipientAddress) {
       return { ok: false, reason: "below_min_prize" };
     }
 
-    const amountNum = Number(
-      transferable <= BigInt(Number.MAX_SAFE_INTEGER)
-        ? transferable
-        : BigInt(Number.MAX_SAFE_INTEGER)
-    );
     // console.log("🏦 Preparing payout from treasury:", {
-  //    transferable: amountNum,
+  //    transferable: transferable.toString(),
   //    recipientAddress,
   //  });
 
-    const tx = await treasuryDemos.pay(recipientAddress, amountNum);
+    // pay() takes OS as bigint (a number arg means legacy DEM — wrong here)
+    const tx = await treasuryDemos.pay(recipientAddress, transferable);
     const validity = await treasuryDemos.confirm(tx);
 
     // Extract tx hash similarly to storage flow
@@ -728,7 +750,7 @@ app.get("/pay/info", async (_req, res) => {
     // (Treasury wallet connection might affect the main demos instance)
     const serverMnemonic = (process.env.DEMOS_SERVER_MNEMONIC || "").trim();
     if (serverMnemonic.length > 0) {
-      await demos.connectWallet(serverMnemonic, { isSeed: true });
+      await demos.connectWallet(serverMnemonic);
     }
     
     const serverAddress = cachedServerAddress || demos.getAddress();
@@ -779,7 +801,7 @@ app.post("/time/verify", async (req, res) => {
     // Ensure server wallet is connected with correct mnemonic
     const serverMnemonic = (process.env.DEMOS_SERVER_MNEMONIC || "").trim();
     if (serverMnemonic.length > 0) {
-      await demos.connectWallet(serverMnemonic, { isSeed: true });
+      await demos.connectWallet(serverMnemonic);
     }
     const serverAddress = cachedServerAddress || demos.getAddress();
     
@@ -825,7 +847,7 @@ app.post("/time/verify", async (req, res) => {
                 const [toAddr, amt] = args;
                 const tsOk =
                   Number(c.timestamp || 0) > Date.now() - 5 * 60 * 1000;
-                return toAddr === treasuryAddress && Number(amt) === 2 && tsOk;
+                return toAddr === treasuryAddress && wireAmountToOs(amt) === demToOs(2) && tsOk;
               } catch (_) {
                 return false;
               }
@@ -893,7 +915,7 @@ app.post("/time/verify", async (req, res) => {
       !isNative ||
       !isSend ||
       toAddr !== serverAddress ||
-      Number(amount) !== 10
+      wireAmountToOs(amount) !== demToOs(10)
     ) {
       return res
         .status(400)
@@ -952,7 +974,7 @@ app.post("/bomb/verify", async (req, res) => {
     // Ensure server wallet is connected
     const serverMnemonic = (process.env.DEMOS_SERVER_MNEMONIC || "").trim();
     if (serverMnemonic.length > 0) {
-      await demos.connectWallet(serverMnemonic, { isSeed: true });
+      await demos.connectWallet(serverMnemonic);
     }
     const serverAddress = cachedServerAddress || demos.getAddress();
 
@@ -992,11 +1014,12 @@ app.post("/bomb/verify", async (req, res) => {
     const [toAddr, amount] = args;
 
     // Check if payment matches expected amount to server address
+    // (expectedAmount is whole DEM from the client; wire amount is OS)
     if (
       !isNative ||
       !isSend ||
       toAddr !== serverAddress ||
-      Number(amount) !== Number(expectedAmount)
+      wireAmountToOs(amount) !== demToOs(Number(expectedAmount))
     ) {
       return res.status(400).json({ 
         ok: false, 
@@ -1070,7 +1093,7 @@ app.post("/pay/verify", async (req, res) => {
     // Ensure server wallet is connected with correct mnemonic
     const serverMnemonic = (process.env.DEMOS_SERVER_MNEMONIC || "").trim();
     if (serverMnemonic.length > 0) {
-      await demos.connectWallet(serverMnemonic, { isSeed: true });
+      await demos.connectWallet(serverMnemonic);
     }
     const serverAddress = cachedServerAddress || demos.getAddress();
     
@@ -1122,7 +1145,7 @@ app.post("/pay/verify", async (req, res) => {
                 const [toAddr, amt] = args;
                 const tsOk =
                   Number(c.timestamp || 0) > Date.now() - 5 * 60 * 1000;
-                return toAddr === serverAddress && Number(amt) === PVP_CONFIG.SERVER_SHARE && tsOk;
+                return toAddr === serverAddress && wireAmountToOs(amt) === demToOs(PVP_CONFIG.SERVER_SHARE) && tsOk;
               } catch (_) {
                 return false;
               }
@@ -1193,7 +1216,7 @@ app.post("/pay/verify", async (req, res) => {
       !isNative ||
       !isSend ||
       toAddr !== serverAddress ||
-      Number(amount) !== PVP_CONFIG.SERVER_SHARE
+      wireAmountToOs(amount) !== demToOs(PVP_CONFIG.SERVER_SHARE)
     ) {
       return res
         .status(400)
@@ -1480,13 +1503,15 @@ async function payoutFromTreasury(recipientAddress, amount) {
     const tOk = await connectTreasuryWallet();
     if (!tOk) throw new Error("Treasury unavailable");
     
+    // amount is whole DEM (pot accounting); balance and pay() are in OS
+    const amountOs = demToOs(amount);
     const bal = await getTreasuryBalance();
-    if (bal < BigInt(amount)) {
+    if (bal < amountOs) {
       console.warn("🏦 Insufficient treasury balance for payout");
       return { ok: false, reason: "insufficient_balance" };
     }
-    
-    const tx = await treasuryDemos.pay(recipientAddress, amount);
+
+    const tx = await treasuryDemos.pay(recipientAddress, amountOs);
     const validity = await treasuryDemos.confirm(tx);
     
     const normalizeHash = (h) => {
@@ -2032,7 +2057,7 @@ const server = app.listen(PORT, "0.0.0.0", () => {
       if (serverAddrAfterTreasury !== cachedServerAddress) {
         const serverMnemonic = (process.env.DEMOS_SERVER_MNEMONIC || "").trim();
         if (serverMnemonic.length > 0) {
-          await demos.connectWallet(serverMnemonic, { isSeed: true });
+          await demos.connectWallet(serverMnemonic);
           // console.log("🔧 Server wallet restored. Address:", demos.getAddress());
         }
       }
