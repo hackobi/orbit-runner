@@ -1802,9 +1802,12 @@ app.post("/blockchain/submit", async (req, res) => {
       console.error("   Signature received:", signature?.slice(0, 20) + "...");
       console.error("   Normalized:", normalizedSig?.slice(0, 20) + "...");
       console.error("   Length (hex chars):", hexPart.length);
-      // Skip signature verification if it fails - allow submission for now
-      console.warn("⚠️ Skipping signature verification due to SDK error");
-      isValid = true;
+      // Fail closed: a verification error must NOT be treated as a valid
+      // signature (that would be an auth bypass for score/payout submission).
+      console.error(
+        "🚫 Rejecting submission: signature verification threw; treating as INVALID"
+      );
+      isValid = false;
     }
     if (!isValid) {
       return res.status(400).json({
