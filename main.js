@@ -3856,9 +3856,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     });
   }
 
-  // TEST LAUNCH button (temporary for development)
+  // TEST LAUNCH button (dev only: hidden in markup, revealed on localhost/?dev)
   const testLaunchBtn = document.getElementById("test-launch-btn");
-  if (testLaunchBtn) {
+  const isDevEnv =
+    ["localhost", "127.0.0.1"].includes(window.location.hostname) ||
+    new URLSearchParams(window.location.search).has("dev");
+  if (testLaunchBtn && isDevEnv) {
+    testLaunchBtn.style.display = "block";
     testLaunchBtn.addEventListener("click", () => {
       isDemoMode = true;
       walletAddress = "0xTEST_" + Math.random().toString(36).substring(2, 8);
@@ -4192,13 +4196,13 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
   function buildDefaultShip() {
     const group = new THREE.Group();
     
-    // Main saucer body - bright silver, highly visible
+    // Main saucer body - matte black (restored production look)
     const saucerMat = new THREE.MeshStandardMaterial({
-      color: 0xf5f5f5,
-      emissive: 0x666666,
-      emissiveIntensity: 0.5,
-      metalness: 0.7,
-      roughness: 0.2,
+      color: 0x1a1a1a,
+      emissive: 0x000000,
+      emissiveIntensity: 0.0,
+      metalness: 0.1,
+      roughness: 0.9,
     });
     
     // Create the main saucer disc shape
@@ -4211,18 +4215,15 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
     saucerBottomGeo.scale(1, 0.25, 1);
     const saucerBottom = new THREE.Mesh(saucerBottomGeo, saucerMat);
     
-    // Central dome/cockpit - glass-like transparent
-    const domeMat = new THREE.MeshPhysicalMaterial({
-      color: 0x88ccff,
-      emissive: 0x000000,
-      emissiveIntensity: 0,
-      metalness: 0.0,
-      roughness: 0.05,
+    // Central dome/cockpit - glowing cyan (restored production look)
+    const domeMat = new THREE.MeshStandardMaterial({
+      color: 0x00ffff,
+      emissive: 0x00cccc,
+      emissiveIntensity: 2,
+      metalness: 0.3,
+      roughness: 0.1,
       transparent: true,
-      opacity: 0.4,
-      transmission: 0.8,
-      thickness: 0.5,
-      ior: 1.5,
+      opacity: 0.9,
     });
     const domeGeo = new THREE.SphereGeometry(0.6, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5);
     const dome = new THREE.Mesh(domeGeo, domeMat);
