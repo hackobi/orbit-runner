@@ -2776,7 +2776,9 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       const demos = await initializeDemosSDK();
       if (demos && typeof demos.getBalance === "function") {
         try {
-          const balance = await demos.getBalance(walletAddress);
+          const rawBalance = await demos.getBalance(walletAddress);
+          // Post-fork balances are OS units (1 DEM = 1e9 OS) — convert for display
+          const balance = (parseFloat(rawBalance) || 0) / 1e9;
           // console.log("✅ Balance fetched via SDK:", balance);
           await updateConnectedWallet(walletAddress, balance);
           return balance;
@@ -2890,6 +2892,8 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       }
 
       if (balance) {
+        // Post-fork balances are OS units (1 DEM = 1e9 OS) — convert for display
+        balance = (parseFloat(balance) || 0) / 1e9;
         // console.log("✅ Balance fetched via extension:", balance);
         await updateConnectedWallet(walletAddress, balance);
         return balance;
