@@ -61,16 +61,18 @@ app.use(cors({
       'http://localhost:3000',
       'http://localhost:8000',
       'http://localhost:8080',
-      'http://localhost:8787', 
+      'http://localhost:8787',
       'https://strong-centaur-2dae15.netlify.app',
       'https://orbit-runner-production.up.railway.app',
-      'https://terrific-warmth-production.up.railway.app'
+      'https://terrific-warmth-production.up.railway.app',
+      'https://orbit.demos.sh'
     ];
-    
+
     const allowedPatterns = [
       /\.netlify\.app$/,
       /\.railway\.app$/,
-      /\.vercel\.app$/
+      /\.vercel\.app$/,
+      /\.demos\.sh$/
     ];
     
     // Check exact match
