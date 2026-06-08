@@ -4068,9 +4068,16 @@ import { TextGeometry } from "https://unpkg.com/three@0.164.0/examples/jsm/geome
       // paidSessionToken: !!preservedPaidSessionToken
     // });
     
-    // Hide ship until we receive spawn position from server
-    ship.visible = false;
-    
+    // Hide ship until we receive the spawn position from the server, but only
+    // in real multiplayer — demo/test mode has no server spawn handshake, so
+    // keep the ship visible (the old production build never hid it here).
+    ship.visible = isDemoMode;
+    // Safety net: if the MP spawn never arrives (slow/failed handshake), reveal
+    // the ship anyway so it can never get stuck invisible.
+    setTimeout(() => {
+      if (ship && !ship.visible) ship.visible = true;
+    }, 1500);
+
     // FORCE HUD VISIBLE WITH DEBUG STYLING
     hudVisible = true;
     hud.style.display = "block";
