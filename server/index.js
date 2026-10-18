@@ -65,14 +65,16 @@ app.use(cors({
       'https://strong-centaur-2dae15.netlify.app',
       'https://orbit-runner-production.up.railway.app',
       'https://terrific-warmth-production.up.railway.app',
-      'https://orbit.demos.sh'
+      'https://orbit.demos.sh',
+      'https://orbit.demos.network'
     ];
 
     const allowedPatterns = [
       /\.netlify\.app$/,
       /\.railway\.app$/,
       /\.vercel\.app$/,
-      /\.demos\.sh$/
+      /\.demos\.sh$/,
+      /\.demos\.network$/
     ];
     
     // Check exact match
@@ -93,10 +95,14 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Serve static files from the root directory (parent of server/)
+// Serve only the game client from the root directory (parent of server/).
+// Everything else there (server code, logs, state, archives) must stay private.
 const staticPath = path.join(__dirname, "..");
-app.use(express.static(staticPath));
-app.use("/node_modules", express.static(path.join(staticPath, "node_modules")));
+const CLIENT_FILES = ["index.html", "main.js", "style.css", "demos-extension-detector.js", "demos-logo.svg"];
+app.get("/", (_req, res) => res.sendFile(path.join(staticPath, "index.html")));
+for (const file of CLIENT_FILES) {
+  app.get(`/${file}`, (_req, res) => res.sendFile(path.join(staticPath, file)));
+}
 
 // In-memory store (persisted to disk)
 const DATA_PATH = path.join(__dirname, "leaderboards.json");
