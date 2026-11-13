@@ -21,7 +21,7 @@ import {
   sustain,
   waitForEmptyRoom,
 } from './support.ts';
-import type { Browsers, ClientKind } from './support.ts';
+import type { Browsers, Client, ClientKind } from './support.ts';
 
 // Things going wrong, on the 100 ms profile: a tab hidden for three seconds,
 // a connection cut, and a player arriving late.
@@ -38,6 +38,21 @@ test.afterAll(async () => {
   await browsers.close();
   await proxy.close();
 });
+
+/**
+ * Makes the page believe its tab was hidden or shown, and fires the event a
+ * browser fires. This runs the game's own visibility handler; what it cannot
+ * reproduce is the browser freezing timers or dropping the socket.
+ */
+const setTabHidden = (client: Client, hidden: boolean): Promise<void> =>
+  client.page.evaluate((value) => {
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => value });
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => (value ? 'hidden' : 'visible'),
+    });
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, hidden);
 
 const kind = (index: number): ClientKind => {
   const found = CLIENT_KINDS[index];
@@ -57,10 +72,10 @@ test('a tab hidden for 3 s: the other player sees no snap, and the tab resumes',
   const fromTick = await serverTick();
 
   await watcher.page.waitForTimeout(2000);
-  await hider.page.evaluate(() => window.__orbit?.setHidden(true));
+  await setTabHidden(hider, true);
   await watcher.page.waitForTimeout(3000);
   expect((await status(hider)).status).toBe('away');
-  await hider.page.evaluate(() => window.__orbit?.setHidden(false));
+  await setTabHidden(hider, false);
   await watcher.page.waitForTimeout(3000);
 
   const hiderStatus = await status(hider);

@@ -7,9 +7,9 @@
 // at the end within 10% of what it was at one minute. Bandwidth is reported.
 //
 // The bots run in a second process. All 16 ships are kept within sight of
-// each other and kept alive, which is the worst case: every ship is sent to
-// every player in full, 30 times a second, and every bullet is tested
-// against 15 targets.
+// each other, kept alive, and fire without pause. That is the worst case:
+// every ship is sent to every player in full, 30 times a second, and about
+// 400 bullets are in the air, each tested against 15 targets every tick.
 
 import { spawn } from 'node:child_process';
 import { SIM } from '../src/shared/constants.ts';
@@ -32,19 +32,29 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 const work: number[] = [];
 let catchUps = 0;
 
-// Keep every ship alive and near the middle of the fight.
+// Keep every ship alive and in the fight. One that strays is put back on a
+// ring around the middle, at a different place each time, facing inwards:
+// putting them all on one spot would stop the shooting.
 const CENTRE_Z = 4400;
-const keepTogether = (_tick: number, room: Room): void => {
+const keepTogether = (tick: number, room: Room): void => {
   for (const id of room.playerIds()) {
     room.placeShip(id, (ship) => {
       if (!ship.alive) return ship;
       const dx = ship.x;
       const dz = ship.z - CENTRE_Z;
       const strayed = dx * dx + dz * dz > 900 * 900;
-      if (!strayed && ship.hp === SIM.maxHp) return ship;
-      return strayed
-        ? { ...ship, x: 0, y: 0, z: CENTRE_Z, hp: SIM.maxHp }
-        : { ...ship, hp: SIM.maxHp };
+      if (!strayed) return ship.hp === SIM.maxHp ? ship : { ...ship, hp: SIM.maxHp };
+      const angle = ((id * 0.618 + tick * 0.0137) % 1) * 2 * Math.PI;
+      const facing = angle + Math.PI;
+      return {
+        ...ship,
+        x: Math.sin(angle) * 300,
+        y: 0,
+        z: CENTRE_Z + Math.cos(angle) * 300,
+        yaw: facing > Math.PI ? facing - 2 * Math.PI : facing,
+        pitch: 0,
+        hp: SIM.maxHp,
+      };
     });
   }
 };
@@ -101,11 +111,15 @@ const startedAt = performance.now();
 const startBytes = room.stats.bytesSent;
 const startMessages = room.stats.messagesSent;
 const startTick = room.tick;
+const startBullets = room.stats.bulletsFired;
+const startHits = room.stats.hits;
 let heapBaseline = 0;
+let bulletsAtLastMinuteStart = startBullets;
 
 for (let elapsed = 10; elapsed <= seconds; elapsed += 10) {
   await sleep(startedAt + elapsed * 1000 - performance.now());
   if (elapsed >= baselineAtSeconds && heapBaseline === 0) heapBaseline = heapAfterGc();
+  if (elapsed === Math.max(10, seconds - 60)) bulletsAtLastMinuteStart = room.stats.bulletsFired;
   console.log(
     `${String(elapsed).padStart(4)} s  players ${room.playerCount}  bullets ${room.bulletCount}  ` +
       `tick p99 ${percentile(work.slice(-600), 0.99).toFixed(2)} ms  ` +
@@ -113,6 +127,7 @@ for (let elapsed = 10; elapsed <= seconds; elapsed += 10) {
   );
 }
 
+const lastMinuteBullets = room.stats.bulletsFired - bulletsAtLastMinuteStart;
 const heapEnd = heapAfterGc();
 const elapsedSeconds = (performance.now() - startedAt) / 1000;
 const ticks = room.tick - startTick;
@@ -133,8 +148,9 @@ const result = {
   // framing (a few bytes per message) are not included.
   bytesPerClientPerSecond: (room.stats.bytesSent - startBytes) / BOTS / elapsedSeconds,
   messagesPerClientPerSecond: (room.stats.messagesSent - startMessages) / BOTS / elapsedSeconds,
-  bulletsFired: room.stats.bulletsFired,
-  hits: room.stats.hits,
+  bulletsPerSecond: (room.stats.bulletsFired - startBullets) / elapsedSeconds,
+  hitsPerSecond: (room.stats.hits - startHits) / elapsedSeconds,
+  bulletsPerSecondInLastMinute: lastMinuteBullets / Math.min(60, elapsedSeconds),
   lateInputShare: room.stats.missedInputs / (ticks * BOTS),
   malformedMessages: room.stats.malformedMessages,
   botsAtEnd: lastBotReport,
@@ -152,6 +168,10 @@ if (result.tickWorkMs.p99 > THRESHOLDS.tickP99Ms) {
 }
 if (result.heapGrowth > THRESHOLDS.heapGrowthMax) {
   failures.push(`heap grew ${(result.heapGrowth * 100).toFixed(1)}% since the baseline`);
+}
+// The load has to be real: the bots must have kept shooting to the end.
+if (result.bulletsPerSecond < BOTS * 2) {
+  failures.push(`only ${result.bulletsPerSecond.toFixed(1)} bullets a second: the fight died down`);
 }
 if (room.playerCount !== 0 && result.ticksPerSecond < 59.5) {
   failures.push(`the server ran ${result.ticksPerSecond.toFixed(2)} ticks a second`);

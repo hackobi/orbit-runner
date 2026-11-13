@@ -80,8 +80,6 @@ export interface DebugHook {
   status(): DebugStatus;
   /** Hands the controls to a scripted behaviour, or back to the keyboard with null. */
   setBehaviour(spec: BehaviourSpec | null): void;
-  /** Does what hiding or showing the tab does to the session. */
-  setHidden(hidden: boolean): void;
   /** Forgets everything recorded so far, to start a measurement. */
   clear(): void;
 }
@@ -153,9 +151,6 @@ export function createDebugRecorder(): DebugRecorder {
         },
         setBehaviour: (spec) => {
           behaviour = spec ? behaviourFrom(spec) : null;
-        },
-        setHidden: (hidden) => {
-          session.setHidden(hidden);
         },
         clear: () => {
           frames.length = 0;

@@ -3,7 +3,7 @@
 //
 // Usage: node scripts/bots.ts <ws url> <count>
 
-import { hunter } from '../src/net/behaviours.ts';
+import { wanderer } from '../src/net/behaviours.ts';
 import { createBot } from '../src/net/bot.ts';
 
 const url = process.argv[2];
@@ -13,10 +13,13 @@ if (!url) {
   process.exit(2);
 }
 
-const bots = Array.from({ length: count }, () =>
+// Each bot flies its own erratic path and never stops firing: the most
+// bullets in the air the game allows, for as long as the run lasts. (Hunters
+// were tried first; sixteen of them end up circling too close to line up a shot.)
+const bots = Array.from({ length: count }, (_, i) =>
   createBot({
     openSocket: () => new WebSocket(url),
-    behaviour: hunter(),
+    behaviour: wanderer(1000 + i, true),
     now: () => performance.now(),
   }),
 );

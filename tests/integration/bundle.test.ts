@@ -37,6 +37,11 @@ describe('the debug hook', () => {
     expect(bundle.length).toBeGreaterThan(100_000);
     expect(bundle).not.toContain('__orbit');
     expect(bundle).not.toContain('__ORBIT_TEST_HOOKS__');
+    // Nor the things only the hook uses: scripted behaviours and the
+    // option to point the game socket somewhere else.
+    expect(bundle).not.toContain('setBehaviour');
+    expect(bundle).not.toContain('"server"');
+    expect(bundle).not.toContain("'server'");
   });
 
   it('is present when the build asks for it, so the check above means something', () => {
