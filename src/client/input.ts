@@ -72,6 +72,7 @@ export class InputDevices {
       yaw: clampAxis(yawKeys - yawKeysRight + pointerYaw),
       pitch: clampAxis(pitchUp - pitchDown + pointerPitch),
       throttle: key('KeyW') - key('KeyS'),
+      fire: false,
     };
   }
 

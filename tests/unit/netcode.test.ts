@@ -192,11 +192,11 @@ describe('death and respawn through the client', () => {
       },
       controls: (): Controls => {
         const ship = holder.client?.core.state;
-        if (!ship?.alive) return { yaw: 0, pitch: 0, throttle: 1 };
+        if (!ship?.alive) return { yaw: 0, pitch: 0, throttle: 1, fire: false };
         let error = Math.atan2(-ship.x, -ship.z) - ship.yaw;
         if (error > Math.PI) error -= 2 * Math.PI;
         if (error < -Math.PI) error += 2 * Math.PI;
-        return { yaw: Math.max(-1, Math.min(1, error * 4)), pitch: 0, throttle: 1 };
+        return { yaw: Math.max(-1, Math.min(1, error * 4)), pitch: 0, throttle: 1, fire: false };
       },
       link: { up: delay(50, 10, 7), down: delay(50, 10, 8) },
     });
@@ -243,7 +243,12 @@ describe('reconciliation', () => {
     let dropped = 0;
     const client = world.addClient({
       // One tick of full left turn; everything else is neutral.
-      controls: (tick): Controls => ({ yaw: tick === TAP_TICK ? 1 : 0, pitch: 0, throttle: 0 }),
+      controls: (tick): Controls => ({
+        yaw: tick === TAP_TICK ? 1 : 0,
+        pitch: 0,
+        throttle: 0,
+        fire: false,
+      }),
       link: {
         // Lose every message that carries the tap (the original and its two
         // redundant copies), so the server has to reuse the previous input.
@@ -381,7 +386,7 @@ describe('drawing the own ship', () => {
   it('the view moves smoothly between ticks at 120 fps', () => {
     const world = new TestWorld(4);
     const client = world.addClient({
-      controls: () => ({ yaw: 0, pitch: 0, throttle: 0 }),
+      controls: () => ({ yaw: 0, pitch: 0, throttle: 0, fire: false }),
       frameMs: 1000 / 120,
     });
     world.run(3000);
@@ -419,6 +424,7 @@ describe('drawing the own ship', () => {
         yaw: tick >= TAP_TICK && tick < TAP_TICK + 3 ? 1 : 0,
         pitch: 0,
         throttle: 1,
+        fire: false,
       }),
       link: {
         up: (data) => {

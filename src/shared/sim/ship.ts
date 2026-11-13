@@ -23,22 +23,44 @@ export interface Input {
   /** Pitch axis, −127..127. Positive is v1's I / Up key (decision D10). */
   readonly pitch: number;
   readonly throttle: -1 | 0 | 1;
+  readonly fire: boolean;
+  /**
+   * How far behind this tick the player was seeing the other ships, in
+   * sixteenths of a tick. The server rewinds targets by this much when it
+   * tests this player's bullets (lag compensation), up to a cap.
+   */
+  readonly viewDelay: number;
   readonly [inputBrand]: true;
 }
+
+export const VIEW_DELAY_STEPS_PER_TICK = 16;
+export const MAX_VIEW_DELAY = SIM.maxViewDelayTicks * VIEW_DELAY_STEPS_PER_TICK;
 
 /** Controls as an input device produces them. Axes are nominally −1..1. */
 export interface Controls {
   yaw: number;
   pitch: number;
   throttle: number;
+  fire: boolean;
 }
 
-/** Builds an Input from wire values. Returns null unless they are in range. */
-export function inputFromWire(yaw: number, pitch: number, throttle: number): Input | null {
+/**
+ * Builds an Input from wire values. Returns null unless the controls are in
+ * range. A view delay above the cap is not an error: it is clamped, so a
+ * client gains nothing by claiming to be further behind than allowed.
+ */
+export function inputFromWire(
+  yaw: number,
+  pitch: number,
+  throttle: number,
+  fire: boolean,
+  viewDelay: number,
+): Input | null {
   if (!Number.isInteger(yaw) || yaw < -AXIS_MAX || yaw > AXIS_MAX) return null;
   if (!Number.isInteger(pitch) || pitch < -AXIS_MAX || pitch > AXIS_MAX) return null;
   if (throttle !== -1 && throttle !== 0 && throttle !== 1) return null;
-  return { yaw, pitch, throttle } as Input;
+  if (!Number.isInteger(viewDelay) || viewDelay < 0) return null;
+  return { yaw, pitch, throttle, fire, viewDelay: Math.min(viewDelay, MAX_VIEW_DELAY) } as Input;
 }
 
 function quantiseAxis(value: number): number {
@@ -46,20 +68,21 @@ function quantiseAxis(value: number): number {
   return Math.round(clamp(value, -1, 1) * AXIS_MAX);
 }
 
-export function quantiseControls(controls: Controls): Input {
+/** `viewDelayTicks` is how far behind this tick the other ships are being drawn. */
+export function quantiseControls(controls: Controls, viewDelayTicks = 0): Input {
   const throttle = controls.throttle > 0 ? 1 : controls.throttle < 0 ? -1 : 0;
+  const delay = viewDelayTicks === viewDelayTicks ? viewDelayTicks : 0;
   return {
     yaw: quantiseAxis(controls.yaw),
     pitch: quantiseAxis(controls.pitch),
     throttle,
+    fire: controls.fire,
+    viewDelay: Math.round(clamp(delay, 0, SIM.maxViewDelayTicks) * VIEW_DELAY_STEPS_PER_TICK),
   } as Input;
 }
 
-export const NEUTRAL_INPUT: Input = quantiseControls({ yaw: 0, pitch: 0, throttle: 0 });
-
-export function inputsEqual(a: Input, b: Input): boolean {
-  return a.yaw === b.yaw && a.pitch === b.pitch && a.throttle === b.throttle;
-}
+export const NEUTRAL_CONTROLS: Controls = { yaw: 0, pitch: 0, throttle: 0, fire: false };
+export const NEUTRAL_INPUT: Input = quantiseControls(NEUTRAL_CONTROLS);
 
 /** Everything the step function reads or writes for one ship. */
 export interface ShipState {
@@ -79,6 +102,11 @@ export interface ShipState {
   readonly respawnTicks: number;
   /** Goes up by one at every spawn. A change means the ship teleported. */
   readonly spawnSeq: number;
+  readonly hp: number;
+  /** Ticks of spawn protection left. The ship cannot be damaged while above 0. */
+  readonly invulnTicks: number;
+  /** Ticks until the gun can fire again. */
+  readonly fireCooldown: number;
 }
 
 export const SPAWN_SEQ_MODULO = 256;
@@ -103,6 +131,13 @@ export function stepShip(s: ShipState, input: Input): ShipState {
   if (!s.alive) {
     return s.respawnTicks > 0 ? { ...s, respawnTicks: s.respawnTicks - 1 } : s;
   }
+
+  const invulnTicks = s.invulnTicks > 0 ? s.invulnTicks - 1 : 0;
+
+  // Gun (main.js:8837-8841): the cooldown runs down, and holding fire shoots
+  // the moment it reaches zero. The caller spawns the bullet; see firedThisTick.
+  let fireCooldown = s.fireCooldown > 0 ? s.fireCooldown - 1 : 0;
+  if (input.fire && fireCooldown === 0) fireCooldown = SIM.fireCooldownTicks;
 
   // Boost timer (main.js:8690).
   const boosting = s.boostTicks > 0;
@@ -136,25 +171,7 @@ export function stepShip(s: ShipState, input: Input): ShipState {
   const z = s.z + cos(yaw) * cosPitch * distance;
   const y = clamp(s.y - sin(pitch) * distance, -SIM.maxY, SIM.maxY); // main.js:8809
 
-  // The planet is at the origin and kills on contact (main.js:9620-9624).
-  if (x * x + y * y + z * z < KILL_RADIUS_SQ) {
-    return {
-      x,
-      y,
-      z,
-      yaw,
-      pitch,
-      roll,
-      speed: 0,
-      targetSpeed: 0,
-      boostTicks: 0,
-      alive: false,
-      respawnTicks: SIM.respawnTicks,
-      spawnSeq: s.spawnSeq,
-    };
-  }
-
-  return {
+  const moved: ShipState = {
     x,
     y,
     z,
@@ -167,7 +184,45 @@ export function stepShip(s: ShipState, input: Input): ShipState {
     alive: true,
     respawnTicks: 0,
     spawnSeq: s.spawnSeq,
+    hp: s.hp,
+    invulnTicks,
+    fireCooldown,
   };
+  // The planet is at the origin and kills on contact (main.js:9620-9624).
+  return x * x + y * y + z * z < KILL_RADIUS_SQ ? destroyed(moved) : moved;
+}
+
+/** The ship where it is, dead, with the respawn timer started. */
+function destroyed(s: ShipState): ShipState {
+  return {
+    ...s,
+    speed: 0,
+    targetSpeed: 0,
+    boostTicks: 0,
+    alive: false,
+    respawnTicks: SIM.respawnTicks,
+    hp: 0,
+    invulnTicks: 0,
+    fireCooldown: 0,
+  };
+}
+
+/** True if the step that produced `after` fired the gun. */
+export function firedThisTick(after: ShipState): boolean {
+  // The cooldown holds its full value only on the tick it was set.
+  return after.alive && after.fireCooldown === SIM.fireCooldownTicks;
+}
+
+/** Takes hit points off a ship. Spawn protection and death both make it a no-op. */
+export function damageShip(s: ShipState, amount: number): ShipState {
+  if (!s.alive || s.invulnTicks > 0) return s;
+  const hp = Math.max(0, s.hp - amount);
+  return hp === 0 ? destroyed(s) : { ...s, hp };
+}
+
+/** Kills a ship outright, whatever its protection. */
+export function destroyShip(s: ShipState): ShipState {
+  return s.alive ? destroyed(s) : s;
 }
 
 /**
@@ -191,6 +246,9 @@ export function spawnShip(rng: Rng, spawnSeq: number): ShipState {
     alive: true,
     respawnTicks: 0,
     spawnSeq: spawnSeq % SPAWN_SEQ_MODULO,
+    hp: SIM.maxHp,
+    invulnTicks: SIM.invulnerableTicks,
+    fireCooldown: 0,
   };
 }
 
@@ -208,6 +266,9 @@ export function shipStatesEqual(a: ShipState, b: ShipState): boolean {
     a.boostTicks === b.boostTicks &&
     a.alive === b.alive &&
     a.respawnTicks === b.respawnTicks &&
-    a.spawnSeq === b.spawnSeq
+    a.spawnSeq === b.spawnSeq &&
+    a.hp === b.hp &&
+    a.invulnTicks === b.invulnTicks &&
+    a.fireCooldown === b.fireCooldown
   );
 }

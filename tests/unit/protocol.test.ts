@@ -1,55 +1,102 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CAUSE_PLAYER,
+  FAR_ENTRY_BYTES,
   INPUT_REDUNDANCY,
+  NEAR_ENTRY_BYTES,
+  NO_PLAYER,
   PROTOCOL_VERSION,
   REJECT_FULL,
+  SNAPSHOT_HEADER_BYTES,
   decodeClientMessage,
   decodeServerMessage,
+  encodeEvents,
   encodeHello,
   encodeInput,
+  encodePresence,
   encodeReject,
   encodeSnapshot,
   encodeWelcome,
 } from '../../src/shared/protocol.ts';
+import type { GameEvent } from '../../src/shared/protocol.ts';
+import { distantSampleOf, sampleOf } from '../../src/shared/remote.ts';
 import { Rng } from '../../src/shared/rng.ts';
 import { SIM_FINGERPRINT } from '../../src/shared/sim/fingerprint.ts';
-import { quantiseControls, spawnShip } from '../../src/shared/sim/ship.ts';
+import { MAX_VIEW_DELAY, quantiseControls, spawnShip } from '../../src/shared/sim/ship.ts';
 
-const ship = { ...spawnShip(new Rng(3), 5), boostTicks: 77, roll: -0.123456789012345 };
+const ship = {
+  ...spawnShip(new Rng(3), 5),
+  boostTicks: 77,
+  roll: -0.123456789012345,
+  hp: 85,
+  invulnTicks: 12,
+  fireCooldown: 3,
+};
+const token = Uint8Array.from({ length: 16 }, (_, i) => i + 1);
+const neutral = quantiseControls({ yaw: 0, pitch: 0, throttle: 0, fire: false });
 
 describe('client messages', () => {
-  it('hello round-trips', () => {
-    const bytes = encodeHello({
+  it('hello round-trips, with and without a session token', () => {
+    const base = {
       protocolVersion: PROTOCOL_VERSION,
       simFingerprint: SIM_FINGERPRINT,
       clientTimeMs: 12345.678,
-    });
-    expect(decodeClientMessage(bytes)).toEqual({
+    };
+    expect(decodeClientMessage(encodeHello({ ...base, sessionToken: null }))).toEqual({
       type: 'hello',
-      protocolVersion: PROTOCOL_VERSION,
-      simFingerprint: SIM_FINGERPRINT,
-      clientTimeMs: 12345.678,
+      ...base,
+      sessionToken: null,
+    });
+    expect(decodeClientMessage(encodeHello({ ...base, sessionToken: token }))).toEqual({
+      type: 'hello',
+      ...base,
+      sessionToken: token,
     });
   });
 
-  it('input round-trips with its redundant copies', () => {
+  it('input round-trips with its redundant copies, fire and view delay', () => {
     const inputs = [
-      quantiseControls({ yaw: 1, pitch: -1, throttle: 1 }),
-      quantiseControls({ yaw: -0.3, pitch: 0.2, throttle: -1 }),
-      quantiseControls({ yaw: 0, pitch: 0, throttle: 0 }),
+      quantiseControls({ yaw: 1, pitch: -1, throttle: 1, fire: true }, 14.25),
+      quantiseControls({ yaw: -0.3, pitch: 0.2, throttle: -1, fire: false }, 3),
+      neutral,
     ];
+    expect(inputs[0]).toMatchObject({ fire: true, viewDelay: 228 });
     const decoded = decodeClientMessage(encodeInput(4_000_000_000, inputs));
     expect(decoded).toEqual({ type: 'input', tick: 4_000_000_000, inputs });
   });
 
-  it('an input message is 15 bytes', () => {
-    const input = quantiseControls({ yaw: 0, pitch: 0, throttle: 0 });
-    expect(encodeInput(1, [input, input, input]).byteLength).toBe(15);
+  it('an input message is 21 bytes', () => {
+    expect(encodeInput(1, [neutral, neutral, neutral]).byteLength).toBe(21);
     expect(INPUT_REDUNDANCY).toBe(3);
   });
 
+  it('a view delay above the cap is clamped, not refused', () => {
+    const bytes = Uint8Array.from(encodeInput(10, [neutral]));
+    bytes[9] = 0xff;
+    bytes[10] = 0xff;
+    const decoded = decodeClientMessage(bytes);
+    expect(decoded?.type === 'input' && decoded.inputs[0]?.viewDelay).toBe(MAX_VIEW_DELAY);
+    expect(quantiseControls({ yaw: 0, pitch: 0, throttle: 0, fire: false }, 500).viewDelay).toBe(
+      MAX_VIEW_DELAY,
+    );
+    expect(quantiseControls({ yaw: 0, pitch: 0, throttle: 0, fire: false }, -3).viewDelay).toBe(0);
+  });
+
+  it('presence round-trips', () => {
+    expect(decodeClientMessage(encodePresence(true, 5))).toEqual({
+      type: 'presence',
+      away: true,
+      clientTimeMs: 5,
+    });
+    expect(decodeClientMessage(encodePresence(false, 7))).toEqual({
+      type: 'presence',
+      away: false,
+      clientTimeMs: 7,
+    });
+  });
+
   it('malformed messages decode to null', () => {
-    const good = encodeInput(10, [quantiseControls({ yaw: 0, pitch: 0, throttle: 0 })]);
+    const good = encodeInput(10, [neutral]);
     expect(decodeClientMessage(new Uint8Array(0))).toBeNull();
     expect(decodeClientMessage(new Uint8Array([99, 1, 2, 3]))).toBeNull();
     expect(decodeClientMessage(good.subarray(0, good.byteLength - 1))).toBeNull();
@@ -65,12 +112,15 @@ describe('client messages', () => {
     const badThrottle = Uint8Array.from(good);
     badThrottle[8] = 3;
     expect(decodeClientMessage(badThrottle)).toBeNull();
+    const badButtons = Uint8Array.from(good);
+    badButtons[8] = 0x81;
+    expect(decodeClientMessage(badButtons)).toBeNull();
   });
 
   it('survives every prefix and random bytes without throwing', () => {
     const rng = new Rng(11);
     for (let i = 0; i < 5000; i++) {
-      const bytes = new Uint8Array(Math.floor(rng.next() * 40));
+      const bytes = new Uint8Array(Math.floor(rng.next() * 60));
       for (let j = 0; j < bytes.length; j++) bytes[j] = Math.floor(rng.next() * 256);
       expect(() => decodeClientMessage(bytes)).not.toThrow();
       expect(() => decodeServerMessage(bytes)).not.toThrow();
@@ -79,34 +129,102 @@ describe('client messages', () => {
 });
 
 describe('server messages', () => {
-  it('welcome round-trips the ship at full precision', () => {
-    const decoded = decodeServerMessage(
-      encodeWelcome({ playerId: 7, serverTick: 123456, clientTimeMs: 99.5, ship }),
-    );
-    expect(decoded).toEqual({
-      type: 'welcome',
+  it('welcome round-trips the ship at full precision, and the token', () => {
+    const message = {
       playerId: 7,
       serverTick: 123456,
       clientTimeMs: 99.5,
+      sessionToken: token,
       ship,
-    });
+    };
+    expect(decodeServerMessage(encodeWelcome(message))).toEqual({ type: 'welcome', ...message });
   });
 
-  it('snapshot round-trips, including a NaN lead for "no sample"', () => {
-    const decoded = decodeServerMessage(
-      encodeSnapshot({ serverTick: 42, inputLead: 2.5, missedInputs: 1, ship }),
-    );
-    expect(decoded).toEqual({
-      type: 'snapshot',
+  it('snapshot round-trips: own ship exactly, other ships on the wire grid', () => {
+    const rng = new Rng(21);
+    const near = sampleOf(42, {
+      ...spawnShip(rng, 3),
+      yaw: -2.5,
+      pitch: 0.7,
+      roll: -0.31,
+      hp: 40,
+      boostTicks: 9,
+    });
+    const far = distantSampleOf(sampleOf(42, { ...spawnShip(rng, 9), y: -499.99 }));
+    const message = {
       serverTick: 42,
       inputLead: 2.5,
       missedInputs: 1,
       ship,
-    });
+      kills: 12,
+      remotes: [
+        { id: 3, sample: near },
+        { id: 15, sample: far },
+      ],
+    };
+    const bytes = encodeSnapshot(message);
+    // What the server keeps for rewinding is exactly what the client decodes.
+    expect(decodeServerMessage(bytes)).toEqual({ type: 'snapshot', ...message });
+    expect(bytes.byteLength).toBe(SNAPSHOT_HEADER_BYTES + NEAR_ENTRY_BYTES + FAR_ENTRY_BYTES);
+    expect(near.full).toBe(true);
+    expect(far).toMatchObject({ full: false, yaw: 0, hp: 0 });
+  });
+
+  it('quantised positions are within 1/512 of a unit, and height within 1/128', () => {
+    const rng = new Rng(5);
+    for (let i = 0; i < 2000; i++) {
+      const s = {
+        ...spawnShip(rng, 0),
+        y: (rng.next() - 0.5) * 1000,
+        yaw: (rng.next() - 0.5) * 6.28,
+      };
+      const q = sampleOf(1, s);
+      expect(Math.abs(q.x - s.x)).toBeLessThanOrEqual(1 / 512);
+      expect(Math.abs(q.z - s.z)).toBeLessThanOrEqual(1 / 512);
+      expect(Math.abs(q.y - s.y)).toBeLessThanOrEqual(1 / 128);
+      expect(Math.abs(q.yaw - s.yaw)).toBeLessThan(0.0001);
+    }
+  });
+
+  it('a NaN lead survives, meaning "no sample"', () => {
     const none = decodeServerMessage(
-      encodeSnapshot({ serverTick: 42, inputLead: Number.NaN, missedInputs: 0, ship }),
+      encodeSnapshot({
+        serverTick: 42,
+        inputLead: Number.NaN,
+        missedInputs: 0,
+        ship,
+        kills: 0,
+        remotes: [],
+      }),
     );
     expect(none?.type === 'snapshot' && Number.isNaN(none.inputLead)).toBe(true);
+  });
+
+  it('a snapshot is 86 bytes plus 20 per nearby ship', () => {
+    expect(SNAPSHOT_HEADER_BYTES).toBe(86);
+    expect(NEAR_ENTRY_BYTES).toBe(20);
+    expect(FAR_ENTRY_BYTES).toBe(13);
+  });
+
+  it('events round-trip', () => {
+    const events: GameEvent[] = [
+      {
+        kind: 'bullet',
+        ownerId: 2,
+        spawnTick: 1000,
+        x: 1.5,
+        y: -2.25,
+        z: 4000.5,
+        yaw: 0.5,
+        pitch: -0.25,
+      },
+      { kind: 'hit', ownerId: 2, spawnTick: 1000, targetId: 5, tick: 1012, hp: 70 },
+      { kind: 'death', deathId: 77, victimId: 5, killerId: 2, cause: CAUSE_PLAYER, tick: 1100 },
+      { kind: 'death', deathId: 78, victimId: 6, killerId: NO_PLAYER, cause: 1, tick: 1101 },
+      { kind: 'left', playerId: 9 },
+    ];
+    expect(decodeServerMessage(encodeEvents(events))).toEqual({ type: 'events', events });
+    expect(decodeServerMessage(encodeEvents([]))).toEqual({ type: 'events', events: [] });
   });
 
   it('reject round-trips', () => {
@@ -114,11 +232,5 @@ describe('server messages', () => {
       type: 'reject',
       reason: REJECT_FULL,
     });
-  });
-
-  it('a snapshot is 80 bytes', () => {
-    expect(encodeSnapshot({ serverTick: 1, inputLead: 0, missedInputs: 0, ship }).byteLength).toBe(
-      80,
-    );
   });
 });

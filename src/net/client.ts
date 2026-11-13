@@ -1,12 +1,12 @@
 // Client netcode core: handshake, tick clock, own-ship prediction and
-// reconciliation. No DOM and no sockets, so the browser client, the headless
-// bots and the virtual-time tests all run this same class.
+// reconciliation, other ships, bullets. No DOM and no sockets, so the browser
+// client, the headless bots and the virtual-time tests all run this same class.
 //
 // Tick numbering: state[T] = step(state[T − 1], input[T]). The client runs
 // ahead of the server, so that input[T] reaches the server before the server
 // simulates tick T.
 
-import { SHIP_LENGTH, TICK_MS } from '../shared/constants.ts';
+import { SHIP_LENGTH, SIM, TICK_MS } from '../shared/constants.ts';
 import { TWO_PI } from '../shared/math.ts';
 import {
   INPUT_REDUNDANCY,
@@ -14,12 +14,36 @@ import {
   decodeServerMessage,
   encodeHello,
   encodeInput,
+  encodePresence,
 } from '../shared/protocol.ts';
-import type { RejectReason, SnapshotMessage, WelcomeMessage } from '../shared/protocol.ts';
+import type {
+  GameEvent,
+  RejectReason,
+  SnapshotMessage,
+  WelcomeMessage,
+} from '../shared/protocol.ts';
+import {
+  BULLET_STEP,
+  bulletExpired,
+  bulletFrom,
+  bulletHit,
+  bulletTravel,
+  spawnBullet,
+} from '../shared/sim/bullets.ts';
+import type { Bullet } from '../shared/sim/bullets.ts';
 import { SIM_FINGERPRINT } from '../shared/sim/fingerprint.ts';
-import { NEUTRAL_INPUT, quantiseControls, shipStatesEqual, stepShip } from '../shared/sim/ship.ts';
+import {
+  NEUTRAL_INPUT,
+  VIEW_DELAY_STEPS_PER_TICK,
+  firedThisTick,
+  quantiseControls,
+  shipStatesEqual,
+  stepShip,
+} from '../shared/sim/ship.ts';
 import type { Controls, Input, ShipState } from '../shared/sim/ship.ts';
 import type { Transport } from '../shared/transport.ts';
+import { RemoteShips } from './remotes.ts';
+import type { RemoteTuning, RemoteView } from './remotes.ts';
 
 export interface ClientTuning {
   /**
@@ -76,7 +100,14 @@ const HISTORY_SIZE = 1024;
 /** Marks a history entry whose input was never sent. */
 const NOT_SENT = -1;
 
-export type ClientStatus = 'connecting' | 'playing' | 'rejected' | 'closed';
+/**
+ * - connecting: waiting for the server's welcome.
+ * - playing: predicting and sending inputs.
+ * - away: the player's tab is hidden; nothing is simulated or sent.
+ * - rejected: the server refused this client (wrong version, or room full).
+ * - closed: the connection is gone.
+ */
+export type ClientStatus = 'connecting' | 'playing' | 'away' | 'rejected' | 'closed';
 
 export interface CorrectionEvent {
   timeMs: number;
@@ -98,6 +129,16 @@ export interface SnapshotEvent {
   missedInputs: number;
 }
 
+/** One of this player's bullets meeting a ship on this player's screen. */
+export interface ViewHit {
+  timeMs: number;
+  /** The bullet: this player's id and the tick it was fired. */
+  ownerId: number;
+  spawnTick: number;
+  targetId: number;
+  tick: number;
+}
+
 /** What to draw for the own ship right now. */
 export interface ShipView {
   x: number;
@@ -107,8 +148,22 @@ export interface ShipView {
   pitch: number;
   roll: number;
   speed: number;
+  hp: number;
   boosting: boolean;
+  invulnerable: boolean;
   alive: boolean;
+}
+
+/** A bullet to draw: where its tip is and which way it flies. */
+export interface BulletView {
+  ownerId: number;
+  spawnTick: number;
+  x: number;
+  y: number;
+  z: number;
+  dx: number;
+  dy: number;
+  dz: number;
 }
 
 export interface ClientOptions {
@@ -121,14 +176,35 @@ export interface ClientOptions {
    * bot or a test returns a script.
    */
   controls: (tick: number) => Controls;
+  /** A token from an earlier welcome, to take the same seat back after a reconnect. */
+  sessionToken?: Uint8Array | null;
   tuning?: Partial<ClientTuning>;
+  remoteTuning?: Partial<RemoteTuning>;
   onCorrection?: (event: CorrectionEvent) => void;
   onSnapshot?: (event: SnapshotEvent) => void;
+  /** Called when one of this player's bullets meets a ship on this player's screen. */
+  onViewHit?: (hit: ViewHit) => void;
+  /** Called for every event the server announces. */
+  onGameEvent?: (event: GameEvent) => void;
 }
 
 interface Arrival {
   timeMs: number;
   data: Uint8Array;
+}
+
+interface OwnBullet {
+  readonly bullet: Bullet;
+  /** The server has announced this bullet. Until then it is only a prediction. */
+  confirmed: boolean;
+  /** It has met a ship, on this screen or by the server's word. It is no longer drawn. */
+  spent: boolean;
+}
+
+interface RemoteBullet {
+  readonly bullet: Bullet;
+  /** The server tick it hit something. Infinity while it is still flying. */
+  hitTick: number;
 }
 
 function shortestArc(from: number, to: number): number {
@@ -143,6 +219,8 @@ export class ClientCore {
   rejectReason: RejectReason | null = null;
   closeReason: string | null = null;
   playerId = -1;
+  /** Given by the server. Presenting it again takes the same seat back. */
+  sessionToken: Uint8Array | null;
 
   /** The newest predicted tick and the ship's predicted state at it. */
   tick = 0;
@@ -151,6 +229,7 @@ export class ClientCore {
   /** The newest server tick received and the server's state at it. */
   ackTick = -1;
   ackState: ShipState | null = null;
+  kills = 0;
 
   /** Smoothed round trip in milliseconds, measured from input acknowledgements. */
   rttMs = 0;
@@ -160,6 +239,10 @@ export class ClientCore {
   leadLowTicks = 0;
   /** Tick clock rate. 1 is real time. */
   rate = 1;
+  /** How far behind the predicted tick the other ships are being drawn, in ticks. */
+  viewDelayTicks = 0;
+
+  readonly remotes: RemoteShips;
 
   readonly counters = {
     inputsSent: 0,
@@ -169,15 +252,21 @@ export class ClientCore {
     missedInputs: 0,
     skippedTicks: 0,
     resyncs: 0,
+    shotsFired: 0,
+    ghostBullets: 0,
+    viewHits: 0,
+    serverHits: 0,
   };
 
   private readonly transport: Transport;
   private readonly now: () => number;
+  private readonly controls: (tick: number) => Controls;
   private readonly tuning: ClientTuning;
   private readonly onCorrection: ((event: CorrectionEvent) => void) | undefined;
   private readonly onSnapshot: ((event: SnapshotEvent) => void) | undefined;
+  private readonly onViewHit: ((hit: ViewHit) => void) | undefined;
+  private readonly onGameEvent: ((event: GameEvent) => void) | undefined;
 
-  private readonly controls: (tick: number) => Controls;
   private readonly inbox: Arrival[] = [];
 
   // Prediction history, indexed by tick modulo HISTORY_SIZE.
@@ -211,13 +300,20 @@ export class ClientCore {
   private offsetPitch = 0;
   private offsetRoll = 0;
 
+  private ownBullets: OwnBullet[] = [];
+  private remoteBullets: RemoteBullet[] = [];
+
   constructor(options: ClientOptions) {
     this.transport = options.transport;
     this.now = options.now;
     this.controls = options.controls;
+    this.sessionToken = options.sessionToken ?? null;
     this.tuning = { ...DEFAULT_TUNING, ...options.tuning };
+    this.remotes = new RemoteShips(options.remoteTuning);
     this.onCorrection = options.onCorrection;
     this.onSnapshot = options.onSnapshot;
+    this.onViewHit = options.onViewHit;
+    this.onGameEvent = options.onGameEvent;
 
     this.transport.onMessage((data) => {
       // Stamp arrivals now; they are handled in order on the next update.
@@ -233,6 +329,7 @@ export class ClientCore {
           protocolVersion: PROTOCOL_VERSION,
           simFingerprint: SIM_FINGERPRINT,
           clientTimeMs: this.now(),
+          sessionToken: this.sessionToken,
         }),
         'reliable',
       );
@@ -251,27 +348,18 @@ export class ClientCore {
     if (!wasPlaying && this.status === 'playing') this.runDueTicks(now);
   }
 
-  private runDueTicks(now: number): void {
-    const elapsed = Math.max(0, now - this.lastUpdateMs);
-    this.lastUpdateMs = now;
-    this.decayOffsets(elapsed);
-
-    this.accumulatorMs += elapsed * this.rate;
-    this.slewTicks += (elapsed * (this.rate - 1)) / TICK_MS;
-    let due = Math.floor(this.accumulatorMs / TICK_MS);
-    this.accumulatorMs -= due * TICK_MS;
-
-    if (due > this.tuning.maxTicksPerUpdate) {
-      // A stall. The server has already simulated most of these ticks with
-      // our last input, so predict the same and do not send them.
-      const skipped = due - TICKS_KEPT_AFTER_STALL;
-      for (let i = 0; i < skipped; i++) this.advance(this.lastSentInput, false, now);
-      this.counters.skippedTicks += skipped;
-      due = TICKS_KEPT_AFTER_STALL;
-    }
-    for (let i = 0; i < due; i++) {
-      // Quantise first, then predict from the quantised value that is sent.
-      this.advance(quantiseControls(this.controls(this.tick + 1)), true, now);
+  /**
+   * Tells the server the player has gone (tab hidden) or come back. While
+   * away nothing is simulated or sent. Coming back asks the server for a
+   * fresh start: the tick clock and the prediction history are rebuilt from
+   * its answer, and the gap is never replayed.
+   */
+  setAway(away: boolean): void {
+    if (away && this.status === 'playing') {
+      this.status = 'away';
+      this.transport.send(encodePresence(true, this.now()), 'reliable');
+    } else if (!away && this.status === 'away') {
+      this.transport.send(encodePresence(false, this.now()), 'reliable');
     }
   }
 
@@ -295,9 +383,45 @@ export class ClientCore {
       pitch: from.pitch + (current.pitch - from.pitch) * alpha + this.offsetPitch,
       roll: from.roll + (current.roll - from.roll) * alpha + this.offsetRoll,
       speed: from.speed + (current.speed - from.speed) * alpha,
+      hp: current.hp,
       boosting: current.boostTicks > 0,
+      invulnerable: current.invulnTicks > 0,
       alive: current.alive,
     };
+  }
+
+  /** Every other ship as it should be drawn now. */
+  remoteViews(): RemoteView[] {
+    return this.remotes.views();
+  }
+
+  /**
+   * Every bullet to draw now. This player's bullets are placed on its own
+   * predicted timeline; everyone else's on the timeline their ships are drawn on.
+   */
+  bulletViews(): BulletView[] {
+    const views: BulletView[] = [];
+    const place = (bullet: Bullet, atTick: number): void => {
+      const travel = bulletTravel(bullet, atTick);
+      if (travel < 0 || travel >= SIM.bulletLifeTicks * BULLET_STEP) return;
+      views.push({
+        ownerId: bullet.ownerId,
+        spawnTick: bullet.spawnTick,
+        x: bullet.ox + bullet.dx * travel,
+        y: bullet.oy + bullet.dy * travel,
+        z: bullet.oz + bullet.dz * travel,
+        dx: bullet.dx,
+        dy: bullet.dy,
+        dz: bullet.dz,
+      });
+    };
+    const ownTick = this.tick - 1 + this.accumulatorMs / TICK_MS;
+    for (const own of this.ownBullets) if (!own.spent) place(own.bullet, ownTick);
+    const remoteTick = this.remotes.viewTick;
+    for (const remote of this.remoteBullets) {
+      if (remoteTick < remote.hitTick) place(remote.bullet, remoteTick);
+    }
+    return views;
   }
 
   /** The predicted state the client holds for a tick, if it still has it. */
@@ -310,25 +434,48 @@ export class ClientCore {
     this.transport.close();
   }
 
+  // --- Arrivals ---------------------------------------------------------------
+
   private handle(arrival: Arrival): void {
     const message = decodeServerMessage(arrival.data);
     if (!message) return;
-    if (message.type === 'welcome') {
-      if (this.status === 'connecting') this.start(message, arrival.timeMs);
-    } else if (message.type === 'reject') {
-      this.status = 'rejected';
-      this.rejectReason = message.reason;
-    } else if (this.status === 'playing') {
-      this.reconcile(message, arrival.timeMs);
+    switch (message.type) {
+      case 'welcome':
+        // A first welcome, or the answer to coming back from being away.
+        if (this.status !== 'rejected' && this.status !== 'closed') {
+          this.start(message, arrival.timeMs);
+        }
+        break;
+      case 'reject':
+        this.status = 'rejected';
+        this.rejectReason = message.reason;
+        break;
+      case 'snapshot':
+        if (this.status === 'playing') this.reconcile(message, arrival.timeMs);
+        break;
+      case 'events':
+        if (this.status === 'playing') {
+          for (const event of message.events) this.applyEvent(event);
+        }
+        break;
     }
   }
 
   private start(welcome: WelcomeMessage, arrivedAtMs: number): void {
     this.playerId = welcome.playerId;
+    this.sessionToken = welcome.sessionToken;
     this.rttMs = Math.max(0, arrivedAtMs - welcome.clientTimeMs);
+    this.haveRtt = false;
     this.status = 'playing';
     this.lastUpdateMs = arrivedAtMs;
     this.accumulatorMs = 0;
+    this.ackTick = -1;
+    this.ackState = null;
+    this.offsetX = this.offsetY = this.offsetZ = 0;
+    this.offsetYaw = this.offsetPitch = this.offsetRoll = 0;
+    this.ownBullets = [];
+    this.remoteBullets = [];
+    this.remotes.clear();
     this.alignTo(welcome.serverTick, welcome.ship, NEUTRAL_INPUT);
   }
 
@@ -355,6 +502,40 @@ export class ClientCore {
     this.rate = 1;
   }
 
+  // --- Ticks ------------------------------------------------------------------
+
+  private runDueTicks(now: number): void {
+    const elapsed = Math.max(0, now - this.lastUpdateMs);
+    this.lastUpdateMs = now;
+    this.decayOffsets(elapsed);
+    this.remotes.advance(now);
+
+    this.accumulatorMs += elapsed * this.rate;
+    this.slewTicks += (elapsed * (this.rate - 1)) / TICK_MS;
+    let due = Math.floor(this.accumulatorMs / TICK_MS);
+    this.accumulatorMs -= due * TICK_MS;
+
+    if (due > this.tuning.maxTicksPerUpdate) {
+      // A stall. The server has already simulated most of these ticks with
+      // our last input, so predict the same and do not send them.
+      const skipped = due - TICKS_KEPT_AFTER_STALL;
+      for (let i = 0; i < skipped; i++) this.advance(this.lastSentInput, false, now);
+      this.counters.skippedTicks += skipped;
+      due = TICKS_KEPT_AFTER_STALL;
+    }
+    for (let i = 0; i < due; i++) {
+      // Where the other ships were being drawn at this tick's moment. Several
+      // ticks in one frame are one tick apart on that timeline too.
+      const viewTick = this.remotes.viewTick - (due - 1 - i);
+      const viewDelay = Number.isNaN(viewTick) ? 0 : this.tick + 1 - viewTick;
+      // Quantise first, then predict from the quantised value that is sent.
+      this.advance(quantiseControls(this.controls(this.tick + 1), viewDelay), true, now);
+    }
+    if (due > 0 && this.state) {
+      this.viewDelayTicks = this.lastSentInput.viewDelay / VIEW_DELAY_STEPS_PER_TICK;
+    }
+  }
+
   private advance(input: Input, send: boolean, nowMs: number): void {
     const state = this.state;
     if (!state) return;
@@ -362,7 +543,17 @@ export class ClientCore {
     this.previousState = state;
     this.state = stepShip(state, input);
     this.store(this.tick, input, this.state, send ? nowMs : NOT_SENT);
+    if (firedThisTick(this.state)) {
+      this.ownBullets.push({
+        bullet: spawnBullet(this.playerId, this.tick, this.state),
+        confirmed: false,
+        spent: false,
+      });
+      this.counters.shotsFired += 1;
+    }
     if (!send) return;
+
+    this.testOwnBullets(input, nowMs);
 
     const inputs: Input[] = [input];
     for (let back = 1; back < INPUT_REDUNDANCY; back++) {
@@ -375,6 +566,42 @@ export class ClientCore {
     this.counters.inputsSent += 1;
   }
 
+  /**
+   * The shooter's own hit test, run once per tick with exactly the numbers
+   * the server will use: this tick, this input's view delay, and the other
+   * ships' samples through the shared interpolation.
+   */
+  private testOwnBullets(input: Input, nowMs: number): void {
+    if (this.ownBullets.length === 0) return;
+    const viewTick = this.tick - input.viewDelay / VIEW_DELAY_STEPS_PER_TICK;
+    const targets = this.remotes.ids();
+    for (const own of this.ownBullets) {
+      if (own.spent || own.bullet.spawnTick > this.tick) continue;
+      let hitTarget = -1;
+      let hitAt = Infinity;
+      for (const id of targets) {
+        const seen = this.remotes.poseAt(id, viewTick);
+        if (!seen?.alive || seen.invulnerable || !seen.full) continue;
+        const at = bulletHit(own.bullet, this.tick, seen.x, seen.y, seen.z);
+        if (at >= 0 && at < hitAt) {
+          hitAt = at;
+          hitTarget = id;
+        }
+      }
+      if (hitTarget < 0) continue;
+      own.spent = true;
+      this.counters.viewHits += 1;
+      this.onViewHit?.({
+        timeMs: nowMs,
+        ownerId: this.playerId,
+        spawnTick: own.bullet.spawnTick,
+        targetId: hitTarget,
+        tick: this.tick,
+      });
+    }
+    this.ownBullets = this.ownBullets.filter((own) => !bulletExpired(own.bullet, this.tick));
+  }
+
   private store(tick: number, input: Input, state: ShipState, sentAtMs: number): void {
     const slot = tick & (HISTORY_SIZE - 1);
     this.historyTick[slot] = tick;
@@ -384,12 +611,22 @@ export class ClientCore {
     this.historySlew[slot] = this.slewTicks;
   }
 
+  // --- Snapshots and events -----------------------------------------------------
+
   private reconcile(snapshot: SnapshotMessage, arrivedAtMs: number): void {
     if (snapshot.serverTick <= this.ackTick) return;
     this.ackTick = snapshot.serverTick;
     this.ackState = snapshot.ship;
+    this.kills = snapshot.kills;
     this.counters.snapshots += 1;
     this.counters.missedInputs += snapshot.missedInputs;
+
+    this.remotes.arrived(snapshot.serverTick, arrivedAtMs);
+    for (const entry of snapshot.remotes) this.remotes.add(entry.id, entry.sample);
+    this.remotes.prune(snapshot.serverTick);
+    this.remoteBullets = this.remoteBullets.filter(
+      (remote) => !bulletExpired(remote.bullet, snapshot.serverTick - 60),
+    );
 
     const slot = snapshot.serverTick & (HISTORY_SIZE - 1);
     const known = this.historyTick[slot] === snapshot.serverTick;
@@ -406,22 +643,34 @@ export class ClientCore {
       missedInputs: snapshot.missedInputs,
     });
 
-    const before = this.state;
-    if (!before) return;
+    // The server announces every bullet before the snapshot of the tick it
+    // was fired. A predicted bullet from that tick or earlier that was never
+    // announced did not happen.
+    const before = this.ownBullets.length;
+    this.ownBullets = this.ownBullets.filter(
+      (own) => own.confirmed || own.bullet.spawnTick > snapshot.serverTick,
+    );
+    this.counters.ghostBullets += before - this.ownBullets.length;
+
+    const present = this.state;
+    if (!present) return;
 
     if (snapshot.serverTick >= this.tick || !known) {
       // The server has caught up with or passed the prediction, or the tick
       // has left the history. Start again from the server's state.
       this.counters.resyncs += 1;
+      this.dropUnconfirmedBulletsAfter(snapshot.serverTick);
       this.alignTo(snapshot.serverTick, snapshot.ship, this.lastSentInput);
-      this.finishCorrection(before, snapshot.serverTick, arrivedAtMs);
+      this.finishCorrection(present, snapshot.serverTick, arrivedAtMs);
       return;
     }
 
     const predicted = this.historyState[slot];
     if (predicted && shipStatesEqual(predicted, snapshot.ship)) return;
 
-    // Rewind to the server's state and replay every input sent since.
+    // Rewind to the server's state and replay every input sent since. Shots
+    // predicted in the replayed ticks are predicted again.
+    this.dropUnconfirmedBulletsAfter(snapshot.serverTick);
     this.historyState[slot] = snapshot.ship;
     let state = snapshot.ship;
     let previous = snapshot.ship;
@@ -430,10 +679,89 @@ export class ClientCore {
       previous = state;
       state = stepShip(state, this.historyInput[replaySlot] ?? NEUTRAL_INPUT);
       this.historyState[replaySlot] = state;
+      if (firedThisTick(state) && !this.hasOwnBullet(tick)) {
+        this.ownBullets.push({
+          bullet: spawnBullet(this.playerId, tick, state),
+          confirmed: false,
+          spent: false,
+        });
+      }
     }
     this.previousState = previous;
     this.state = state;
-    this.finishCorrection(before, snapshot.serverTick, arrivedAtMs);
+    this.finishCorrection(present, snapshot.serverTick, arrivedAtMs);
+  }
+
+  private hasOwnBullet(spawnTick: number): boolean {
+    return this.ownBullets.some((own) => own.bullet.spawnTick === spawnTick);
+  }
+
+  private dropUnconfirmedBulletsAfter(serverTick: number): void {
+    this.ownBullets = this.ownBullets.filter(
+      (own) => own.confirmed || own.bullet.spawnTick <= serverTick,
+    );
+  }
+
+  private applyEvent(event: GameEvent): void {
+    switch (event.kind) {
+      case 'bullet': {
+        if (event.ownerId !== this.playerId) {
+          this.remoteBullets.push({
+            bullet: bulletFrom(
+              event.ownerId,
+              event.spawnTick,
+              event.x,
+              event.y,
+              event.z,
+              event.yaw,
+              event.pitch,
+            ),
+            hitTick: Infinity,
+          });
+          break;
+        }
+        const predicted = this.ownBullets.find((own) => own.bullet.spawnTick === event.spawnTick);
+        if (predicted) {
+          predicted.confirmed = true;
+        } else {
+          // The server fired a shot this client did not predict.
+          this.ownBullets.push({
+            bullet: bulletFrom(
+              event.ownerId,
+              event.spawnTick,
+              event.x,
+              event.y,
+              event.z,
+              event.yaw,
+              event.pitch,
+            ),
+            confirmed: true,
+            spent: false,
+          });
+        }
+        break;
+      }
+      case 'hit': {
+        if (event.ownerId === this.playerId) {
+          this.counters.serverHits += 1;
+          const own = this.ownBullets.find((b) => b.bullet.spawnTick === event.spawnTick);
+          if (own) own.spent = true;
+        } else {
+          const remote = this.remoteBullets.find(
+            (b) => b.bullet.ownerId === event.ownerId && b.bullet.spawnTick === event.spawnTick,
+          );
+          if (remote) remote.hitTick = event.tick;
+        }
+        break;
+      }
+      case 'left':
+        this.remotes.remove(event.playerId);
+        this.remoteBullets = this.remoteBullets.filter((b) => b.bullet.ownerId !== event.playerId);
+        break;
+      case 'death':
+        break;
+    }
+    this.onGameEvent?.(event);
   }
 
   private finishCorrection(before: ShipState, ackTick: number, timeMs: number): void {

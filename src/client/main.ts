@@ -43,6 +43,8 @@ function statusText(): string {
         : 'The room is full. Try again in a moment.';
     case 'closed':
       return 'Connection lost. Reload to rejoin.';
+    case 'away':
+      return 'Paused.';
     case 'playing':
       return core.state?.alive === false ? 'Destroyed. Respawning…' : '';
   }

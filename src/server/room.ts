@@ -1,34 +1,76 @@
-// One authoritative room. It owns the only true copy of every ship, advances
-// it in fixed ticks, and tells each client what happened.
+// One authoritative room. It owns the only true copy of every ship and
+// bullet, advances them in fixed ticks, decides every hit and death, and
+// tells each client what happened.
 //
 // The room does not touch sockets or the system clock: it is handed
 // transports and a time source, so the same class runs behind a WebSocket
 // server and inside virtual-time tests.
 
-import { TICK_MS } from '../shared/constants.ts';
+import { SIM, TICK_MS } from '../shared/constants.ts';
 import {
+  CAUSE_DISCONNECT,
+  CAUSE_PLANET,
+  CAUSE_PLAYER,
+  NO_PLAYER,
   PROTOCOL_VERSION,
   REJECT_FULL,
   REJECT_VERSION,
+  SESSION_TOKEN_BYTES,
   decodeClientMessage,
+  encodeEvents,
   encodeReject,
   encodeSnapshot,
   encodeWelcome,
 } from '../shared/protocol.ts';
-import type { HelloMessage, InputMessage } from '../shared/protocol.ts';
+import type {
+  BulletEvent,
+  DeathCause,
+  GameEvent,
+  HelloMessage,
+  InputMessage,
+  RemoteEntry,
+} from '../shared/protocol.ts';
+import { distantSampleOf, sampleOf, sampleTrack } from '../shared/remote.ts';
+import type { RemoteSample } from '../shared/remote.ts';
 import { Rng } from '../shared/rng.ts';
+import { bulletExpired, bulletHit, spawnBullet } from '../shared/sim/bullets.ts';
+import type { Bullet } from '../shared/sim/bullets.ts';
 import { SIM_FINGERPRINT } from '../shared/sim/fingerprint.ts';
-import { NEUTRAL_INPUT, spawnShip, stepShip } from '../shared/sim/ship.ts';
+import {
+  NEUTRAL_INPUT,
+  VIEW_DELAY_STEPS_PER_TICK,
+  damageShip,
+  destroyShip,
+  firedThisTick,
+  spawnShip,
+  stepShip,
+} from '../shared/sim/ship.ts';
 import type { Input, ShipState } from '../shared/sim/ship.ts';
-import type { Transport } from '../shared/transport.ts';
+import type { Channel, Transport } from '../shared/transport.ts';
 
 export const MAX_PLAYERS = 16;
 
 /** A snapshot goes out every second tick: 30 a second. */
 export const SNAPSHOT_EVERY_TICKS = 2;
 
+/** Ships within this distance are sent in full, 30 times a second. */
+export const NEAR_RADIUS = 2000;
+/** A near ship stays near until it is this far away, so it does not flicker between tiers. */
+export const NEAR_RADIUS_EXIT = 2200;
+/** Distant ships are sent as a position on every sixth snapshot: 5 a second. */
+export const FAR_EVERY_SNAPSHOTS = 6;
+
+/** Bullets and hits are announced to players within this distance. A bullet flies 690 units. */
+const EVENT_RADIUS = NEAR_RADIUS + 800;
+
+/** Decision D6: how long a seat is held for a player who has gone away. */
+export const AWAY_GRACE_TICKS = 600;
+
 /** Inputs numbered further ahead than this are refused, which bounds the buffer. */
 export const MAX_INPUT_LEAD_TICKS = 120;
+
+/** Snapshot samples kept per ship for rewinding. 64 samples is over two seconds. */
+const TRACK_LENGTH = 64;
 
 /** After a stall the room simulates at most this many ticks in one go. */
 const MAX_CATCH_UP_TICKS = 120;
@@ -39,10 +81,42 @@ const HELLO_TIMEOUT_MS = 5000;
 /** A connection is closed after this many malformed messages. */
 const MAX_MALFORMED_MESSAGES = 20;
 
+export interface DeathRecord {
+  /** Unique for the life of the room, so a payout can never be made twice. */
+  deathId: number;
+  victimId: number;
+  killerId: number | null;
+  cause: DeathCause;
+  tick: number;
+  /** Ticks the victim had been alive in this life. */
+  survivalTicks: number;
+  /** Kills the victim made in this life. */
+  kills: number;
+}
+
+export interface HitRecord {
+  ownerId: number;
+  spawnTick: number;
+  targetId: number;
+  tick: number;
+}
+
+/** What the room reports to the outside. Phase 5's economy listens here. */
+export interface RoomListener {
+  playerJoined?: (playerId: number, tick: number) => void;
+  playerLeft?: (playerId: number, tick: number) => void;
+  playerDied?: (death: DeathRecord) => void;
+  /** A bullet the server decided was a hit. */
+  hit?: (hit: HitRecord) => void;
+}
+
 export interface RoomOptions {
   now: () => number;
   seed: number;
+  /** 16 unguessable bytes for a new player's session. */
+  createToken: () => Uint8Array;
   maxPlayers?: number;
+  listener?: RoomListener;
   /** Called after every simulated tick. Tests use it to record what really happened. */
   onTick?: (tick: number, room: Room) => void;
 }
@@ -56,6 +130,10 @@ export interface RoomStats {
   /** Player-ticks simulated by reusing the previous input. */
   missedInputs: number;
   bytesSent: number;
+  messagesSent: number;
+  bulletsFired: number;
+  hits: number;
+  deaths: number;
 }
 
 interface Connection {
@@ -68,16 +146,50 @@ interface Connection {
 
 interface Player {
   readonly id: number;
-  readonly connection: Connection;
+  readonly token: Uint8Array;
+  connection: Connection | null;
   ship: ShipState;
-  lastInput: Input;
+  /** The input applied on the current tick. Its view delay places this player's bullets. */
+  input: Input;
   /** Inputs for ticks that have not been simulated yet. */
   readonly pending: Map<number, Input>;
-  /** The tick of the first input this player sent. Null until one arrives. */
+  /** The tick of the first input since the last (re)join. Null until one arrives. */
   firstInputTick: number | null;
   /** Worst input lead since the last snapshot, in ticks. NaN if none arrived. */
   worstLead: number;
   missedSinceSnapshot: number;
+  /** Tab hidden or socket gone. The ship flies straight and the seat is held for a while. */
+  away: boolean;
+  awaySinceTick: number;
+  kills: number;
+  killsThisLife: number;
+  spawnedAtTick: number;
+  /** The ships currently sent to this player in full. */
+  readonly near: Set<number>;
+  /** Send every distant ship in the next snapshot, whatever the schedule says. */
+  fullStateDue: boolean;
+  /** What snapshots have said about this ship, in tick order. Used to rewind it. */
+  readonly track: RemoteSample[];
+  readonly outbox: GameEvent[];
+}
+
+interface LiveBullet {
+  readonly bullet: Bullet;
+  readonly announcement: BulletEvent;
+}
+
+function sameToken(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.byteLength !== b.byteLength) return false;
+  let difference = 0;
+  for (let i = 0; i < a.byteLength; i++) difference |= (a[i] ?? 0) ^ (b[i] ?? 0);
+  return difference === 0;
+}
+
+function distanceSq(a: ShipState, x: number, y: number, z: number): number {
+  const dx = a.x - x;
+  const dy = a.y - y;
+  const dz = a.z - z;
+  return dx * dx + dy * dy + dz * dz;
 }
 
 export class Room {
@@ -88,21 +200,32 @@ export class Room {
     lateInputs: 0,
     missedInputs: 0,
     bytesSent: 0,
+    messagesSent: 0,
+    bulletsFired: 0,
+    hits: 0,
+    deaths: 0,
   };
 
   private readonly now: () => number;
   private readonly rng: Rng;
+  private readonly createToken: () => Uint8Array;
   private readonly maxPlayers: number;
+  private readonly listener: RoomListener;
   private readonly onTick: ((tick: number, room: Room) => void) | undefined;
   private readonly connections = new Set<Connection>();
   private readonly players = new Map<number, Player>();
+  private bullets: LiveBullet[] = [];
+  private nextDeathId = 1;
+  private snapshotsSent = 0;
   /** The moment the current tick was due. Null until the first advance. */
   private tickDueAtMs: number | null = null;
 
   constructor(options: RoomOptions) {
     this.now = options.now;
     this.rng = new Rng(options.seed);
+    this.createToken = options.createToken;
     this.maxPlayers = options.maxPlayers ?? MAX_PLAYERS;
+    this.listener = options.listener ?? {};
     this.onTick = options.onTick;
   }
 
@@ -110,13 +233,34 @@ export class Room {
     return this.players.size;
   }
 
-  /** The authoritative ship of a player, for tests and the health endpoint. */
+  get bulletCount(): number {
+    return this.bullets.length;
+  }
+
+  /** The authoritative ship of a player. */
   shipOf(playerId: number): ShipState | undefined {
     return this.players.get(playerId)?.ship;
   }
 
+  killsOf(playerId: number): number {
+    return this.players.get(playerId)?.kills ?? 0;
+  }
+
+  isAway(playerId: number): boolean {
+    return this.players.get(playerId)?.away ?? false;
+  }
+
   playerIds(): number[] {
     return [...this.players.keys()];
+  }
+
+  /**
+   * Test and development aid: replaces a player's ship. Never reachable from
+   * the network.
+   */
+  placeShip(playerId: number, change: (ship: ShipState) => ShipState): void {
+    const player = this.players.get(playerId);
+    if (player) player.ship = change(player.ship);
   }
 
   /** Takes over a new connection. The first message must be a hello. */
@@ -169,40 +313,263 @@ export class Room {
     }
   }
 
+  // --- One tick -------------------------------------------------------------
+
   private step(): void {
     this.tick += 1;
-    for (const player of this.players.values()) {
-      let input = player.pending.get(this.tick);
-      if (input) {
-        player.pending.delete(this.tick);
-        player.lastInput = input;
-      } else {
-        // No input for this tick: carry on with the last one. The ship never
-        // freezes for other players, and withholding input gains nothing.
-        input = player.lastInput;
-        // Ticks before the player's first input are not misses: nothing was due.
-        if (player.firstInputTick !== null && this.tick >= player.firstInputTick) {
-          player.missedSinceSnapshot += 1;
-          this.stats.missedInputs += 1;
-        }
-      }
-      player.ship = stepShip(player.ship, input);
-      if (!player.ship.alive && player.ship.respawnTicks === 0) {
-        player.ship = spawnShip(this.rng, player.ship.spawnSeq + 1);
-      }
-    }
+    this.stepShips();
+    this.stepBullets();
+    this.stepAwayAndRespawn();
+    this.flushEvents();
     this.onTick?.(this.tick, this);
   }
 
-  private sendSnapshots(): void {
+  private stepShips(): void {
     for (const player of this.players.values()) {
+      let input: Input;
+      if (player.away) {
+        // Decision D6: an absent player's ship flies straight and can be hit.
+        input = NEUTRAL_INPUT;
+      } else {
+        const arrived = player.pending.get(this.tick);
+        if (arrived) {
+          player.pending.delete(this.tick);
+          input = arrived;
+        } else {
+          // No input for this tick: carry on with the last one. The ship
+          // never freezes for other players, and withholding input gains
+          // nothing. Ticks before the player's first input are not misses.
+          input = player.input;
+          if (player.firstInputTick !== null && this.tick >= player.firstInputTick) {
+            player.missedSinceSnapshot += 1;
+            this.stats.missedInputs += 1;
+          }
+        }
+      }
+      player.input = input;
+
+      const before = player.ship;
+      player.ship = stepShip(before, input);
+      if (before.alive && !player.ship.alive) this.recordDeath(player, null, CAUSE_PLANET);
+      if (firedThisTick(player.ship)) this.fire(player);
+    }
+  }
+
+  private fire(player: Player): void {
+    const ship = player.ship;
+    const live: LiveBullet = {
+      bullet: spawnBullet(player.id, this.tick, ship),
+      announcement: {
+        kind: 'bullet',
+        ownerId: player.id,
+        spawnTick: this.tick,
+        x: ship.x,
+        y: ship.y,
+        z: ship.z,
+        yaw: ship.yaw,
+        pitch: ship.pitch,
+      },
+    };
+    this.bullets.push(live);
+    this.stats.bulletsFired += 1;
+    this.announce(live.announcement, ship.x, ship.y, ship.z, player.id, NO_PLAYER);
+  }
+
+  /**
+   * Moves every bullet one tick and decides hits.
+   *
+   * Lag compensation (decision D2): a bullet is tested against each target
+   * where its shooter was seeing that target on this tick. The shooter's
+   * input says how far behind its view was; the target's position at that
+   * moment comes from the snapshots actually sent, through the same
+   * interpolation the shooter's client draws with.
+   */
+  private stepBullets(): void {
+    const survivors: LiveBullet[] = [];
+    for (const live of this.bullets) {
+      const bullet = live.bullet;
+      const owner = this.players.get(bullet.ownerId);
+      if (!owner || bulletExpired(bullet, this.tick)) continue;
+
+      const viewTick = this.tick - owner.input.viewDelay / VIEW_DELAY_STEPS_PER_TICK;
+      let hitTarget: Player | null = null;
+      let hitAt = Infinity;
+      for (const target of this.players.values()) {
+        if (target === owner || !target.ship.alive) continue;
+        const seen = sampleTrack(target.track, viewTick, 0);
+        // The shooter must have been looking at this life of the ship, alive
+        // and unprotected.
+        if (!seen?.alive || seen.invulnerable || seen.spawnSeq !== target.ship.spawnSeq) continue;
+        const at = bulletHit(bullet, this.tick, seen.x, seen.y, seen.z);
+        if (at >= 0 && at < hitAt) {
+          hitAt = at;
+          hitTarget = target;
+        }
+      }
+
+      if (!hitTarget) {
+        survivors.push(live);
+        continue;
+      }
+      hitTarget.ship = damageShip(hitTarget.ship, SIM.bulletDamage);
+      this.stats.hits += 1;
+      this.listener.hit?.({
+        ownerId: owner.id,
+        spawnTick: bullet.spawnTick,
+        targetId: hitTarget.id,
+        tick: this.tick,
+      });
+      this.announce(
+        {
+          kind: 'hit',
+          ownerId: owner.id,
+          spawnTick: bullet.spawnTick,
+          targetId: hitTarget.id,
+          tick: this.tick,
+          hp: hitTarget.ship.hp,
+        },
+        hitTarget.ship.x,
+        hitTarget.ship.y,
+        hitTarget.ship.z,
+        owner.id,
+        hitTarget.id,
+      );
+      if (!hitTarget.ship.alive) {
+        owner.kills += 1;
+        owner.killsThisLife += 1;
+        this.recordDeath(hitTarget, owner, CAUSE_PLAYER);
+      }
+    }
+    this.bullets = survivors;
+  }
+
+  private stepAwayAndRespawn(): void {
+    for (const player of [...this.players.values()]) {
+      const graceOver = player.away && this.tick - player.awaySinceTick >= AWAY_GRACE_TICKS;
+      if (graceOver && player.ship.alive) {
+        player.ship = destroyShip(player.ship);
+        this.recordDeath(player, null, CAUSE_DISCONNECT);
+      }
+      if (graceOver && !player.connection) {
+        this.remove(player);
+        continue;
+      }
+      // A dead ship comes back after its timer, but not while its player is away.
+      if (!player.ship.alive && player.ship.respawnTicks === 0 && !player.away) {
+        player.ship = spawnShip(this.rng, player.ship.spawnSeq + 1);
+        player.killsThisLife = 0;
+        player.spawnedAtTick = this.tick;
+      }
+    }
+  }
+
+  private recordDeath(victim: Player, killer: Player | null, cause: DeathCause): void {
+    const deathId = this.nextDeathId++;
+    this.stats.deaths += 1;
+    this.listener.playerDied?.({
+      deathId,
+      victimId: victim.id,
+      killerId: killer ? killer.id : null,
+      cause,
+      tick: this.tick,
+      survivalTicks: this.tick - victim.spawnedAtTick,
+      kills: victim.killsThisLife,
+    });
+    const event: GameEvent = {
+      kind: 'death',
+      deathId,
+      victimId: victim.id,
+      killerId: killer ? killer.id : NO_PLAYER,
+      cause,
+      tick: this.tick,
+    };
+    for (const player of this.players.values()) player.outbox.push(event);
+  }
+
+  /** Queues an event for everyone close enough to see it, and for those it concerns. */
+  private announce(
+    event: GameEvent,
+    x: number,
+    y: number,
+    z: number,
+    concernsA: number,
+    concernsB: number,
+  ): void {
+    for (const player of this.players.values()) {
+      if (
+        player.id === concernsA ||
+        player.id === concernsB ||
+        distanceSq(player.ship, x, y, z) <= EVENT_RADIUS * EVENT_RADIUS
+      ) {
+        player.outbox.push(event);
+      }
+    }
+  }
+
+  private flushEvents(): void {
+    for (const player of this.players.values()) {
+      if (player.outbox.length === 0) continue;
+      if (player.connection) {
+        for (let start = 0; start < player.outbox.length; start += 255) {
+          this.send(
+            player.connection,
+            encodeEvents(player.outbox.slice(start, start + 255)),
+            'reliable',
+          );
+        }
+      }
+      player.outbox.length = 0;
+    }
+  }
+
+  private sendSnapshots(): void {
+    // Record what this snapshot says about every ship. Rewinding uses exactly
+    // these samples, at exactly these ticks, because they are what clients drew.
+    const samples = new Map<number, RemoteSample>();
+    for (const player of this.players.values()) {
+      const sample = sampleOf(this.tick, player.ship);
+      samples.set(player.id, sample);
+      player.track.push(sample);
+      if (player.track.length > TRACK_LENGTH) player.track.shift();
+    }
+
+    const farDue = this.snapshotsSent % FAR_EVERY_SNAPSHOTS === 0;
+    this.snapshotsSent += 1;
+
+    for (const player of this.players.values()) {
+      const connection = player.connection;
+      if (!connection) continue;
+
+      const remotes: RemoteEntry[] = [];
+      for (const other of this.players.values()) {
+        if (other === player) continue;
+        const sample = samples.get(other.id);
+        if (!sample) continue;
+        const d2 = distanceSq(player.ship, other.ship.x, other.ship.y, other.ship.z);
+        const limit = player.near.has(other.id) ? NEAR_RADIUS_EXIT : NEAR_RADIUS;
+        if (d2 <= limit * limit) {
+          player.near.add(other.id);
+          remotes.push({ id: other.id, sample });
+        } else {
+          const wasNear = player.near.delete(other.id);
+          // A ship that just left the near tier is sent once more at once, so
+          // it does not vanish until the next scheduled distant update.
+          if (farDue || player.fullStateDue || wasNear) {
+            remotes.push({ id: other.id, sample: distantSampleOf(sample) });
+          }
+        }
+      }
+      player.fullStateDue = false;
+
       this.send(
-        player.connection,
+        connection,
         encodeSnapshot({
           serverTick: this.tick,
           inputLead: player.worstLead,
           missedInputs: player.missedSinceSnapshot,
           ship: player.ship,
+          kills: player.kills,
+          remotes,
         }),
         'droppable',
       );
@@ -210,6 +577,8 @@ export class Room {
       player.missedSinceSnapshot = 0;
     }
   }
+
+  // --- Messages in ----------------------------------------------------------
 
   private receive(connection: Connection, data: Uint8Array): void {
     if (connection.closed) return;
@@ -223,11 +592,18 @@ export class Room {
       else this.join(connection, message);
       return;
     }
-    if (!connection.player) {
+    const player = connection.player;
+    if (!player) {
       this.malformed(connection);
       return;
     }
-    this.acceptInputs(connection.player, message);
+    if (message.type === 'input') {
+      this.acceptInputs(player, message);
+    } else if (message.away) {
+      this.markAway(player);
+    } else {
+      this.welcomeBack(player, connection, message.clientTimeMs);
+    }
   }
 
   private join(connection: Connection, hello: HelloMessage): void {
@@ -236,37 +612,97 @@ export class Room {
       this.close(connection);
       return;
     }
+
+    // A known token takes its seat back, whether the old socket has been
+    // noticed as dead yet or not.
+    if (hello.sessionToken) {
+      for (const player of this.players.values()) {
+        if (!sameToken(player.token, hello.sessionToken)) continue;
+        const old = player.connection;
+        if (old && old !== connection) {
+          old.player = null;
+          this.close(old);
+        }
+        this.welcomeBack(player, connection, hello.clientTimeMs);
+        return;
+      }
+    }
+
     const id = this.freeId();
     if (id === null) {
       this.send(connection, encodeReject(REJECT_FULL), 'reliable');
       this.close(connection);
       return;
     }
+    const token = this.createToken();
+    if (token.byteLength !== SESSION_TOKEN_BYTES) throw new Error('session token must be 16 bytes');
     const player: Player = {
       id,
-      connection,
+      token,
+      connection: null,
       ship: spawnShip(this.rng, 0),
-      lastInput: NEUTRAL_INPUT,
+      input: NEUTRAL_INPUT,
       pending: new Map(),
       firstInputTick: null,
       worstLead: Number.NaN,
       missedSinceSnapshot: 0,
+      away: false,
+      awaySinceTick: 0,
+      kills: 0,
+      killsThisLife: 0,
+      spawnedAtTick: this.tick,
+      near: new Set(),
+      fullStateDue: true,
+      track: [],
+      outbox: [],
     };
-    connection.player = player;
     this.players.set(id, player);
+    this.listener.playerJoined?.(id, this.tick);
+    this.welcomeBack(player, connection, hello.clientTimeMs);
+  }
+
+  /**
+   * Attaches a connection to a player and tells the client everything it
+   * needs to start from scratch: the tick, its ship, and every bullet in
+   * flight. Used for a first join, a reconnect, and a tab coming back.
+   */
+  private welcomeBack(player: Player, connection: Connection, clientTimeMs: number): void {
+    player.connection = connection;
+    connection.player = player;
+    player.away = false;
+    player.pending.clear();
+    player.input = NEUTRAL_INPUT;
+    player.firstInputTick = null;
+    player.worstLead = Number.NaN;
+    player.missedSinceSnapshot = 0;
+    player.near.clear();
+    player.fullStateDue = true;
+    player.outbox.length = 0;
+
     this.send(
       connection,
       encodeWelcome({
-        playerId: id,
+        playerId: player.id,
         serverTick: this.tick,
-        clientTimeMs: hello.clientTimeMs,
+        clientTimeMs,
+        sessionToken: player.token,
         ship: player.ship,
       }),
       'reliable',
     );
+    for (const live of this.bullets) player.outbox.push(live.announcement);
+    this.flushEvents();
+  }
+
+  private markAway(player: Player): void {
+    if (player.away) return;
+    player.away = true;
+    player.awaySinceTick = this.tick;
+    player.pending.clear();
   }
 
   private acceptInputs(player: Player, message: InputMessage): void {
+    if (player.away) return;
     // How long before its tick is due the newest input arrived, in ticks.
     const sinceTickDue = this.tickDueAtMs === null ? 0 : this.now() - this.tickDueAtMs;
     const lead = message.tick - this.tick - sinceTickDue / TICK_MS;
@@ -283,6 +719,8 @@ export class Room {
     }
   }
 
+  // --- Connections ----------------------------------------------------------
+
   private freeId(): number | null {
     for (let id = 0; id < this.maxPlayers; id++) {
       if (!this.players.has(id)) return id;
@@ -296,9 +734,10 @@ export class Room {
     if (connection.malformed >= MAX_MALFORMED_MESSAGES) this.close(connection);
   }
 
-  private send(connection: Connection, data: Uint8Array, channel: 'reliable' | 'droppable'): void {
+  private send(connection: Connection, data: Uint8Array, channel: Channel): void {
     if (connection.closed) return;
     this.stats.bytesSent += data.byteLength;
+    this.stats.messagesSent += 1;
     connection.transport.send(data, channel);
   }
 
@@ -308,9 +747,23 @@ export class Room {
     this.drop(connection);
   }
 
+  /** The socket is gone. The player, if any, stays for the grace period. */
   private drop(connection: Connection): void {
     connection.closed = true;
     this.connections.delete(connection);
-    if (connection.player) this.players.delete(connection.player.id);
+    const player = connection.player;
+    if (!player || player.connection !== connection) return;
+    player.connection = null;
+    this.markAway(player);
+  }
+
+  private remove(player: Player): void {
+    this.players.delete(player.id);
+    this.bullets = this.bullets.filter((live) => live.bullet.ownerId !== player.id);
+    this.listener.playerLeft?.(player.id, this.tick);
+    for (const other of this.players.values()) {
+      other.near.delete(player.id);
+      other.outbox.push({ kind: 'left', playerId: player.id });
+    }
   }
 }

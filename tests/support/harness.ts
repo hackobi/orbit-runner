@@ -3,6 +3,7 @@
 
 import { TICK_MS } from '../../src/shared/constants.ts';
 import { Rng } from '../../src/shared/rng.ts';
+import { NEUTRAL_CONTROLS } from '../../src/shared/sim/ship.ts';
 import type { Controls, ShipState } from '../../src/shared/sim/ship.ts';
 import { ClientCore } from '../../src/net/client.ts';
 import type { ClientTuning, CorrectionEvent, SnapshotEvent } from '../../src/net/client.ts';
@@ -39,9 +40,12 @@ export class TestWorld {
   readonly truth = new Map<number, Map<number, ShipState>>();
 
   constructor(seed = 1) {
+    // Tokens only need to be distinct here, so a seeded generator will do.
+    const tokens = new Rng(seed ^ 0x5eed);
     this.room = new Room({
       now: this.clock.now,
       seed,
+      createToken: () => Uint8Array.from({ length: 16 }, () => Math.floor(tokens.next() * 256)),
       onTick: (tick, room) => {
         for (const id of room.playerIds()) {
           const ship = room.shipOf(id);
@@ -72,7 +76,7 @@ export class TestWorld {
     const core = new ClientCore({
       transport: link.client,
       now: () => startedAtMs + (this.clock.now() - startedAtMs) * clockRate,
-      controls: setup.controls ?? (() => ({ yaw: 0, pitch: 0, throttle: 0 })),
+      controls: setup.controls ?? (() => NEUTRAL_CONTROLS),
       ...(setup.tuning ? { tuning: setup.tuning } : {}),
       onCorrection: (event) => corrections.push(event),
       onSnapshot: (event) => snapshots.push(event),
@@ -119,7 +123,7 @@ export function delay(meanMs: number, jitterMs: number, seed: number): Shaper {
  */
 export function wanderingControls(seed: number): (tick: number) => Controls {
   const rng = new Rng(seed);
-  let current: Controls = { yaw: 0, pitch: 0, throttle: 0 };
+  let current: Controls = NEUTRAL_CONTROLS;
   let holdUntil = 0;
   let lastTick = -1;
   return (tick) => {
@@ -129,6 +133,7 @@ export function wanderingControls(seed: number): (tick: number) => Controls {
         // Pitch is kept gentle so a minute of flying stays inside the belt.
         pitch: (rng.next() * 2 - 1) * 0.3,
         throttle: Math.floor(rng.next() * 3) - 1,
+        fire: false,
       };
       holdUntil = tick + 5 + Math.floor(rng.next() * 40);
     }

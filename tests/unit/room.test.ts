@@ -16,7 +16,7 @@ import { Room } from '../../src/server/room.ts';
 import { TestWorld } from '../support/harness.ts';
 import { createLink } from '../support/loopback.ts';
 
-const FULL_LEFT = quantiseControls({ yaw: 1, pitch: 0, throttle: 1 });
+const FULL_LEFT = quantiseControls({ yaw: 1, pitch: 0, throttle: 1, fire: false });
 
 /** A hand-driven connection, for sending things a real client never would. */
 class RawClient {
@@ -41,9 +41,18 @@ class RawClient {
     this.transport.send(data, 'reliable');
   }
 
-  hello(version = PROTOCOL_VERSION, fingerprint = SIM_FINGERPRINT): void {
+  hello(
+    version = PROTOCOL_VERSION,
+    fingerprint = SIM_FINGERPRINT,
+    sessionToken: Uint8Array | null = null,
+  ): void {
     this.send(
-      encodeHello({ protocolVersion: version, simFingerprint: fingerprint, clientTimeMs: 0 }),
+      encodeHello({
+        protocolVersion: version,
+        simFingerprint: fingerprint,
+        clientTimeMs: 0,
+        sessionToken,
+      }),
     );
   }
 
@@ -99,7 +108,7 @@ describe('joining', () => {
     expect(world.room.playerCount).toBe(16);
   });
 
-  it('frees the seat when a player leaves', () => {
+  it('holds the seat for ten seconds after a player leaves, then frees it', () => {
     const world = new TestWorld();
     const link = createLink(world.clock);
     world.room.connect(link.server);
@@ -108,13 +117,17 @@ describe('joining', () => {
         protocolVersion: PROTOCOL_VERSION,
         simFingerprint: SIM_FINGERPRINT,
         clientTimeMs: 0,
+        sessionToken: null,
       }),
       'reliable',
     );
     world.run(5);
     expect(world.room.playerCount).toBe(1);
     link.client.close();
-    world.run(5);
+    world.run(9000);
+    expect(world.room.playerCount).toBe(1);
+    expect(world.room.isAway(0)).toBe(true);
+    world.run(1200);
     expect(world.room.playerCount).toBe(0);
     expect(joined(world).welcome.playerId).toBe(0);
   });
@@ -169,7 +182,7 @@ describe('server authority', () => {
   it('simulates exactly one input per tick: the first copy of a tick wins', () => {
     const world = new TestWorld();
     const { client, welcome } = joined(world);
-    const right = quantiseControls({ yaw: -1, pitch: 0, throttle: 0 });
+    const right = quantiseControls({ yaw: -1, pitch: 0, throttle: 0, fire: false });
     const target = world.room.tick + 10;
     client.send(encodeInput(target, [FULL_LEFT]));
     for (let i = 0; i < 50; i++) client.send(encodeInput(target, [right]));
@@ -210,7 +223,7 @@ describe('server authority', () => {
     for (let i = 0; i < 16; i++) client.send(new Uint8Array([9]));
     world.run(100);
     expect(client.closed).not.toBeNull();
-    expect(world.room.playerCount).toBe(0);
+    expect(world.room.isAway(welcome.playerId)).toBe(true);
   });
 
   it('treats an input before hello as malformed', () => {
@@ -223,10 +236,11 @@ describe('server authority', () => {
   });
 
   it('has no client message that carries a position', () => {
-    // The whole client-to-server surface is hello and input. An input is a
-    // tick number and three small integers per tick.
+    // The whole client-to-server surface is hello, presence and input. An
+    // input is a tick number and, per tick, two stick axes, a byte of buttons
+    // and how far behind the player's view of the others was.
     const bytes = encodeInput(1, [FULL_LEFT]);
-    expect(bytes.byteLength).toBe(9);
+    expect(bytes.byteLength).toBe(11);
   });
 });
 
@@ -234,7 +248,11 @@ describe('tick loop', () => {
   it('runs 60 ticks a second whatever the polling interval', () => {
     for (const pollMs of [1, 7, 16, 40]) {
       let now = 0;
-      const room = new Room({ now: () => now, seed: 1 });
+      const room = new Room({
+        now: () => now,
+        seed: 1,
+        createToken: () => new Uint8Array(16).fill(1),
+      });
       room.advance();
       for (now = pollMs; now <= 10_000; now += pollMs) room.advance();
       expect(Math.abs(room.tick - 600)).toBeLessThanOrEqual(Math.ceil(pollMs / TICK_MS));
@@ -243,7 +261,11 @@ describe('tick loop', () => {
 
   it('catches up after a short stall and drops ticks after a very long one', () => {
     let now = 0;
-    const room = new Room({ now: () => now, seed: 1 });
+    const room = new Room({
+      now: () => now,
+      seed: 1,
+      createToken: () => new Uint8Array(16).fill(1),
+    });
     room.advance();
     now = 501;
     room.advance();
@@ -289,6 +311,7 @@ describe('tick loop', () => {
         yaw: Math.max(-1, Math.min(1, error * 4)),
         pitch: 0,
         throttle: 1,
+        fire: false,
       });
       client.send(encodeInput(world.room.tick + 3, [input, input, input]));
     });

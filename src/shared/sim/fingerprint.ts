@@ -6,10 +6,10 @@
 // it in the handshake: a client that would not predict the same bits as the
 // server is turned away instead of being left to desync.
 
-import { CONSTANTS_HASH } from '../constants.ts';
+import { CONSTANTS_HASH, SIM } from '../constants.ts';
 import { encodeShipState } from '../protocol.ts';
 import { Rng } from '../rng.ts';
-import { quantiseControls, spawnShip, stepShip } from './ship.ts';
+import { damageShip, quantiseControls, spawnShip, stepShip } from './ship.ts';
 import type { Input, ShipState } from './ship.ts';
 
 export interface TraceResult {
@@ -30,14 +30,15 @@ function mix(hash: number, bytes: Uint8Array): number {
 
 /**
  * A fixed, seeded flight. It covers turning, pitching against the clamp,
- * throttle, boost, the Y clamp, death on the planet and respawn.
+ * throttle, boost, firing, damage, death on the planet and by damage, and
+ * respawn with its protection.
  */
 export function runTrace(seed: number, ticks: number): TraceResult {
   const rng = new Rng(seed);
   // Start 400 units above the kill radius, flying at the planet, so the run
   // reaches a death and a respawn early.
   let ship: ShipState = { ...spawnShip(rng, 0), x: 0, y: 0, z: -1620 };
-  let input: Input = quantiseControls({ yaw: 0, pitch: 0, throttle: 1 });
+  let input: Input = quantiseControls({ yaw: 0, pitch: 0, throttle: 1, fire: true });
   let hash = 0x811c9dc5;
   let deaths = 0;
   let boostTicks = 0;
@@ -49,9 +50,14 @@ export function runTrace(seed: number, ticks: number): TraceResult {
         yaw: rng.next() * 2.4 - 1.2,
         pitch: rng.next() * 2.4 - 1.2,
         throttle: Math.floor(rng.next() * 3) - 1,
+        fire: rng.next() < 0.5,
       });
     }
     if (ship.alive && tick % 1500 === 0) ship = { ...ship, boostTicks: 180 + (tick % 181) };
+
+    // Take a bullet's worth of damage now and then, and one fatal blow.
+    if (tick % 700 === 0) ship = damageShip(ship, SIM.bulletDamage);
+    if (tick === 1900) ship = damageShip(ship, SIM.maxHp);
 
     const wasAlive = ship.alive;
     ship = stepShip(ship, input);

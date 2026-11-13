@@ -15,7 +15,7 @@ import {
 import type { Input, ShipState } from '../../src/shared/sim/ship.ts';
 
 const controls = (yaw: number, pitch: number, throttle: number): Input =>
-  quantiseControls({ yaw, pitch, throttle });
+  quantiseControls({ yaw, pitch, throttle, fire: false });
 
 function fresh(overrides: Partial<ShipState> = {}): ShipState {
   return { ...spawnShip(new Rng(1), 0), x: 0, y: 0, z: 4000, ...overrides };
@@ -128,8 +128,8 @@ describe('planet and respawn', () => {
 
 describe('inputs', () => {
   it('quantise to integers and clamp to ±127', () => {
-    expect(controls(5, -5, 9)).toMatchObject({ yaw: 127, pitch: -127, throttle: 1 });
-    expect(controls(0.5, 0, -0.2)).toMatchObject({ yaw: 64, pitch: 0, throttle: -1 });
+    expect(controls(5, -5, 9)).toMatchObject({ yaw: 127, pitch: -127, throttle: 1, fire: false });
+    expect(controls(0.5, 0, -0.2)).toMatchObject({ yaw: 64, pitch: 0, throttle: -1, fire: false });
     expect(controls(Number.NaN, 0, 0).yaw).toBe(0);
   });
 
@@ -140,11 +140,13 @@ describe('inputs', () => {
   });
 
   it('wire values out of range are refused', () => {
-    expect(inputFromWire(128, 0, 0)).toBeNull();
-    expect(inputFromWire(0, -128, 0)).toBeNull();
-    expect(inputFromWire(0.5, 0, 0)).toBeNull();
-    expect(inputFromWire(0, 0, 2)).toBeNull();
-    expect(inputFromWire(127, -127, -1)).not.toBeNull();
+    expect(inputFromWire(128, 0, 0, false, 0)).toBeNull();
+    expect(inputFromWire(0, -128, 0, false, 0)).toBeNull();
+    expect(inputFromWire(0.5, 0, 0, false, 0)).toBeNull();
+    expect(inputFromWire(0, 0, 2, false, 0)).toBeNull();
+    expect(inputFromWire(0, 0, 0, true, -1)).toBeNull();
+    expect(inputFromWire(0, 0, 0, true, 1.5)).toBeNull();
+    expect(inputFromWire(127, -127, -1, true, 100)).not.toBeNull();
   });
 });
 
@@ -168,7 +170,7 @@ describe('determinism', () => {
     // If this fails on another CPU with no change to the simulation, the
     // simulation is not portable and prediction will not match the server.
     // If the simulation or a constant changed on purpose, update the number.
-    expect(runTrace(20261113, 10_000).hash).toBe(1216413730);
+    expect(runTrace(20261113, 10_000).hash).toBe(411527464);
   });
 
   it('never fuses a multiply and an add, even in optimised code', () => {

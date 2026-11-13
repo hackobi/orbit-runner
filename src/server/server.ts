@@ -1,13 +1,22 @@
 // The game server process: one room, a WebSocket endpoint at /ws, and an
 // HTTP health check.
 
+import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { performance } from 'node:perf_hooks';
 import { WebSocketServer } from 'ws';
 import { TICK_RATE } from '../shared/constants.ts';
-import { MAX_CLIENT_MESSAGE_BYTES, PROTOCOL_VERSION } from '../shared/protocol.ts';
+import {
+  MAX_CLIENT_MESSAGE_BYTES,
+  PROTOCOL_VERSION,
+  SESSION_TOKEN_BYTES,
+} from '../shared/protocol.ts';
+import type { ShipState } from '../shared/sim/ship.ts';
+import { Recorder } from './recorder.ts';
 import { Room } from './room.ts';
+import type { RoomListener } from './room.ts';
 import { ServerSocketTransport } from './wsTransport.ts';
 
 export interface ServerOptions {
@@ -15,6 +24,12 @@ export interface ServerOptions {
   port: number;
   host?: string;
   seed?: number;
+  /**
+   * Adds the /debug endpoints: reading what the server simulated, and moving
+   * ships. For tests only. Without it those paths do not exist.
+   */
+  testHooks?: boolean;
+  listener?: RoomListener;
 }
 
 export interface RunningServer {
@@ -26,29 +41,86 @@ export interface RunningServer {
 /** How often the loop checks whether a tick is due. The room decides how many run. */
 const POLL_MS = 1;
 
+function sendJson(response: ServerResponse, status: number, body: unknown): void {
+  response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+  response.end(JSON.stringify(body));
+}
+
+function readBody(request: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    request.on('data', (chunk: Buffer) => {
+      body += chunk.toString();
+      if (body.length > 10_000) reject(new Error('body too large'));
+    });
+    request.on('end', () => {
+      resolve(body);
+    });
+    request.on('error', reject);
+  });
+}
+
 export function startServer(options: ServerOptions): Promise<RunningServer> {
+  const recorder = options.testHooks ? new Recorder() : null;
   const room = new Room({
     now: () => performance.now(),
     seed: options.seed ?? (Date.now() ^ (process.pid << 16)) >>> 0,
+    createToken: () => randomBytes(SESSION_TOKEN_BYTES),
+    ...(recorder ? { listener: recorder.listener, onTick: recorder.onTick } : {}),
+    ...(options.listener ? { listener: options.listener } : {}),
   });
 
+  /** Test-only endpoints. Returns false if the request was not one of them. */
+  const handleDebug = async (
+    recorderInUse: Recorder,
+    url: URL,
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<boolean> => {
+    if (request.method === 'GET' && url.pathname === '/debug/truth') {
+      const from = Number(url.searchParams.get('from') ?? 0);
+      const to = Number(url.searchParams.get('to') ?? Number.MAX_SAFE_INTEGER);
+      sendJson(response, 200, recorderInUse.read(room, from, to));
+      return true;
+    }
+    if (request.method === 'POST' && url.pathname === '/debug/place') {
+      // Body: { id, ship: { x, y, z, yaw, ... } }. Fields given replace the ship's.
+      const body = JSON.parse(await readBody(request)) as { id: number; ship: Partial<ShipState> };
+      room.placeShip(body.id, (ship) => ({ ...ship, ...body.ship }));
+      sendJson(response, 200, { ok: true, tick: room.tick, ship: room.shipOf(body.id) ?? null });
+      return true;
+    }
+    return false;
+  };
+
   const http = createServer((request, response) => {
-    if (request.method === 'GET' && request.url === '/health') {
-      response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-      response.end(
-        JSON.stringify({
-          ok: true,
-          protocolVersion: PROTOCOL_VERSION,
-          tickRate: TICK_RATE,
-          tick: room.tick,
-          players: room.playerCount,
-          stats: room.stats,
-        }),
-      );
+    const url = new URL(request.url ?? '/', 'http://localhost');
+    if (request.method === 'GET' && url.pathname === '/health') {
+      sendJson(response, 200, {
+        ok: true,
+        protocolVersion: PROTOCOL_VERSION,
+        tickRate: TICK_RATE,
+        tick: room.tick,
+        players: room.playerCount,
+        stats: room.stats,
+      });
       return;
     }
-    response.writeHead(404, { 'content-type': 'text/plain' });
-    response.end('not found');
+    const notFound = (): void => {
+      response.writeHead(404, { 'content-type': 'text/plain' });
+      response.end('not found');
+    };
+    if (!recorder) {
+      notFound();
+      return;
+    }
+    handleDebug(recorder, url, request, response)
+      .then((handled) => {
+        if (!handled) notFound();
+      })
+      .catch((error: unknown) => {
+        sendJson(response, 400, { ok: false, error: String(error) });
+      });
   });
 
   const sockets = new WebSocketServer({
