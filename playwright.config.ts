@@ -32,7 +32,10 @@ export default defineConfig({
       reuseExistingServer: false,
     },
     {
-      command: 'npx vite --host 127.0.0.1',
+      // The tests run against the minified production build, with the debug
+      // hook compiled in.
+      command:
+        'npx vite build --outDir dist-e2e --logLevel warn && npx vite preview --outDir dist-e2e --host 127.0.0.1',
       url: `http://127.0.0.1:${CLIENT_PORT}`,
       env: {
         ORBIT_CLIENT_PORT: String(CLIENT_PORT),

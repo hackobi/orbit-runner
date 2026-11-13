@@ -30,7 +30,8 @@ export type RejectReason = typeof REJECT_VERSION | typeof REJECT_FULL;
 export interface HelloMessage {
   readonly type: 'hello';
   readonly protocolVersion: number;
-  readonly constantsHash: number;
+  /** SIM_FINGERPRINT as the client computed it. */
+  readonly simFingerprint: number;
   /** The client's clock when it sent this. Echoed back so it can measure the round trip. */
   readonly clientTimeMs: number;
 }
@@ -215,7 +216,7 @@ export function encodeHello(message: Omit<HelloMessage, 'type'>): Uint8Array {
   const w = new Writer(1 + 2 + 4 + 8);
   w.u8(CLIENT_HELLO);
   w.u16(message.protocolVersion);
-  w.u32(message.constantsHash);
+  w.u32(message.simFingerprint);
   w.f64(message.clientTimeMs);
   return w.finish();
 }
@@ -245,10 +246,10 @@ export function decodeClientMessage(data: Uint8Array): ClientMessage | null {
     const type = r.u8();
     if (type === CLIENT_HELLO) {
       const protocolVersion = r.u16();
-      const constantsHash = r.u32();
+      const simFingerprint = r.u32();
       const clientTimeMs = r.f64();
       if (!r.atEnd()) return null;
-      return { type: 'hello', protocolVersion, constantsHash, clientTimeMs };
+      return { type: 'hello', protocolVersion, simFingerprint, clientTimeMs };
     }
     if (type === CLIENT_INPUT) {
       const tick = r.u32();

@@ -50,7 +50,7 @@ const noPlatformImports = (extra) => ({
 });
 
 export default tseslint.config(
-  { ignores: ['dist/', 'node_modules/', 'test-results/', 'playwright-report/'] },
+  { ignores: ['dist/', 'dist-e2e/', 'node_modules/', 'test-results/', 'playwright-report/'] },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
   {

@@ -3,6 +3,7 @@ import { SIM, TICK_DT } from '../../src/shared/constants.ts';
 import { HALF_PI } from '../../src/shared/math.ts';
 import { decodeShipState, encodeShipState } from '../../src/shared/protocol.ts';
 import { Rng } from '../../src/shared/rng.ts';
+import { SIM_FINGERPRINT, fusedMultiplyProbe, runTrace } from '../../src/shared/sim/fingerprint.ts';
 import {
   NEUTRAL_INPUT,
   inputFromWire,
@@ -12,7 +13,6 @@ import {
   stepShip,
 } from '../../src/shared/sim/ship.ts';
 import type { Input, ShipState } from '../../src/shared/sim/ship.ts';
-import { runTrace } from '../support/trace.ts';
 
 const controls = (yaw: number, pitch: number, throttle: number): Input =>
   quantiseControls({ yaw, pitch, throttle });
@@ -161,6 +161,23 @@ describe('determinism', () => {
     expect(t.deaths).toBeGreaterThan(0);
     expect(t.boostTicks).toBeGreaterThan(0);
     expect(t.final.spawnSeq).toBeGreaterThan(0);
+  });
+
+  it('gives the pinned hash on this machine', () => {
+    // Recorded on an ARM64 Mac (Node 22, Chromium 158 and WebKit 27.2 agree).
+    // If this fails on another CPU with no change to the simulation, the
+    // simulation is not portable and prediction will not match the server.
+    // If the simulation or a constant changed on purpose, update the number.
+    expect(runTrace(20261113, 10_000).hash).toBe(1216413730);
+  });
+
+  it('never fuses a multiply and an add, even in optimised code', () => {
+    expect(fusedMultiplyProbe(2_000_000)).toBe(0);
+  });
+
+  it('the handshake fingerprint is stable and non-trivial', () => {
+    expect(SIM_FINGERPRINT).toBeGreaterThan(0);
+    expect(Number.isInteger(SIM_FINGERPRINT)).toBe(true);
   });
 
   it('a different seed gives a different run', () => {

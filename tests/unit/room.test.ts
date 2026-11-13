@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CONSTANTS_HASH, TICK_MS } from '../../src/shared/constants.ts';
+import { TICK_MS } from '../../src/shared/constants.ts';
 import {
   PROTOCOL_VERSION,
   REJECT_FULL,
@@ -9,6 +9,7 @@ import {
   encodeInput,
 } from '../../src/shared/protocol.ts';
 import type { ServerMessage, WelcomeMessage } from '../../src/shared/protocol.ts';
+import { SIM_FINGERPRINT } from '../../src/shared/sim/fingerprint.ts';
 import { quantiseControls, shipStatesEqual, stepShip } from '../../src/shared/sim/ship.ts';
 import type { Transport } from '../../src/shared/transport.ts';
 import { Room } from '../../src/server/room.ts';
@@ -40,8 +41,10 @@ class RawClient {
     this.transport.send(data, 'reliable');
   }
 
-  hello(version = PROTOCOL_VERSION, hash = CONSTANTS_HASH): void {
-    this.send(encodeHello({ protocolVersion: version, constantsHash: hash, clientTimeMs: 0 }));
+  hello(version = PROTOCOL_VERSION, fingerprint = SIM_FINGERPRINT): void {
+    this.send(
+      encodeHello({ protocolVersion: version, simFingerprint: fingerprint, clientTimeMs: 0 }),
+    );
   }
 
   get welcome(): WelcomeMessage | undefined {
@@ -69,14 +72,14 @@ describe('joining', () => {
     expect(world.room.playerCount).toBe(1);
   });
 
-  it('rejects a different protocol version or different constants, and closes', () => {
-    for (const [version, hash] of [
-      [PROTOCOL_VERSION + 1, CONSTANTS_HASH],
-      [PROTOCOL_VERSION, CONSTANTS_HASH ^ 1],
+  it('rejects a different protocol version or a different simulation fingerprint, and closes', () => {
+    for (const [version, fingerprint] of [
+      [PROTOCOL_VERSION + 1, SIM_FINGERPRINT],
+      [PROTOCOL_VERSION, SIM_FINGERPRINT ^ 1],
     ] as const) {
       const world = new TestWorld();
       const client = new RawClient(world);
-      client.hello(version, hash);
+      client.hello(version, fingerprint);
       world.run(5);
       expect(client.received).toEqual([{ type: 'reject', reason: REJECT_VERSION }]);
       expect(client.closed).not.toBeNull();
@@ -103,7 +106,7 @@ describe('joining', () => {
     link.client.send(
       encodeHello({
         protocolVersion: PROTOCOL_VERSION,
-        constantsHash: CONSTANTS_HASH,
+        simFingerprint: SIM_FINGERPRINT,
         clientTimeMs: 0,
       }),
       'reliable',

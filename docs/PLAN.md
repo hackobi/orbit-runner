@@ -21,9 +21,9 @@ This file is the running checkpoint. A new session should read it first, then `d
 |---|---|
 | `npm run server` | Game server on `127.0.0.1:8787` (Node runs the TypeScript directly; no build) |
 | `npm run dev` | Vite on `localhost:5173`, proxying `/ws` to the game server. Open it and fly: arrows or A/D/I/K steer, W/S throttle, or hold the pointer down |
-| `npm test` | Unit and virtual-time netcode tests (65 tests, under 1 s) |
+| `npm test` | Unit and virtual-time netcode tests (under 1 s) |
 | `npm run test:integration` | Real-socket bot for 60 s, server boot, production-bundle check (about 62 s) |
-| `npm run test:e2e` | Playwright in Chromium and WebKit; starts its own server and Vite on ports 8797 and 5273 |
+| `npm run test:e2e` | Playwright in Chromium and WebKit against the minified production build with the debug hook on; starts its own server and `vite preview` on ports 8797 and 5273 |
 | `npm run typecheck`, `npm run lint` | Must pass before a task is marked done |
 | `npm run spike:webgl` | Re-runs the headless WebGL measurement |
 
@@ -80,7 +80,7 @@ Acceptance (criteria as written before the work; results are in the next table):
 
 | Check | Result | Where |
 |---|---|---|
-| Determinism | Pass. Two 10,000-tick runs are byte-identical. The same run hashes to the same value in Node 22, Chromium 158 and WebKit 27.2 | `tests/unit/ship.test.ts`, `tests/e2e/determinism.spec.ts` |
+| Determinism | Pass on this ARM64 Mac. Two 10,000-tick runs are byte-identical. The same run hashes to the same value in Node 22, Chromium 158 and WebKit 27.2 (minified production build). No engine fuses multiply-add in 2,000,000 optimised iterations. **x86 not measured** | `tests/unit/ship.test.ts`, `tests/e2e/determinism.spec.ts` |
 | Maths | Pass. Own `sin`/`cos` within 1e-12 of `Math.sin`/`Math.cos` over ±4π (criterion was 1e-9) | `tests/unit/math.test.ts` |
 | Prediction, clean | Pass. 60 s of steering, 0 latency: 0 corrections, 0 missed inputs. Also 0 after warm-up at 30, 100 and 120 frames a second | `tests/unit/netcode.test.ts` |
 | Prediction, latency | Pass after the 2 s warm-up: 0 corrections and 0 late inputs over 60 s at 100 ± 20 ms and at 200 ± 50 ms round trip | same |
@@ -114,7 +114,8 @@ What changed from the plan during Phase 1:
 - **Death and respawn arrived early.** Planet collision needs an outcome, so the ship dies and the server respawns it in the belt after 3 s (D5). HP, damage and invulnerability are still Phase 2.
 - **The comparison in reconciliation is exact**, not within a tolerance. Any differing bit triggers a rewind; the tolerance in `tests/thresholds.ts` only classifies the event's size.
 - **After a stall the client skips ahead** instead of sending the missed inputs late: it predicts the gap with its last sent input, which is what the server did. Covered by the "frozen client" test.
-- Design details are in `DECISIONS.md` 5.3, 5.4 and Appendix A.2.
+- **The handshake compares a simulation fingerprint**, not only a hash of the constants, so a cached client with old step code is rejected (`src/shared/sim/fingerprint.ts`).
+- Design details are in `DECISIONS.md` 5.3, 5.4, 5.8 and Appendix A.2.
 
 ## Phase 2: multiplayer
 

@@ -142,7 +142,7 @@ tests/        Vitest (unit, virtual-time, bots) and Playwright (multi-client).
 - **Loops.** Server and client both use an accumulator ("Fix Your Timestep"). The server never uses a bare `setInterval` as its clock; it steps as many fixed ticks as real time requires, capped to avoid a spiral.
 - **Rendering between ticks.** The client draws the own ship interpolated between its last two predicted ticks, so motion is smooth on 120 Hz displays.
 - **Deterministic maths.** `Math.sin` and `Math.cos` are "implementation-approximated" in the ECMAScript spec, so V8 and JavaScriptCore may differ. The shared sim uses its own `sin`, `cos` and `atan2` built only from `+ − × ÷` and `Math.sqrt`, which the spec defines exactly. `Math.pow`, `Math.hypot` and `**` are banned in `src/shared/sim` by a lint rule. Expected result: bit-identical state across engines.
-- **How that is verified.** Vitest only compares V8 with V8. The cross-engine check is `tests/e2e/determinism.spec.ts`: a 10,000-tick run covering turning, the pitch clamp, throttle, boost, the Y clamp, death and respawn is hashed in Node and in the page. **Measured in Phase 1: Node 22, Chromium 158 and WebKit 27.2 give the same hash**, and a WebKit client flown for 20 s had zero corrections. The lint rule became an allowlist: in `src/shared` only `sqrt`, `abs`, `floor`, `ceil`, `round`, `trunc`, `min`, `max`, `sign`, `fround`, `imul` and `PI` may be used from `Math`.
+- **How that is verified.** Vitest only compares V8 with V8. The cross-engine check is `tests/e2e/determinism.spec.ts`: a 10,000-tick run covering turning, the pitch clamp, throttle, boost, the Y clamp, death and respawn is hashed in Node and in the page. **Measured in Phase 1, on one ARM64 Mac: Node 22, Chromium 158 and WebKit 27.2 give the same hash**, from the minified production build, and a WebKit client flown for 20 s had zero corrections. An x86 server against an ARM phone is not yet measured. The hash is pinned in `tests/unit/ship.test.ts`, so `npm test` on any x86 machine settles it, and a probe checks that the engine never fuses a multiply with an add (the one hardware-dependent rounding difference a JIT could introduce). The lint rule became an allowlist: in `src/shared` only `sqrt`, `abs`, `floor`, `ceil`, `round`, `trunc`, `min`, `max`, `sign`, `fround`, `imul` and `PI` may be used from `Math`.
 - **Randomness.** A seeded PRNG in room state drives boost duration, crash damage and spawns. The client does not predict random outcomes; it receives them.
 
 ### 5.3 Inputs
@@ -219,7 +219,7 @@ interface Transport {
 - **iOS.** Timers, `requestAnimationFrame` and usually the socket stop soon after backgrounding, and one open WebKit bug (308073) reports `new WebSocket()` hanging after resume. So on return the client always opens a fresh socket if the old one fails a 1 s ping, with a connect timeout and retry.
 - **Reconnect.** The server issues a session token at join. Reconnecting with it inside the grace period returns the same seat, score and ship.
 - **Late joiners** receive a full state: world seed, current tick, all players, destroyed asteroids, orb states.
-- **Version check.** The hello carries a protocol version and a hash of the shared constants. A stale cached client is rejected with "update required" instead of desyncing. This matters because the PWA caches the client.
+- **Version check.** The hello carries a protocol version and a simulation fingerprint. A stale cached client is rejected with "update required" instead of desyncing. This matters because the PWA caches the client. As built: the fingerprint is computed at load by running a fixed 2,000-tick flight and hashing every state, mixed with a hash of the constants, so it changes if a constant, the step function, or the engine's arithmetic differs. Changes to the wire format still need `PROTOCOL_VERSION` bumped by hand.
 
 ### 5.9 Designed now for Phase 5
 
@@ -343,7 +343,7 @@ SDK notes for Phase 5: `@kynesyslabs/demosdk` is at 4.0.21, ESM. Its `D402Server
 | Item | Resolved in |
 |---|---|
 | ~~WebGL and `requestAnimationFrame` in four headless contexts~~ | **Resolved in Phase 1.** Both work. Chromium needs `--use-angle=metal` (60 frames a second; 6 in software without it). WebKit runs at 100. Numbers in `PLAN.md` |
-| ~~Bit-identical simulation in V8 and JavaScriptCore~~ | **Resolved in Phase 1.** Same hash over 10,000 ticks in Node, Chromium and WebKit |
+| Bit-identical simulation across engines and CPUs | **Half resolved in Phase 1.** V8 and JavaScriptCore agree on this ARM64 Mac. x86 is not measured: run `npm test` on the server's architecture before deploying; the pinned hash test fails if it differs |
 | Desktop Firefox: headless WebGL, and the game itself | Phase 2, one smoke run. The brief's full suite covers Chromium and WebKit only |
 | Whether the ReadPixels warning appears in a GPU-backed browser | Phase 3 |
 | Electron `requestAnimationFrame` rate on a 120 Hz display | Phase 4, on your Mac |

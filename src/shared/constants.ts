@@ -1,5 +1,6 @@
 // Every number the shared simulation depends on. Client and server must agree
-// on all of them, so the handshake compares a hash of this object.
+// on all of them, so a hash of this object is part of the fingerprint the
+// handshake compares (sim/fingerprint.ts).
 //
 // "main.js:N" is the line in v1 (branch feature/multiplayer-pvp, commit
 // 42757f5) the value was read from. Values with no reference are new in v2

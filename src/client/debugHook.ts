@@ -5,6 +5,7 @@
 // never read back from pixels, so results do not depend on the GPU.
 
 import type { ClientCore, CorrectionEvent, ShipView, SnapshotEvent } from '../net/client.ts';
+import { SIM_FINGERPRINT, fusedMultiplyProbe, runTrace } from '../shared/sim/fingerprint.ts';
 import type { ShipState } from '../shared/sim/ship.ts';
 
 export interface FrameRecord {
@@ -25,6 +26,10 @@ export interface DebugHook {
   readonly frames: FrameRecord[];
   readonly corrections: CorrectionEvent[];
   readonly snapshots: SnapshotEvent[];
+  /** The simulation as this browser computes it, for comparison with Node. */
+  readonly simFingerprint: number;
+  runTrace: typeof runTrace;
+  fusedMultiplyProbe: typeof fusedMultiplyProbe;
   status(): {
     status: string;
     playerId: number;
@@ -65,6 +70,9 @@ export function createDebugRecorder(): DebugRecorder {
         frames,
         corrections,
         snapshots,
+        simFingerprint: SIM_FINGERPRINT,
+        runTrace,
+        fusedMultiplyProbe,
         status: () => ({
           status: client.status,
           playerId: client.playerId,

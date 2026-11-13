@@ -5,7 +5,7 @@
 // transports and a time source, so the same class runs behind a WebSocket
 // server and inside virtual-time tests.
 
-import { CONSTANTS_HASH, TICK_MS } from '../shared/constants.ts';
+import { TICK_MS } from '../shared/constants.ts';
 import {
   PROTOCOL_VERSION,
   REJECT_FULL,
@@ -17,6 +17,7 @@ import {
 } from '../shared/protocol.ts';
 import type { HelloMessage, InputMessage } from '../shared/protocol.ts';
 import { Rng } from '../shared/rng.ts';
+import { SIM_FINGERPRINT } from '../shared/sim/fingerprint.ts';
 import { NEUTRAL_INPUT, spawnShip, stepShip } from '../shared/sim/ship.ts';
 import type { Input, ShipState } from '../shared/sim/ship.ts';
 import type { Transport } from '../shared/transport.ts';
@@ -230,7 +231,7 @@ export class Room {
   }
 
   private join(connection: Connection, hello: HelloMessage): void {
-    if (hello.protocolVersion !== PROTOCOL_VERSION || hello.constantsHash !== CONSTANTS_HASH) {
+    if (hello.protocolVersion !== PROTOCOL_VERSION || hello.simFingerprint !== SIM_FINGERPRINT) {
       this.send(connection, encodeReject(REJECT_VERSION), 'reliable');
       this.close(connection);
       return;

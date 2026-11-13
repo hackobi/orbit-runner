@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { CONSTANTS_HASH } from '../../src/shared/constants.ts';
 import {
   INPUT_REDUNDANCY,
   PROTOCOL_VERSION,
@@ -13,6 +12,7 @@ import {
   encodeWelcome,
 } from '../../src/shared/protocol.ts';
 import { Rng } from '../../src/shared/rng.ts';
+import { SIM_FINGERPRINT } from '../../src/shared/sim/fingerprint.ts';
 import { quantiseControls, spawnShip } from '../../src/shared/sim/ship.ts';
 
 const ship = { ...spawnShip(new Rng(3), 5), boostTicks: 77, roll: -0.123456789012345 };
@@ -21,13 +21,13 @@ describe('client messages', () => {
   it('hello round-trips', () => {
     const bytes = encodeHello({
       protocolVersion: PROTOCOL_VERSION,
-      constantsHash: CONSTANTS_HASH,
+      simFingerprint: SIM_FINGERPRINT,
       clientTimeMs: 12345.678,
     });
     expect(decodeClientMessage(bytes)).toEqual({
       type: 'hello',
       protocolVersion: PROTOCOL_VERSION,
-      constantsHash: CONSTANTS_HASH,
+      simFingerprint: SIM_FINGERPRINT,
       clientTimeMs: 12345.678,
     });
   });

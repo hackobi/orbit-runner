@@ -6,7 +6,7 @@
 // ahead of the server, so that input[T] reaches the server before the server
 // simulates tick T.
 
-import { CONSTANTS_HASH, SHIP_LENGTH, TICK_MS } from '../shared/constants.ts';
+import { SHIP_LENGTH, TICK_MS } from '../shared/constants.ts';
 import { TWO_PI } from '../shared/math.ts';
 import {
   INPUT_REDUNDANCY,
@@ -16,6 +16,7 @@ import {
   encodeInput,
 } from '../shared/protocol.ts';
 import type { RejectReason, SnapshotMessage, WelcomeMessage } from '../shared/protocol.ts';
+import { SIM_FINGERPRINT } from '../shared/sim/fingerprint.ts';
 import { NEUTRAL_INPUT, quantiseControls, shipStatesEqual, stepShip } from '../shared/sim/ship.ts';
 import type { Controls, Input, ShipState } from '../shared/sim/ship.ts';
 import type { Transport } from '../shared/transport.ts';
@@ -220,7 +221,7 @@ export class ClientCore {
       this.transport.send(
         encodeHello({
           protocolVersion: PROTOCOL_VERSION,
-          constantsHash: CONSTANTS_HASH,
+          simFingerprint: SIM_FINGERPRINT,
           clientTimeMs: this.now(),
         }),
         'reliable',
