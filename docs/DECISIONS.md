@@ -1,6 +1,6 @@
 # Orbit Runner v2: decisions
 
-Phase 0 output. Written 2026-11-13. Nothing here is built yet; this is the design to approve.
+Phase 0 output. Written 2026-11-13 and approved the same day with defaults D1–D7. Phase 1 is built; where building changed or confirmed something, the text says so. `PLAN.md` has the status and the measured numbers.
 
 How to read the evidence labels:
 
@@ -27,6 +27,7 @@ Each has a default. If you approve the plan without comment, the defaults apply.
 | D9 | Wormhole exit | Another wormhole at least 5,000 units away inside the belt. v1 always throws you 12,000 to 20,000 units out | Keep v1 | Phase 3 |
 | D10 | Pitch direction | Keep v1: Up / I pushes the nose toward −Y. Add an invert option in settings | Flip it | Phase 3 |
 | D11 | World edge | Keep v1's Y clamp of ±500. Add a combat-zone radius of 9,000 in XZ; outside it the hull takes damage | No XZ limit, as v1 | Phase 3 |
+| D12 | Pointer steering direction (found in Phase 1) | Keep v1: while the pointer is held, the ship turns away from it, as if dragging the view. Pointer right of centre turns left; pointer below centre lifts the nose ([A.3](#a3-v1-behaviours-that-look-accidental)) | Steer toward the pointer, which is what v1's broken M-mode did | Phase 3 |
 
 Kept from v1 without asking, because they read as intended feel: ring asteroids orbiting at 43 to 218 u/s (faster than the ship), Fenix obtained only by shooting its orb and lasting until death, +500 points per PvP hit.
 
@@ -141,15 +142,16 @@ tests/        Vitest (unit, virtual-time, bots) and Playwright (multi-client).
 - **Loops.** Server and client both use an accumulator ("Fix Your Timestep"). The server never uses a bare `setInterval` as its clock; it steps as many fixed ticks as real time requires, capped to avoid a spiral.
 - **Rendering between ticks.** The client draws the own ship interpolated between its last two predicted ticks, so motion is smooth on 120 Hz displays.
 - **Deterministic maths.** `Math.sin` and `Math.cos` are "implementation-approximated" in the ECMAScript spec, so V8 and JavaScriptCore may differ. The shared sim uses its own `sin`, `cos` and `atan2` built only from `+ − × ÷` and `Math.sqrt`, which the spec defines exactly. `Math.pow`, `Math.hypot` and `**` are banned in `src/shared/sim` by a lint rule. Expected result: bit-identical state across engines.
-- **How that is verified.** Vitest only compares V8 with V8. The cross-engine check is the Playwright WebKit run on the clean profile, which must show zero corrections ([7.3](#73-pass-thresholds)). The brief's tolerance stays in the config as a safety margin.
+- **How that is verified.** Vitest only compares V8 with V8. The cross-engine check is `tests/e2e/determinism.spec.ts`: a 10,000-tick run covering turning, the pitch clamp, throttle, boost, the Y clamp, death and respawn is hashed in Node and in the page. **Measured in Phase 1: Node 22, Chromium 158 and WebKit 27.2 give the same hash**, and a WebKit client flown for 20 s had zero corrections. The lint rule became an allowlist: in `src/shared` only `sqrt`, `abs`, `floor`, `ceil`, `round`, `trunc`, `min`, `max`, `sign`, `fround`, `imul` and `PI` may be used from `Math`.
 - **Randomness.** A seeded PRNG in room state drives boost duration, crash damage and spawns. The client does not predict random outcomes; it receives them.
 
 ### 5.3 Inputs
 
-- **Content.** One input per tick: tick number, yaw axis and pitch axis as int8 (−127..127), throttle (−1, 0, +1), button bits (fire, bomb), and the view time described in [5.6](#56-shots-and-lag-compensation). About 10 bytes.
+- **Content.** One input per tick: tick number, yaw axis and pitch axis as int8 (−127..127), throttle (−1, 0, +1), button bits (fire, bomb), and the view time described in [5.6](#56-shots-and-lag-compensation). About 10 bytes. As built in Phase 1 (no buttons or view time yet): 3 bytes per input, 15 bytes per message with its two redundant copies.
 - **Encoded input is the input.** The client quantises first, then predicts from the quantised value it sends, so client and server step from identical numbers.
 - **Tick alignment.** The client runs ahead of the server by its one-way latency plus a margin, so the input for tick T arrives before the server simulates tick T. This is the Overwatch model. Each snapshot tells the client how early its inputs arrived; the client speeds up or slows down its tick clock by up to 5% to hold the margin. It never skips a tick number.
-- **Adaptive margin.** The margin starts at two ticks and grows with observed lateness, up to a cap of six ticks (100 ms, config value). A larger margin means fewer late inputs but a longer view delay, so it is capped.
+- **Adaptive margin.** The margin starts at two ticks and grows with observed lateness, up to a cap of six ticks (100 ms, config value). A larger margin means fewer late inputs but a longer view delay, so it is capped. As built: every snapshot reports the worst slack of the client's inputs since the last one; the target is two ticks plus the gap between typical and worst recent slack; the client begins two ticks more generous than that, because its first round-trip figure is a single sample. Measured on the virtual clock: slack settles at 2 to 3 ticks on a clean link and 3 to 4 on the 200 ms profile.
+- **After a stall.** If more than 8 ticks are due in one frame, the client does not send them late. It predicts the gap with its last sent input (what the server did in the meantime) and carries on from the present. This keeps the tick clock aligned without a round trip.
 - **Missing input.** If the input for tick T has not arrived, the server reuses the previous one and moves on. A late input is discarded. The ship never freezes for others, and a lag switch gains nothing. A reused input causes a correction only if the player changed their controls during the gap.
 - **Redundancy.** Each input message also carries the previous few inputs. Over WebSocket this is unused; it is there so a datagram transport works without a protocol change.
 - **Limits enforced by the server.** At most one input per tick per player, axes clamped to ±1, fire rate enforced by the sim's cooldown, view time clamped to a window. Speed hacks are impossible by construction: inputs are per tick, and carry no time step.
@@ -159,7 +161,7 @@ tests/        Vitest (unit, virtual-time, bots) and Playwright (multi-client).
 1. The client applies each input locally in the same tick it is sent, and stores the input and the resulting state in a ring buffer.
 2. Every snapshot carries the own ship's authoritative state for server tick S **at full float64 precision**. Remote ships are quantised; the own ship is not, so the comparison is exact.
 3. The client compares that state with what it predicted for tick S.
-   - **Equal** (within the configured tolerance): nothing happens. No rewind, no correction event.
+   - **Equal**: nothing happens. No rewind, no correction event. As built the comparison is exact on every field, with no tolerance; the tolerance in `tests/thresholds.ts` only decides which recorded events count against the browser threshold.
    - **Different**: the client sets its state at S to the server's, replays its stored inputs from S+1 to the present with the shared step, and records a correction event with the size of the change at the present tick.
 4. **Smoothing.** After a replay the sim state is correct immediately. The drawn ship keeps a visual offset equal to the jump, which decays over about 100 ms. Corrections larger than 5 ship lengths snap, since a slow slide would look worse.
 
@@ -242,7 +244,7 @@ Positions, hits, damage, deaths, survival time and scores cannot be forged, beca
 
 - Compiled in only when `VITE_TEST_HOOKS=1`. A test builds the production bundle and fails if the hook's identifier appears in it.
 - Client side, `window.__orbit` records per frame: the frame's real `dt`, the predicted own state and tick, the last acknowledged state and tick, and for each remote ship the sim time it was drawn at and the transform handed to the renderer. It also logs every correction event, every snapshot arrival time, and every shooter-view hit.
-- **Metrics come from the transforms handed to the renderer, not from pixels.** Results therefore do not depend on the GPU, and a `render=off` test mode can run the whole pipeline without WebGL if headless WebGL proves unreliable.
+- **Metrics come from the transforms handed to the renderer, not from pixels.** Results therefore do not depend on the GPU. A `render=off` mode was planned as a fallback; the Phase 1 spike showed headless WebGL works in both browsers, so it is not built.
 - Server side, a test-only endpoint returns authoritative per-tick positions and confirmed hits for a tick range.
 
 ### 7.2 Network profiles
@@ -340,7 +342,8 @@ SDK notes for Phase 5: `@kynesyslabs/demosdk` is at 4.0.21, ESM. Its `D402Server
 
 | Item | Resolved in |
 |---|---|
-| WebGL and `requestAnimationFrame` in four headless contexts, Playwright WebKit and Chromium, on this Mac | Phase 1, first task |
+| ~~WebGL and `requestAnimationFrame` in four headless contexts~~ | **Resolved in Phase 1.** Both work. Chromium needs `--use-angle=metal` (60 frames a second; 6 in software without it). WebKit runs at 100. Numbers in `PLAN.md` |
+| ~~Bit-identical simulation in V8 and JavaScriptCore~~ | **Resolved in Phase 1.** Same hash over 10,000 ticks in Node, Chromium and WebKit |
 | Desktop Firefox: headless WebGL, and the game itself | Phase 2, one smoke run. The brief's full suite covers Chromium and WebKit only |
 | Whether the ReadPixels warning appears in a GPU-backed browser | Phase 3 |
 | Electron `requestAnimationFrame` rate on a 120 Hz display | Phase 4, on your Mac |
@@ -421,7 +424,7 @@ Checked 2026-11-13. Items marked ◆ I fetched directly; the rest were fetched b
 
 ## Appendix A: v1 tuning constants and what v2 changes
 
-Values are read from `main.js`. A ✓ follows each individual value I re-checked by line number myself. The rest come from a research pass that read lines 1–90, 236–483, 541–660 and 3790–10230 in full and grep-swept the remainder (wallet, payment and overlay code, which is Phase 5 territory) for writes to gameplay state.
+Values are read from `main.js`. A ✓ follows each individual value I re-checked by line number myself; the flight, spawn, planet, camera and ship-model rows were all re-read while porting them in Phase 1, and each constant in `src/shared/constants.ts` carries its line. The rest come from a research pass that read lines 1–90, 236–483, 541–660 and 3790–10230 in full and grep-swept the remainder (wallet, payment and overlay code, which is Phase 5 territory) for writes to gameplay state.
 
 ### A.1 Ported unchanged
 
@@ -429,24 +432,24 @@ Values are read from `main.js`. A ✓ follows each individual value I re-checked
 |---|---|---|
 | Start speed / target speed | 20 / 20 ✓ | 4471 |
 | Min speed (S key floor) | 5 ✓ | 4473 |
-| Max speed, normal / Fenix | 60 ✓ / 80 | 4474, 8700 |
-| Boost multiplier | × 3.08 (184.8 normal, 246.4 Fenix) | 8702 |
+| Max speed, normal / Fenix | 60 ✓ / 80 ✓ | 4474, 8700 |
+| Boost multiplier | × 3.08 ✓ (184.8 normal, 246.4 Fenix) | 8702 |
 | Boost duration | 3 to 6 s, random ✓ | 9332 |
-| Throttle rate | ± 22 u/s² on target speed | 8713 |
-| Speed follow | `min(1, 6·dt)`, or `10·dt` while boosting | 8723 |
+| Throttle rate | ± 22 u/s² ✓ on target speed | 8713 |
+| Speed follow | `min(1, 6·dt)` ✓, or `10·dt` ✓ while boosting | 8725 |
 | Yaw rate / pitch rate | 2.0 / 1.35 rad/s ✓ | 4476 |
-| Pitch clamp | ± (π/2 − 0.05) | 8770 |
-| Bank (roll) | target `clamp(−yaw × 0.9, ±0.7)`, follow `min(1, 8·dt)` | 8786 |
-| Forward vector | `(sin yaw · cos pitch, −sin pitch, cos yaw · cos pitch)` | 8799 |
-| Y clamp | ± 500 | 8808 |
+| Pitch clamp | ± (π/2 − 0.05) ✓ | 8772 |
+| Bank (roll) | target `clamp(−yaw × 0.9, ±0.7)` ✓, follow `min(1, 8·dt)` ✓ | 8786 |
+| Forward vector | `(sin yaw · cos pitch, −sin pitch, cos yaw · cos pitch)` ✓ (from the YXZ Euler at 8801) | 8800 |
+| Y clamp | ± 500 ✓ | 8808 |
 | Camera offset | `(0, 3.7, −10.8)`, rigid, rotated with the ship including roll ✓ | 4498 |
-| Camera look target | ship + forward × 20 | 8872 |
-| FOV | 70 + `clamp((speed − 14) × 0.7 + kick, 0, 28)`, kick 10 while boosting, follow `min(1, 6·dt)` | 333, 8726 |
+| Camera look target | ship + forward × 20 ✓ | 8875 |
+| FOV | 70 ✓ + `clamp((speed − 14) × 0.7 + kick, 0, 28)` ✓, kick 10 ✓ while boosting, follow `min(1, 6·dt)` ✓ | 333, 8726 |
 | Camera shake | linear decay 6.0 per second; y axis × 0.6; trigger amounts per the v1 table (0.08 to 1.2) | 8865 |
 | Planet | origin ✓, radius 1200 ✓, lethal inside 1220 ✓ | 4524, 9623 |
-| Belt | inner 3600, outer 5200; 2000 ring asteroids | 4606, 4873 |
+| Belt | inner 3600 ✓, outer 5200 ✓; 2000 ring asteroids ✓ | 4606, 4873 |
 | Ring asteroid size / orbit | scale 2 to 9, collision radius scale × 0.95; orbit 0.012 to 0.042 rad/s ✓ | 4840, 4862 |
-| Spawn | random belt angle, radius 3600 to 5200, y ± 50 | 4608 |
+| Spawn | random belt angle, radius 3600 to 5200, y ± 50 ✓; level, facing +Z, speed 20 ✓ | 4608, 8615 |
 | HP / shield | 100 / 0 to 100 | 4314 |
 | Bullet | 230 u/s ✓, 3.0 s ✓, radius 0.25 ✓, muzzle 1.8 ahead ✓ | 351, 6019, 6048 |
 | Fenix beam | 300 u/s ✓, range 772.8 ✓, radius 0.45 | 353 |
@@ -460,7 +463,7 @@ Values are read from `main.js`. A ✓ follows each individual value I re-checked
 | Scoring | orb base 110 × type (shield 5, pink 10, boost 5, Zaphire 1); asteroid 110, ring 160; × 2 in belt; × 2 with multiplier orb; PvP hit +500; belt income 1 or 2 points/s | 4623–4655, 9852 |
 | Store | HP 1500, shield 1000, Fenix 2000 points | 8011–8032 |
 | Exhaust | rate `50 + speed × 4` per second; life 0.5 to 0.75 s | 9685, 5975 |
-| Renderer look | ACES tone mapping, exposure 1.45, clear colour 0x030a1a | 285 |
+| Renderer look | ACES tone mapping ✓, exposure 1.45 ✓, clear colour 0x030a1a ✓, pixel ratio capped at 1.75 ✓ | 283 |
 
 ### A.2 Changed, and why
 
@@ -481,7 +484,13 @@ Values are read from `main.js`. A ✓ follows each individual value I re-checked
 | Destroyed asteroids | Never respawn | Respawn after a delay, value set in Phase 3 | Rooms run indefinitely |
 | Orb counts | Seeded above the caps by a double loop, then topped up around the ship, off the ring | Fixed counts at v1's caps (shield 160, pink 120, Fenix 120, Zaphire 120, wormhole 120, boost 120, miner 300, hunter 300), server-owned, on the ring | v1's counts are accidents of two bugs |
 | Exhaust and impact particles | Pooled meshes never reset opacity, so most are invisible; none spawn at 144 fps at cruise | Working pool, time-based spawn | v1 bugs |
-| Decisions D8–D11 | See [section 1](#1-decisions-that-need-your-answer) | | |
+| Planet contact | Skipped during the 0.6 s after an asteroid crash (main.js:8493) | Always lethal inside 1220 | The exemption only delayed the death by up to 0.6 s |
+| Boost length | A random 3 to 6 s counted down by frame time | A whole number of ticks | Fixed step |
+| Heading angle | Grows without limit | Kept in (−π, π] | Keeps the deterministic `sin`/`cos` in their accurate range; invisible in play |
+| FOV follow | 6·dt of the gap per frame | `1 − e^(−6·dt)` of the gap | Same response at 60 fps, and the same at any other frame rate |
+| Saucer orientation | `group.rotation.x = π/2` is set at build (main.js:4278) and then overwritten every frame by the flight code (main.js:8835), so it has no effect | Not set | Ported the effective behaviour: disc flat, dome up |
+| Lights | A point light on the camera and one on the planet | Ambient and sun only, for now | Light units changed between v1's three.js and r187; Phase 3 matches the look |
+| Decisions D8–D12 | See [section 1](#1-decisions-that-need-your-answer) | | |
 
 ### A.3 v1 behaviours that look accidental
 
@@ -491,6 +500,7 @@ These shape what "feels the same" means. Derived from code; none was run.
 - **Up dives.** `forward.y = −sin(pitch)` and Up adds pitch. A comment at 8737 says "nose up"; the H key assumes the opposite sign. (D10)
 - **Wormholes always eject.** In the connected world every wormhole is on the ring, so no partner is ever 12,000 units away and the fallback fires. (D9)
 - **M-mode mouse and touch steering throw** a ReferenceError (`gameStarted`, main.js:6502, 6527). The working mouse control is hold-and-position.
+- **The pointer steers backwards.** With the pointer held, `mouseYaw = mouseX × 0.6` (main.js:8762) and positive yaw is a left turn, so a pointer right of centre turns the ship left; `mousePitch = −mouseY × 0.6` lifts the nose when the pointer is below centre. It reads as dragging the view. The newer M-mode control steered toward the pointer, but it is the one that throws. v2 keeps the working behaviour for now. (D12)
 - **Remote ships and bots are drawn at 1.5× scale** (main.js:6836) while the hit radius stays 2.0. Phase 3 decides whether to keep the larger drawing or add target markers.
 - **Any bullet, including other players', scores asteroid kills for the local player** and can trigger the local Fenix transform, store and boost (main.js:9028-9076, 9208).
 

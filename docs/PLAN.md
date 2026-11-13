@@ -6,14 +6,26 @@ This file is the running checkpoint. A new session should read it first, then `d
 
 | Phase | State | Gate |
 |---|---|---|
-| 0. Research and plan | **Done 2026-11-13. Waiting for approval** | STOP |
-| 1. Core loop | Not started | Node tests pass |
-| 2. Multiplayer | Not started | STOP, with measured numbers |
+| 0. Research and plan | Done 2026-11-13. Approved the same day with defaults D1–D7 | STOP |
+| 1. Core loop | **Done 2026-11-13.** Every acceptance check passes; numbers below | Node tests pass |
+| 2. Multiplayer | **Next.** Not started | STOP, with measured numbers |
 | 3. Content and mobile | Not started | |
 | 4. Mac app | Not started | |
 | 5. Demos integration | Not started | Separate approval, and a payment proposal first |
 
-**Next action:** wait for the user's answers to decisions D1–D7 in `DECISIONS.md` section 1 (defaults apply if they approve without comment). Then start Phase 1 at task 1.1.
+**Next action:** start Phase 2 at task 1 (remote ship snapshot buffer). There is no STOP between Phases 1 and 2; the next STOP is the end of Phase 2.
+
+## How to run it
+
+| Command | What it does |
+|---|---|
+| `npm run server` | Game server on `127.0.0.1:8787` (Node runs the TypeScript directly; no build) |
+| `npm run dev` | Vite on `localhost:5173`, proxying `/ws` to the game server. Open it and fly: arrows or A/D/I/K steer, W/S throttle, or hold the pointer down |
+| `npm test` | Unit and virtual-time netcode tests (65 tests, under 1 s) |
+| `npm run test:integration` | Real-socket bot for 60 s, server boot, production-bundle check (about 62 s) |
+| `npm run test:e2e` | Playwright in Chromium and WebKit; starts its own server and Vite on ports 8797 and 5273 |
+| `npm run typecheck`, `npm run lint` | Must pass before a task is marked done |
+| `npm run spike:webgl` | Re-runs the headless WebGL measurement |
 
 ## Where things are
 
@@ -50,7 +62,7 @@ Tasks, in order:
 10. **Browser client.** Three.js scene with planet, starfield and the ship; v1 camera, FOV and bank; keyboard and pointer steering; render interpolation between ticks.
 11. **Debug hook**, build-flagged, plus the test that the production bundle does not contain it.
 
-Acceptance:
+Acceptance (criteria as written before the work; results are in the next table):
 
 | Check | Pass |
 |---|---|
@@ -64,21 +76,61 @@ Acceptance:
 | Browser | One Chromium client connects and flies; the debug hook reports zero corrections on a local server |
 | Hygiene | `npm run typecheck`, `lint` and `test` pass; production bundle contains no debug hook |
 
+### Phase 1 results (measured 2026-11-13 on this Mac, M3 Ultra)
+
+| Check | Result | Where |
+|---|---|---|
+| Determinism | Pass. Two 10,000-tick runs are byte-identical. The same run hashes to the same value in Node 22, Chromium 158 and WebKit 27.2 | `tests/unit/ship.test.ts`, `tests/e2e/determinism.spec.ts` |
+| Maths | Pass. Own `sin`/`cos` within 1e-12 of `Math.sin`/`Math.cos` over ±4π (criterion was 1e-9) | `tests/unit/math.test.ts` |
+| Prediction, clean | Pass. 60 s of steering, 0 latency: 0 corrections, 0 missed inputs. Also 0 after warm-up at 30, 100 and 120 frames a second | `tests/unit/netcode.test.ts` |
+| Prediction, latency | Pass after the 2 s warm-up: 0 corrections and 0 late inputs over 60 s at 100 ± 20 ms and at 200 ± 50 ms round trip | same |
+| Reconcile | Pass. A one-tick input the server never receives gives exactly 1 correction (under 0.5 units); every later acknowledged tick matches bit for bit | same |
+| Server authority | Pass. A client flooding 100 future inputs every millisecond covers no more path than an honest one; one input per tick, first copy wins; malformed messages are counted and the 20th closes the connection | `tests/unit/room.test.ts` |
+| Real socket | Pass. 60 s over a real `ws` connection: 3,597 inputs, 1,799 snapshots, 0 corrections, 0 missed, round trip 1.5 ms, slack 2.3 ticks | `tests/integration/realSocket.test.ts` |
+| Browser | Pass in Chromium and in WebKit (the plan asked for Chromium only). 20 s flown by real key events: 0 corrections, 0 missed inputs. Chromium 60 frames a second (p99 16.8 ms), WebKit 100 (p99 12 ms) | `tests/e2e/flight.spec.ts` |
+| Hygiene | Pass. `typecheck`, `lint`, `test` clean. The production bundle does not contain `__orbit`; the test build does | `tests/integration/bundle.test.ts` |
+
+Not covered by these numbers:
+
+- During the first 2 s on the 200 ms profile, before the tick clock settles, inputs can arrive late and cause corrections. An earlier version of the client showed 16 late inputs and 3 corrections there; the client now starts with 2 extra ticks of slack, and the test asserts only on the time after warm-up.
+- One Chromium run showed a single 433 ms frame and one WebKit run a 270 ms frame; two later runs showed none (worst 16.8 ms and 28 ms). Not explained. It did not cause a correction.
+- Frame rates are from headless browsers on a desktop GPU. They say nothing about phones: UNVERIFIED.
+
+Headless rendering spike (task 1), four contexts open at once, 10 s each:
+
+| Browser | Renderer | Frames a second | Worst frame |
+|---|---|---|---|
+| Chromium headless shell, default | SwiftShader (software) | 5.8 | 250–367 ms |
+| Chromium headless shell, `--use-angle=metal` | Apple M3 Ultra via Metal | 60.0 | 16.8 ms |
+| Chromium new headless, default | Metal | 56–60 | 750 ms once, in the two phone profiles |
+| WebKit | Apple GPU | 100 | 11–13 ms (38 ms in the first run) |
+
+Decision from the spike: the end-to-end suite renders for real. Chromium runs with `--use-angle=metal` (set in `playwright.config.ts`). The `render=off` fallback in `DECISIONS.md` 7.1 was not needed and is not built.
+
+What changed from the plan during Phase 1:
+
+- **`atan2` is not written.** Nothing in the simulation needs it yet. It will be added with its first user.
+- **Session tokens moved to Phase 2**, where reconnecting uses them. Issuing a token nothing reads would have been a stub.
+- **Death and respawn arrived early.** Planet collision needs an outcome, so the ship dies and the server respawns it in the belt after 3 s (D5). HP, damage and invulnerability are still Phase 2.
+- **The comparison in reconciliation is exact**, not within a tolerance. Any differing bit triggers a rewind; the tolerance in `tests/thresholds.ts` only classifies the event's size.
+- **After a stall the client skips ahead** instead of sending the missed inputs late: it predicts the gap with its last sent input, which is what the server did. Covered by the "frozen client" test.
+- Design details are in `DECISIONS.md` 5.3, 5.4 and Appendix A.2.
+
 ## Phase 2: multiplayer
 
 Goal: several players see each other smoothly and can shoot each other fairly.
 
 Tasks:
 
-1. Remote ship snapshot buffer, adaptive interpolation delay, capped extrapolation, offset smoothing.
+1. Remote ship snapshot buffer, adaptive interpolation delay, capped extrapolation, offset smoothing. Remote ships are added to the snapshot message (quantised); bump `PROTOCOL_VERSION`.
 2. Interest tiers.
 3. Bullets in the shared sim; fire cooldown; swept collision.
 4. Server rewind history and lag-compensated hit test using the shared interpolation function.
-5. HP, damage, death, respawn (D5), disconnect grace (D6), reconnect with session token, late-join full state, hidden-tab handling.
+5. HP, damage, respawn invulnerability, disconnect grace (D6), session tokens and reconnect, late-join full state, hidden-tab handling. (Death by planet and the 3 s respawn already exist from Phase 1.)
 6. Client: predicted own bullets, shooter-view hit sparks, remote bullets, basic HUD (HP, speed, kills).
 7. Headless bot client with scripted and random-walk behaviours.
 8. Network proxy with seeded delay, jitter and the two loss modes.
-9. `tests/thresholds.ts` and the metric calculators.
+9. The rest of `tests/thresholds.ts` (the file exists with the Phase 1 values) and the metric calculators. The debug hook gains remote ships and scripted inputs.
 10. Playwright suite: one server, 2 to 4 contexts across Chromium, WebKit, iPhone and Pixel profiles, scripted inputs, three network profiles.
 11. One desktop Firefox smoke run on the clean profile: connect, fly, see a second player. Firefox is a target browser but is outside the brief's full suite.
 12. Load test: 16 bots for 5 minutes.
@@ -183,3 +235,15 @@ Findings that changed the brief's assumptions:
 - v1 does not use Pointer Lock, so it does not decide the Mac wrapper.
 
 Blockers: none. Waiting for approval.
+
+### 2026-11-13: Phase 1
+
+- Approved by the user with defaults D1–D7.
+- Ran the headless WebGL spike first; result above.
+- Built in this order, committing after each: scaffold; shared sim, maths and wire format; room, client core and transports; browser client and debug hook.
+- Tested the riskiest premise early: before any server code existed, the 10,000-tick trace was hashed in Node, Chromium and WebKit. All three agree.
+- Re-read v1's flight update (`main.js:8690-8809`), spawn, planet check, camera, ship model and input bindings line by line while porting. `DECISIONS.md` Appendix A marks are updated.
+- Found while porting, and put to the user as D12: v1's working pointer control steers away from the pointer (drag style). Kept as v1 for now.
+- Not done in Phase 1, by design: other players on screen, shooting, HP, HUD beyond a speed readout, touch stick, asteroids, orbs.
+
+Blockers: none.
