@@ -1,0 +1,10 @@
+{
+  "measuredAt": "2026-11-13T22:51:41.657Z",
+  "data": {
+    "browserVersion": "158.0.8127.18",
+    "traceHash": 411527464,
+    "nodeTraceHash": 411527464,
+    "fusedMultiplyAdds": 0,
+    "fingerprintMatchesNode": true
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "measuredAt": "2026-11-13T00:00:00.000Z",
+  "data": {
+    "bots": 16,
+    "seconds": 300,
+    "ticksPerSecond": 59.99921278532859,
+    "tickWorkMs": {
+      "p50": 0.7172499999869615,
+      "p99": 1.7593329999999696,
+      "max": 8.804375000006985
+    },
+    "catchUps": 0,
+    "droppedTicks": 0,
+    "heapMB": {
+      "atBaseline": 13.032256,
+      "atEnd": 8.551984
+    },
+    "heapGrowth": -0.3437833019854736,
+    "bytesPerClientPerSecond": 15162.147732970849,
+    "messagesPerClientPerSecond": 38.57282724176791,
+    "bulletsPerSecond": 137.11820095207094,
+    "hitsPerSecond": 0.006666579198369843,
+    "bulletsPerSecondInLastMinute": 137.06666666666666,
+    "lateInputShare": 0,
+    "malformedMessages": 0,
+    "botsAtEnd": "{\"playing\":16,\"corrections\":49,\"reconnects\":0,\"missed\":0,\"sent\":278400}"
+  }
+}

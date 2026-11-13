@@ -1,6 +1,6 @@
 # Orbit Runner v2: decisions
 
-Phase 0 output. Written 2026-11-13 and approved the same day with defaults D1–D7. Phase 1 is built; where building changed or confirmed something, the text says so. `PLAN.md` has the status and the measured numbers.
+Phase 0 output. Written 2026-11-13 and approved the same day with defaults D1–D7. Phases 1 and 2 are built; where building changed or confirmed something, the text says so ("As built"). `PLAN.md` has the status and the measured numbers.
 
 How to read the evidence labels:
 
@@ -147,7 +147,7 @@ tests/        Vitest (unit, virtual-time, bots) and Playwright (multi-client).
 
 ### 5.3 Inputs
 
-- **Content.** One input per tick: tick number, yaw axis and pitch axis as int8 (−127..127), throttle (−1, 0, +1), button bits (fire, bomb), and the view time described in [5.6](#56-shots-and-lag-compensation). About 10 bytes. As built in Phase 1 (no buttons or view time yet): 3 bytes per input, 15 bytes per message with its two redundant copies.
+- **Content.** One input per tick: tick number, yaw axis and pitch axis as int8 (−127..127), throttle (−1, 0, +1), button bits (fire, bomb), and the view time described in [5.6](#56-shots-and-lag-compensation). About 10 bytes. As built: 5 bytes per input (two axes, one byte of throttle and fire, and a 16-bit view delay in sixteenths of a tick), 21 bytes per message with its two redundant copies. In the real-socket test with 2% of inputs genuinely dropped, the redundant copies meant the server missed none.
 - **Encoded input is the input.** The client quantises first, then predicts from the quantised value it sends, so client and server step from identical numbers.
 - **Tick alignment.** The client runs ahead of the server by its one-way latency plus a margin, so the input for tick T arrives before the server simulates tick T. This is the Overwatch model. Each snapshot tells the client how early its inputs arrived; the client speeds up or slows down its tick clock by up to 5% to hold the margin. It never skips a tick number.
 - **Adaptive margin.** The margin starts at two ticks and grows with observed lateness, up to a cap of six ticks (100 ms, config value). A larger margin means fewer late inputs but a longer view delay, so it is capped. As built: every snapshot reports the worst slack of the client's inputs since the last one. The client keeps five seconds of these reports, with its own clock adjustments subtracted so it cannot mistake them for jitter, and steers the tick clock so the worst of them stays between 2 and 3.25 ticks. Typical slack is then the worst case plus whatever the jitter is, and is capped at six. The client begins two ticks more generous, because its first round-trip figure is a single sample. Measured on the virtual clock: once settled the clock runs within 0.2% of real time, typical slack is 2.8 to 3.5 ticks on a clean link and 3.3 on the 200 ms profile, and no input is late at any point, warm-up included. (A first version estimated jitter separately and hunted: about one tick of drift every 45 s on a clean link.)
@@ -176,6 +176,7 @@ Sources of correction that remain, by design: an input that arrived late, a coll
 - **Angles** are sent as yaw, pitch and roll, the sim's own state, and interpolated along the shortest arc.
 - **Interest tiers.** Ships within 2,000 units (with hysteresis) are sent at 30 Hz. Farther ships are sent at 5 Hz with position only, for the radar. v1 sent everything to everyone at 50 Hz.
 - **Size, derived:** about 23 bytes per nearby ship. Sixteen players all in range is about 11 kB/s per client, against v1's 37.6 kB/s. The load test reports the measured figure.
+- **As built.** A nearby ship is 20 bytes (position at 1/256 unit, height at 1/64, three 16-bit angles, hit points, flags, spawn number); a distant one is 13. A ship that leaves the near tier is sent once more straight away so it does not vanish until the next 5 Hz update. The delay is two snapshot intervals plus the measured spread of arrival times over the last five seconds plus one tick, between 67 and 250 ms; the remote clock is steered toward it at up to 5% so it never jumps. Late data that moves a ship leaves an offset that closes by half every 50 ms but never faster than 60 u/s. Other ships are drawn 1.5× size as in v1, with a dot on each so they can be found across the belt (the dot is new; Phase 3 replaces it with the minimap). Measured: see `PLAN.md`. On the 100 ms profile the delay settles at 70 ms; on the lossy profile it sits at the 250 ms cap.
 
 ### 5.6 Shots and lag compensation
 
@@ -192,6 +193,16 @@ v1's live weapon is a projectile: 230 u/s, 3.0 s life, 690 units of range (main.
 - **Swept collision.** v1 tested bullet position once per frame, so a bullet moving 3.8 units per frame could pass through the edge of a 4.5-unit hit zone. v2 tests the segment travelled each tick. Grazing hits that v1 missed will now land.
 
 Cost of this choice, stated plainly: victims are sometimes hit by a bullet that looked like a near miss on their screen. That is the standard "favour the shooter" trade, and the cap bounds it.
+
+As built in Phase 2:
+
+- **One test, run once per tick, on both sides.** The client measures how far behind its predicted tick the other ships are being drawn, rounds it to a sixteenth of a tick, uses that number for its own hit test on that tick, and sends the same number in that tick's input. The server uses the number from the input for that tick. Both call the same function on the same samples. The test is per tick, not per rendered frame, because browsers render at different rates.
+- **The server keeps what it sent.** For each ship it stores the quantised sample from every snapshot at the tick it was sent (64 of them, over two seconds). Rewinding interpolates those, exactly as the client's drawing does.
+- **Eligibility.** A target counts if it is alive now, and the shooter was looking at the same life of it, alive and past its spawn protection.
+- **Shots are confirmed.** The server announces every bullet to its owner too. A predicted bullet that is not announced by the snapshot of its tick never happened and is removed. A hit seen on an unconfirmed bullet waits for the confirmation before it is shown. This relies on events and snapshots arriving in order, which a WebSocket guarantees; a datagram transport would need a sequence number on events.
+- **Expected hit points.** The shooter's client counts its own recent hits and other players' announced hits on a target, from the tick the displayed hit points belong to, and stops registering hits on a ship that should already be dead. Without this the shooter saw one or two extra hits land on every wreck.
+- **Measured view delay:** 121–133 ms clean, 224–241 ms on the 100 ms profile (the estimate was 230), and pinned at the 350 ms cap on the 200 ms lossy profile, where the true figure is about 580 ms. There the shooter has to lead, and agreement drops (83–100% across clients and runs, not gated).
+- **What agreement cannot reach.** In a free-for-all, two players can shoot one ship; a hit seen on a ship another player destroyed a moment earlier is not confirmed. The 95% gate is therefore measured with ships kept alive by a test hook. Kills are tested separately (the shooter sees exactly the seven hits that counted), and free-for-all figures are reported in `PLAN.md`.
 
 Hitscan would be simpler and makes agreement near-perfect, but it removes dodging and changes how v1's combat feels.
 
@@ -218,6 +229,7 @@ interface Transport {
 - **Hidden tab.** On `visibilitychange` to hidden the client stops its sim and tells the server. The server treats the player as away (D6). On return the client asks for a full state, resets its tick clock and prediction history, and never tries to catch up on the gap.
 - **iOS.** Timers, `requestAnimationFrame` and usually the socket stop soon after backgrounding, and one open WebKit bug (308073) reports `new WebSocket()` hanging after resume. So on return the client always opens a fresh socket if the old one fails a 1 s ping, with a connect timeout and retry.
 - **Reconnect.** The server issues a session token at join. Reconnecting with it inside the grace period returns the same seat, score and ship.
+- **As built.** The token is 16 random bytes. A `Session` object owns the connection: when it closes it retries after 250 ms, 500 ms, 1 s, then every 2 s, presenting the token; a new connection with a known token takes the seat over even if the server has not yet noticed the old socket died. Hiding the tab sends a one-byte "away"; showing it sends "back", and the server answers with a fresh welcome. If that answer does not come within 1 s the session opens a new socket. A ship whose player is away longer than the grace period dies with cause `disconnect`; if the socket is still open the player stays seated and respawns on return.
 - **Late joiners** receive a full state: world seed, current tick, all players, destroyed asteroids, orb states.
 - **Version check.** The hello carries a protocol version and a simulation fingerprint. A stale cached client is rejected with "update required" instead of desyncing. This matters because the PWA caches the client. As built: the fingerprint is computed at load by running a fixed 2,000-tick flight and hashing every state, mixed with a hash of the constants, so it changes if a constant, the step function, or the engine's arithmetic differs. Changes to the wire format still need `PROTOCOL_VERSION` bumped by hand.
 
@@ -227,13 +239,17 @@ The room talks to the outside through two interfaces. Phases 1 to 4 ship free-pl
 
 - **Admission**: `admit(token)` returns `{ accountId, wallet | null, paid }`. Phase 5 adds a wallet signature challenge and paid entry.
 - **Economy events** from the room: `playerJoined`, `playerDied { deathId, victim, killer | null, cause, survivalTicks, kills }`, `runSummary`. Every death has a unique `deathId` so a payout can be made idempotent. v1 has no such ID.
+- **As built.** `RoomListener` in `src/server/room.ts` delivers `playerJoined`, `playerLeft`, `playerDied` (with the fields above) and `hit`. `runSummary` and the admission interface are not built: nothing uses them before Phase 5, and `join()` is the one place admission will go.
 
 Survival time, kills and cause of death are already server-decided from Phase 2 on, so Phase 5 adds accounting, not game logic. [Appendix B](#appendix-b-v1-trust-boundary) lists what v1's economy trusts today.
 
 ## 6. What cheating is still possible
 
 - **Aim assistance and radar.** The client knows the position of every ship within 2,000 units and the coarse position of the rest. No browser game can hide what it must draw.
-- **View-delay inflation.** A client can claim the maximum 350 ms view delay to get the most generous rewind. The cap is the limit.
+- **View-delay choice.** The server believes the view delay a client sends, up to 350 ms. A modified client can send any value from 0 to the cap on each tick, and so pick, per shot, whichever moment of a target's last 350 ms puts it in the bullet's path. At 60 u/s that is a choice among positions up to 21 units apart. The cap is the limit; a tighter defence would have the server estimate each client's delay itself.
+- **Holding a seat.** A connected player who sends nothing keeps flying straight and keeps one of the 16 seats for as long as the socket stays open. A hidden tab with a live socket does the same after its ship has died. There is no idle timeout yet; one belongs with the room rules in Phase 3.
+- **Asking for welcomes.** Each "back" presence message gets a full welcome and every live bullet's announcement, with no rate limit. It is cheap for the server but is free amplification; a limit of one per second belongs with the idle timeout.
+- **Flying on while "away".** An away ship cannot steer or shoot but can still be hit, so there is nothing to gain.
 - **Input automation.** Perfect dodging bots are indistinguishable from good players at the protocol level.
 
 Positions, hits, damage, deaths, survival time and scores cannot be forged, because clients never send them.
@@ -246,6 +262,7 @@ Positions, hits, damage, deaths, survival time and scores cannot be forged, beca
 - Client side, `window.__orbit` records per frame: the frame's real `dt`, the predicted own state and tick, the last acknowledged state and tick, and for each remote ship the sim time it was drawn at and the transform handed to the renderer. It also logs every correction event, every snapshot arrival time, and every shooter-view hit.
 - **Metrics come from the transforms handed to the renderer, not from pixels.** Results therefore do not depend on the GPU. A `render=off` mode was planned as a fallback; the Phase 1 spike showed headless WebGL works in both browsers, so it is not built.
 - Server side, a test-only endpoint returns authoritative per-tick positions and confirmed hits for a tick range.
+- As built: with `ORBIT_TEST_HOOKS=1` the server adds `GET /debug/truth`, `POST /debug/place` (move a ship) and `POST /debug/sustain` (keep ships alive during a measurement). Without the flag those paths return 404, and a test checks that. The page's hook also takes a named behaviour (hunter, wanderer, circler) to fly the ship from a script, and in test builds the page accepts `?server=` to connect through the network proxy. A test checks none of this is in the production bundle.
 
 ### 7.2 Network profiles
 
@@ -261,6 +278,7 @@ A standalone Node WebSocket proxy sits between each browser and the server. It w
 - **D4, loss mode `stall` (default).** A WebSocket never loses a message; TCP retransmits it and everything behind it waits. So a "lost" message is delivered about one round trip plus 60 ms late, and later messages in that direction queue behind it. This is what players on a lossy connection will feel.
 - **What `stall` costs, derived.** At 60 input messages a second and 2% loss there are about 1.2 stalls a second upstream, each about 260 ms. Inputs are held up roughly 30% of the time, and snapshots (30 a second) about 16% of the time. The six-tick margin cannot absorb a 260 ms stall, so late inputs and visible hitches are expected on this profile whatever the netcode does. The lossy correction threshold may fail for that reason; if it does I report it as a failure with the numbers, and the fix is a datagram transport or a different threshold, not hiding it.
 - **Loss mode `drop`.** `droppable` messages are discarded; `reliable` ones stall. It runs in the Node bot tests to prove the protocol survives real loss.
+- **Measured in Phase 2.** On the lossy profile 15 to 19% of inputs reached the server too late to be used, the input slack sat at its cap of six ticks, and the own-ship correction threshold passed anyway (p95 0.3 to 1.3 units against 4.0), because each late input costs only a tick or two of slightly different steering. The warning above turned out pessimistic.
 
 ### 7.3 Pass thresholds
 
@@ -344,7 +362,7 @@ SDK notes for Phase 5: `@kynesyslabs/demosdk` is at 4.0.21, ESM. Its `D402Server
 |---|---|
 | ~~WebGL and `requestAnimationFrame` in four headless contexts~~ | **Resolved in Phase 1.** Both work. Chromium needs `--use-angle=metal` (60 frames a second; 6 in software without it). WebKit runs at 100. Numbers in `PLAN.md` |
 | Bit-identical simulation across engines and CPUs | **Half resolved in Phase 1.** V8 and JavaScriptCore agree on this ARM64 Mac. x86 is not measured: run `npm test` on the server's architecture before deploying; the pinned hash test fails if it differs |
-| Desktop Firefox: headless WebGL, and the game itself | Phase 2, one smoke run. The brief's full suite covers Chromium and WebKit only |
+| ~~Desktop Firefox: headless WebGL, and the game itself~~ | **Resolved in Phase 2.** Firefox 159 headless: WebGL2 works, 60 frames a second, connects, flies, sees a second player, zero corrections. One smoke run, not the full suite |
 | Whether the ReadPixels warning appears in a GPU-backed browser | Phase 3 |
 | Electron `requestAnimationFrame` rate on a 120 Hz display | Phase 4, on your Mac |
 | iOS suspension timing; iOS WebGL context loss on backgrounding | Phase 3, on your iPhone |
@@ -490,6 +508,11 @@ Values are read from `main.js`. A ✓ follows each individual value I re-checked
 | FOV follow | 6·dt of the gap per frame | `1 − e^(−6·dt)` of the gap | Same response at 60 fps, and the same at any other frame rate |
 | Saucer orientation | `group.rotation.x = π/2` is set at build (main.js:4278) and then overwritten every frame by the flight code (main.js:8835), so it has no effect | Not set | Ported the effective behaviour: disc flat, dome up |
 | Lights | A point light on the camera and one on the planet | Ambient and sun only, for now | Light units changed between v1's three.js and r187; Phase 3 matches the look |
+| Spawn protection | 1.3 s after a respawn only (server:3102) | 1.3 s after every spawn, the first included | One rule; a new arrival is as exposed as a respawned one |
+| Bullet on the tick it is fired | Starts at the muzzle, 1.8 units ahead | Also tested along the 1.8 units from the ship's centre to the muzzle | A target touching the shooter's nose would otherwise be skipped |
+| Bullets and the dead | A bullet keeps flying after its owner dies | Same, but removed when its owner leaves the room | The server needs the owner's view delay to place it |
+| Hits on a ship you cannot be seeing | n/a (client decided) | No hit unless the shooter was looking at the same life of the target, alive and past its spawn protection | Follows from lag compensation |
+| Remote ship size | 1.5× (main.js:6836) | 1.5×, plus a red dot at any distance | Kept; the dot stands in for the minimap until Phase 3 |
 | Decisions D8–D12 | See [section 1](#1-decisions-that-need-your-answer) | | |
 
 ### A.3 v1 behaviours that look accidental
