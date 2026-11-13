@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { TICK_MS } from '../../src/shared/constants.ts';
 import { decodeClientMessage } from '../../src/shared/protocol.ts';
 import { shipStatesEqual } from '../../src/shared/sim/ship.ts';
+import type { ShipView } from '../../src/net/client.ts';
 import type { Controls } from '../../src/shared/sim/ship.ts';
 import { TestWorld, delay, wanderingControls } from '../support/harness.ts';
 import type { TestClient } from '../support/harness.ts';
@@ -43,15 +44,6 @@ describe('prediction on a clean link', () => {
     expect(first && last && Math.hypot(last.x - first.x, last.z - first.z)).toBeGreaterThan(200);
   });
 
-  it('holds about two ticks of input slack', () => {
-    const world = new TestWorld(3);
-    const client = world.addClient({ controls: wanderingControls(9) });
-    world.run(10_000);
-    expect(client.core.leadTicks).toBeGreaterThan(1);
-    expect(client.core.leadTicks).toBeLessThan(3.5);
-    expect(Math.abs(client.core.rate - 1)).toBeLessThan(0.02);
-  });
-
   it.each([
     ['30 fps (Low Power Mode)', 1000 / 30],
     ['100 fps (headless WebKit)', 10],
@@ -88,9 +80,159 @@ describe('prediction with latency and jitter', () => {
     // The round-trip estimate is close to the real figure.
     expect(client.core.rttMs).toBeGreaterThan(oneWayMs * 2 - 2 * jitterMs - TICK_MS);
     expect(client.core.rttMs).toBeLessThan(oneWayMs * 2 + 2 * jitterMs + 2 * TICK_MS);
-    // The slack grew to cover the jitter but stayed under the cap.
-    expect(client.core.targetLeadTicks).toBeGreaterThanOrEqual(2);
-    expect(client.core.targetLeadTicks).toBeLessThanOrEqual(6);
+  });
+});
+
+describe('the tick clock', () => {
+  it.each([
+    ['a clean link at 60 fps', 0, 0, 1000 / 60],
+    ['a clean link at 100 fps', 0, 0, 10],
+    ['a clean link at 30 fps', 0, 0, 1000 / 30],
+    ['100 ms ± 20 ms', 50, 10, 1000 / 60],
+    ['200 ms ± 50 ms', 100, 25, 1000 / 60],
+    ['200 ms ± 50 ms at 100 fps', 100, 25, 10],
+  ])(
+    'settles on %s: steady rate, worst slack just above two ticks',
+    (_name, oneWayMs, jitterMs, frameMs) => {
+      const world = new TestWorld(8);
+      const client = world.addClient({
+        controls: wanderingControls(13),
+        frameMs,
+        link: oneWayMs
+          ? { up: delay(oneWayMs, jitterMs, 101), down: delay(oneWayMs, jitterMs, 202) }
+          : {},
+      });
+      world.run(10_000);
+
+      // From ten seconds on, look once a second for the rest of a minute.
+      let worstRateError = 0;
+      let lowestSlack = Infinity;
+      let highestTypical = 0;
+      for (let second = 10; second < 60; second++) {
+        world.run(1000);
+        worstRateError = Math.max(worstRateError, Math.abs(client.core.rate - 1));
+        lowestSlack = Math.min(lowestSlack, client.core.leadLowTicks);
+        highestTypical = Math.max(highestTypical, client.core.leadTicks);
+      }
+      // The clock is not hunting: it never runs more than 0.2% off real time.
+      expect(worstRateError).toBeLessThan(0.002);
+      // The worst recent input still had about two ticks in hand, and no more than 3.5.
+      expect(lowestSlack).toBeGreaterThan(1.8);
+      expect(client.core.leadLowTicks).toBeLessThan(3.5);
+      // Typical slack covers the jitter and stays well under the cap of six.
+      expect(highestTypical).toBeLessThan(2 + 1.25 + (2 * jitterMs) / TICK_MS + 0.5);
+      expect(highestTypical).toBeLessThanOrEqual(6);
+      // And nothing was late at any point, including the first seconds.
+      expect(world.room.stats.missedInputs).toBe(0);
+      expect(client.corrections).toEqual([]);
+    },
+  );
+
+  it('gives up slack it no longer needs when the link improves', () => {
+    const world = new TestWorld(8);
+    let jitterMs = 25;
+    let seed = 1;
+    const jittery = (): number => {
+      seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+      return 60 + (seed / 4294967296) * 2 * jitterMs;
+    };
+    const client = world.addClient({
+      controls: wanderingControls(13),
+      link: { up: jittery, down: jittery },
+    });
+    world.run(15_000);
+    const aheadBefore = client.core.tick - world.room.tick;
+    jitterMs = 0;
+    world.run(1000);
+    // With the jitter gone every input arrives early: far more slack than needed.
+    expect(client.snapshots[client.snapshots.length - 1]?.inputLead).toBeGreaterThan(4);
+    world.run(20_000);
+    // The clock slowed until the worst case was back near two ticks.
+    expect(aheadBefore - (client.core.tick - world.room.tick)).toBeGreaterThanOrEqual(1);
+    expect(client.core.leadLowTicks).toBeGreaterThan(1.8);
+    expect(client.core.leadLowTicks).toBeLessThan(3.5);
+    expect(world.room.stats.missedInputs).toBe(0);
+  });
+
+  it('caps the slack on a link too erratic to cover, and accepts late inputs instead', () => {
+    const world = new TestWorld(8);
+    // Now and then a message takes 250 ms longer: far more than six ticks.
+    let count = 0;
+    const client = world.addClient({
+      controls: wanderingControls(13),
+      link: { up: () => (count++ % 97 === 0 ? 270 : 20), down: () => 20 },
+    });
+    world.run(30_000);
+    expect(client.core.leadTicks).toBeLessThanOrEqual(6.5);
+    expect(world.room.stats.missedInputs).toBeGreaterThan(0);
+    expect(client.core.status).toBe('playing');
+  });
+});
+
+describe('death and respawn through the client', () => {
+  it('predicts its own death, is teleported once at respawn, and never draws the jump as motion', () => {
+    const world = new TestWorld(5);
+    // Steer at the planet using the client's own predicted state.
+    const holder: { client?: TestClient } = {};
+    let previous: ShipView | null = null;
+    let jumps = 0;
+    let framesDead = 0;
+    let worstOrdinaryMove = 0;
+    const client = world.addClient({
+      // Look at what a renderer would draw, once per frame.
+      onFrame: (core) => {
+        const view = core.view();
+        if (view && previous) {
+          const moved = Math.hypot(view.x - previous.x, view.y - previous.y, view.z - previous.z);
+          if (moved > 500) jumps++;
+          else worstOrdinaryMove = Math.max(worstOrdinaryMove, moved);
+          if (!view.alive) framesDead++;
+        }
+        previous = view;
+      },
+      controls: (): Controls => {
+        const ship = holder.client?.core.state;
+        if (!ship?.alive) return { yaw: 0, pitch: 0, throttle: 1 };
+        let error = Math.atan2(-ship.x, -ship.z) - ship.yaw;
+        if (error > Math.PI) error -= 2 * Math.PI;
+        if (error < -Math.PI) error += 2 * Math.PI;
+        return { yaw: Math.max(-1, Math.min(1, error * 4)), pitch: 0, throttle: 1 };
+      },
+      link: { up: delay(50, 10, 7), down: delay(50, 10, 8) },
+    });
+    holder.client = client;
+
+    world.run(100_000);
+
+    const truth = world.truth.get(client.core.playerId);
+    const deaths = [...(truth?.entries() ?? [])].filter(
+      ([tick, ship]) => !ship.alive && truth?.get(tick - 1)?.alive === true,
+    );
+    expect(deaths).toHaveLength(1);
+
+    // Death was predicted on the same tick: no correction of any kind for it.
+    const ordinary = client.corrections.filter((c) => !c.teleport);
+    expect(ordinary).toEqual([]);
+    // Respawn is the server's decision: exactly one flagged jump.
+    expect(client.corrections).toHaveLength(1);
+    expect(client.core.counters.teleports).toBe(1);
+    const deathTick = deaths[0]?.[0] ?? 0;
+    expect(client.corrections[0]?.ackTick).toBeGreaterThanOrEqual(deathTick + 180);
+    expect(client.corrections[0]?.ackTick).toBeLessThanOrEqual(deathTick + 181);
+
+    // The drawn ship was hidden for about three seconds, jumped once, and
+    // otherwise never moved further in a frame than a ship can fly.
+    expect(framesDead).toBeGreaterThan(170);
+    expect(framesDead).toBeLessThan(200);
+    expect(jumps).toBe(1);
+    expect(worstOrdinaryMove).toBeLessThan(1.5 * 60 * (TICK_MS / 1000));
+
+    // After the respawn the client is flying the new ship in step with the server.
+    expect(client.core.state?.alive).toBe(true);
+    expect(client.core.state?.spawnSeq).toBe(1);
+    const predicted = client.core.predictedAt(client.core.ackTick);
+    const actual = truth?.get(client.core.ackTick);
+    expect(predicted && actual && shipStatesEqual(predicted, actual)).toBe(true);
   });
 });
 
@@ -259,7 +401,20 @@ describe('drawing the own ship', () => {
   it('a correction does not move the drawn ship at once; the offset fades', () => {
     const TAP_TICK = 301;
     const world = new TestWorld(2);
+    let previous: ShipView | null = null;
+    let worstJump = 0;
+    let frames = 0;
     const client = world.addClient({
+      onFrame: (core) => {
+        const view = core.view();
+        if (view && previous) {
+          const moved = Math.hypot(view.x - previous.x, view.y - previous.y, view.z - previous.z);
+          // Never more than 1.5× a frame of travel at the current speed.
+          worstJump = Math.max(worstJump, moved - 1.5 * view.speed * (TICK_MS / 1000));
+          frames++;
+        }
+        previous = view;
+      },
       controls: (tick): Controls => ({
         yaw: tick >= TAP_TICK && tick < TAP_TICK + 3 ? 1 : 0,
         pitch: 0,
@@ -276,23 +431,6 @@ describe('drawing the own ship', () => {
         },
       },
     });
-    let previous = client.core.view();
-    let worstJump = 0;
-    let frames = 0;
-    world.clock.every(
-      TICK_MS,
-      () => {
-        const view = client.core.view();
-        if (view && previous) {
-          const moved = Math.hypot(view.x - previous.x, view.y - previous.y, view.z - previous.z);
-          // Never more than 1.5× a tick of travel at the current speed.
-          worstJump = Math.max(worstJump, moved - 1.5 * view.speed * (TICK_MS / 1000));
-          frames++;
-        }
-        previous = view;
-      },
-      world.clock.now() + 3.8,
-    );
     world.run(10_000);
     expect(client.corrections.length).toBeGreaterThan(0);
     expect(frames).toBeGreaterThan(500);

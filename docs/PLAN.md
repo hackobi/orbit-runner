@@ -83,16 +83,18 @@ Acceptance (criteria as written before the work; results are in the next table):
 | Determinism | Pass on this ARM64 Mac. Two 10,000-tick runs are byte-identical. The same run hashes to the same value in Node 22, Chromium 158 and WebKit 27.2 (minified production build). No engine fuses multiply-add in 2,000,000 optimised iterations. **x86 not measured** | `tests/unit/ship.test.ts`, `tests/e2e/determinism.spec.ts` |
 | Maths | Pass. Own `sin`/`cos` within 1e-12 of `Math.sin`/`Math.cos` over ±4π (criterion was 1e-9) | `tests/unit/math.test.ts` |
 | Prediction, clean | Pass. 60 s of steering, 0 latency: 0 corrections, 0 missed inputs. Also 0 after warm-up at 30, 100 and 120 frames a second | `tests/unit/netcode.test.ts` |
-| Prediction, latency | Pass after the 2 s warm-up: 0 corrections and 0 late inputs over 60 s at 100 ± 20 ms and at 200 ± 50 ms round trip | same |
+| Prediction, latency | Pass: 0 corrections and 0 late inputs over 60 s at 100 ± 20 ms and at 200 ± 50 ms round trip, warm-up included | same |
+| Tick clock | Pass. From 10 s to 60 s on six link and frame-rate combinations the clock stays within 0.2% of real time, the worst recent input slack stays between 1.8 and 3.5 ticks, and typical slack stays under the cap of 6 | same |
+| Death and respawn | Pass. A client flown into the planet predicts its death on the same tick (no correction), gets exactly one flagged teleport at respawn 180 ticks later, and the drawn ship never moves more than a frame of flight except for that one jump | same |
 | Reconcile | Pass. A one-tick input the server never receives gives exactly 1 correction (under 0.5 units); every later acknowledged tick matches bit for bit | same |
 | Server authority | Pass. A client flooding 100 future inputs every millisecond covers no more path than an honest one; one input per tick, first copy wins; malformed messages are counted and the 20th closes the connection | `tests/unit/room.test.ts` |
-| Real socket | Pass. 60 s over a real `ws` connection: 3,597 inputs, 1,799 snapshots, 0 corrections, 0 missed, round trip 1.5 ms, slack 2.3 ticks | `tests/integration/realSocket.test.ts` |
+| Real socket | Pass. 60 s over a real `ws` connection: 3,598 inputs, 1,800 snapshots, 0 corrections, 0 missed, round trip 1.7 ms, slack 3.4 ticks | `tests/integration/realSocket.test.ts` |
 | Browser | Pass in Chromium and in WebKit (the plan asked for Chromium only). 20 s flown by real key events: 0 corrections, 0 missed inputs. Chromium 60 frames a second (p99 16.8 ms), WebKit 100 (p99 12 ms) | `tests/e2e/flight.spec.ts` |
 | Hygiene | Pass. `typecheck`, `lint`, `test` clean. The production bundle does not contain `__orbit`; the test build does | `tests/integration/bundle.test.ts` |
 
 Not covered by these numbers:
 
-- During the first 2 s on the 200 ms profile, before the tick clock settles, inputs can arrive late and cause corrections. An earlier version of the client showed 16 late inputs and 3 corrections there; the client now starts with 2 extra ticks of slack, and the test asserts only on the time after warm-up.
+- On a link whose delays jump by more than six ticks (100 ms), the slack is capped and some inputs are late by design. A test covers this; the Phase 2 lossy profile will measure how much it costs.
 - One Chromium run showed a single 433 ms frame and one WebKit run a 270 ms frame; two later runs showed none (worst 16.8 ms and 28 ms). Not explained. It did not cause a correction.
 - Frame rates are from headless browsers on a desktop GPU. They say nothing about phones: UNVERIFIED.
 
@@ -114,6 +116,7 @@ What changed from the plan during Phase 1:
 - **Death and respawn arrived early.** Planet collision needs an outcome, so the ship dies and the server respawns it in the belt after 3 s (D5). HP, damage and invulnerability are still Phase 2.
 - **The comparison in reconciliation is exact**, not within a tolerance. Any differing bit triggers a rewind; the tolerance in `tests/thresholds.ts` only classifies the event's size.
 - **After a stall the client skips ahead** instead of sending the missed inputs late: it predicts the gap with its last sent input, which is what the server did. Covered by the "frozen client" test.
+- **The tick-clock controller was rewritten after review.** The first version met every acceptance check but drifted about one tick every 45 s on a clean link. The current one is described in `DECISIONS.md` 5.3.
 - **The handshake compares a simulation fingerprint**, not only a hash of the constants, so a cached client with old step code is rejected (`src/shared/sim/fingerprint.ts`).
 - Design details are in `DECISIONS.md` 5.3, 5.4, 5.8 and Appendix A.2.
 

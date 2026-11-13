@@ -28,6 +28,8 @@ export interface ClientSetup {
   /** Runs the client's clock fast or slow against the server's. 1 is exact. */
   clockRate?: number;
   tuning?: Partial<ClientTuning>;
+  /** Called after each of this client's frames, where a renderer would draw. */
+  onFrame?: (core: ClientCore) => void;
 }
 
 export class TestWorld {
@@ -81,7 +83,9 @@ export class TestWorld {
     this.clock.every(
       setup.frameMs ?? TICK_MS,
       () => {
-        if (!paused) core.update();
+        if (paused) return;
+        core.update();
+        setup.onFrame?.(core);
       },
       this.clock.now() + 3.7,
     );

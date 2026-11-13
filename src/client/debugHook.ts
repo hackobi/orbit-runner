@@ -37,7 +37,7 @@ export interface DebugHook {
     ackTick: number;
     rttMs: number;
     leadTicks: number;
-    targetLeadTicks: number;
+    leadLowTicks: number;
     counters: ClientCore['counters'];
   };
 }
@@ -80,7 +80,7 @@ export function createDebugRecorder(): DebugRecorder {
           ackTick: client.ackTick,
           rttMs: client.rttMs,
           leadTicks: client.leadTicks,
-          targetLeadTicks: client.targetLeadTicks,
+          leadLowTicks: client.leadLowTicks,
           counters: { ...client.counters },
         }),
       };

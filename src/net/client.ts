@@ -22,23 +22,29 @@ import type { Controls, Input, ShipState } from '../shared/sim/ship.ts';
 import type { Transport } from '../shared/transport.ts';
 
 export interface ClientTuning {
-  /** Ticks of slack the client aims to give its inputs on a steady link. */
+  /**
+   * The slack, in ticks, that the worst recent input should still have had
+   * when it reached the server. The tick clock is steered to keep it there.
+   */
   baseLeadTicks: number;
+  /** The worst recent slack may sit this far above the base before the clock slows. */
+  leadBandTicks: number;
+  /**
+   * Typical slack never goes past this, however jittery the link. Beyond it
+   * some inputs are allowed to be late, because more slack means more delay.
+   */
+  maxLeadTicks: number;
   /**
    * Extra slack at the start. The first round-trip figure is a single
-   * sample, so begin generously and let the tick clock settle down to the
-   * target; beginning short would make the first inputs late.
+   * sample, so begin generously and let the tick clock settle; beginning
+   * short would make the first inputs late.
    */
   initialExtraLeadTicks: number;
-  /** The slack never grows past this, however jittery the link. */
-  maxLeadTicks: number;
-  /** The tick clock runs at most this fraction fast or slow to hold the slack. */
+  /** The tick clock runs at most this fraction fast or slow. */
   maxRateAdjust: number;
   /** Rate change per tick of slack error. */
   rateGain: number;
-  /** Slack errors smaller than this are left alone. */
-  leadDeadbandTicks: number;
-  /** How many slack reports the jitter estimate looks back over. */
+  /** How many slack reports "recent" covers. 150 is five seconds. */
   leadWindow: number;
   /** After a stall longer than this many ticks the client skips ahead instead of catching up. */
   maxTicksPerUpdate: number;
@@ -50,12 +56,12 @@ export interface ClientTuning {
 
 export const DEFAULT_TUNING: ClientTuning = {
   baseLeadTicks: 2,
-  initialExtraLeadTicks: 2,
+  leadBandTicks: 1.25,
   maxLeadTicks: 6,
+  initialExtraLeadTicks: 2,
   maxRateAdjust: 0.05,
-  rateGain: 1 / 60,
-  leadDeadbandTicks: 0.15,
-  leadWindow: 90,
+  rateGain: 1 / 30,
+  leadWindow: 150,
   maxTicksPerUpdate: 8,
   offsetHalfLifeMs: 35,
   snapDistance: 5 * SHIP_LENGTH,
@@ -148,10 +154,10 @@ export class ClientCore {
 
   /** Smoothed round trip in milliseconds, measured from input acknowledgements. */
   rttMs = 0;
-  /** Smoothed input slack the server reports, in ticks. */
+  /** Typical input slack over the recent window, in ticks. */
   leadTicks = 0;
-  /** The slack currently aimed for. */
-  targetLeadTicks: number;
+  /** The worst input slack over the recent window, in ticks. This is what is steered. */
+  leadLowTicks = 0;
   /** Tick clock rate. 1 is real time. */
   rate = 1;
 
@@ -181,15 +187,20 @@ export class ClientCore {
     HISTORY_SIZE,
   ).fill(null);
   private readonly historySentAtMs = new Float64Array(HISTORY_SIZE);
+  private readonly historySlew = new Float64Array(HISTORY_SIZE);
 
   private previousState: ShipState | null = null;
   private lastSentInput: Input = NEUTRAL_INPUT;
   private accumulatorMs = 0;
   private lastUpdateMs = 0;
 
+  /**
+   * How far the tick clock has been moved against real time so far, in
+   * ticks. Slack reports are stored with this taken out, so the controller
+   * never mistakes its own adjustments for network jitter.
+   */
+  private slewTicks = 0;
   private readonly leadSamples: number[] = [];
-  private jitterTicks = 0;
-  private haveLead = false;
   private haveRtt = false;
 
   // What is left of past corrections, added to the drawn ship and decayed.
@@ -205,7 +216,6 @@ export class ClientCore {
     this.now = options.now;
     this.controls = options.controls;
     this.tuning = { ...DEFAULT_TUNING, ...options.tuning };
-    this.targetLeadTicks = this.tuning.baseLeadTicks;
     this.onCorrection = options.onCorrection;
     this.onSnapshot = options.onSnapshot;
 
@@ -247,6 +257,7 @@ export class ClientCore {
     this.decayOffsets(elapsed);
 
     this.accumulatorMs += elapsed * this.rate;
+    this.slewTicks += (elapsed * (this.rate - 1)) / TICK_MS;
     let due = Math.floor(this.accumulatorMs / TICK_MS);
     this.accumulatorMs -= due * TICK_MS;
 
@@ -272,9 +283,9 @@ export class ClientCore {
     const current = this.state;
     if (!current) return null;
     const previous = this.previousState;
-    const jumped =
-      !previous || previous.spawnSeq !== current.spawnSeq || previous.alive !== current.alive;
-    const from = jumped ? current : previous;
+    // A respawn is a jump and is drawn as one. Dying is not: the ship flew
+    // into the place where it died.
+    const from = !previous || previous.spawnSeq !== current.spawnSeq ? current : previous;
     const alpha = this.accumulatorMs / TICK_MS;
     return {
       x: from.x + (current.x - from.x) * alpha + this.offsetX,
@@ -329,7 +340,7 @@ export class ClientCore {
   private alignTo(serverTick: number, ship: ShipState, assumed: Input): void {
     const ahead =
       Math.ceil(this.rttMs / TICK_MS) +
-      Math.ceil(this.targetLeadTicks) +
+      Math.ceil(this.tuning.baseLeadTicks) +
       this.tuning.initialExtraLeadTicks;
     this.historyTick.fill(-1);
     this.tick = serverTick;
@@ -340,7 +351,7 @@ export class ClientCore {
     for (let i = 0; i < ahead; i++) this.advance(assumed, false, 0);
     // Slack reports from before this moment describe the old alignment.
     this.leadSamples.length = 0;
-    this.haveLead = false;
+    this.slewTicks = 0;
     this.rate = 1;
   }
 
@@ -370,6 +381,7 @@ export class ClientCore {
     this.historyInput[slot] = input;
     this.historyState[slot] = state;
     this.historySentAtMs[slot] = sentAtMs;
+    this.historySlew[slot] = this.slewTicks;
   }
 
   private reconcile(snapshot: SnapshotMessage, arrivedAtMs: number): void {
@@ -385,6 +397,7 @@ export class ClientCore {
       snapshot,
       arrivedAtMs,
       known ? (this.historySentAtMs[slot] ?? NOT_SENT) : NOT_SENT,
+      known ? (this.historySlew[slot] ?? this.slewTicks) : this.slewTicks,
     );
     this.onSnapshot?.({
       timeMs: arrivedAtMs,
@@ -461,7 +474,12 @@ export class ClientCore {
   }
 
   /** Updates the round-trip estimate and steers the tick clock. */
-  private measure(snapshot: SnapshotMessage, arrivedAtMs: number, sentAtMs: number): void {
+  private measure(
+    snapshot: SnapshotMessage,
+    arrivedAtMs: number,
+    sentAtMs: number,
+    slewAtSend: number,
+  ): void {
     const lead = snapshot.inputLead;
     if (Number.isNaN(lead)) return;
 
@@ -473,32 +491,37 @@ export class ClientCore {
       this.haveRtt = true;
     }
 
+    // Store the report as it would have been had the clock never been
+    // adjusted. Adding the current adjustment back gives what that same
+    // network delay would produce now.
     const tuning = this.tuning;
-    this.leadSamples.push(lead);
+    this.leadSamples.push(lead - slewAtSend);
     if (this.leadSamples.length > tuning.leadWindow) this.leadSamples.shift();
-    this.leadTicks = this.haveLead ? this.leadTicks + 0.1 * (lead - this.leadTicks) : lead;
-    this.haveLead = true;
-
-    // Jitter: how far the worst recent report fell below the typical one.
-    // It rises at once and falls slowly, so one bad moment is remembered.
     let sum = 0;
     let low = Infinity;
     for (const sample of this.leadSamples) {
       sum += sample;
       if (sample < low) low = sample;
     }
-    const spread = sum / this.leadSamples.length - low;
-    this.jitterTicks = Math.max(spread, this.jitterTicks * 0.999);
+    this.leadTicks = sum / this.leadSamples.length + this.slewTicks;
+    this.leadLowTicks = low + this.slewTicks;
 
-    this.targetLeadTicks = Math.min(
-      tuning.maxLeadTicks,
-      Math.max(tuning.baseLeadTicks, tuning.baseLeadTicks + this.jitterTicks),
+    // Keep the worst recent slack inside [base, base + band]. Jitter needs no
+    // estimate of its own: a jittery link has a low worst case, which pushes
+    // the typical slack up by exactly as much as the jitter requires.
+    let error = 0;
+    if (this.leadLowTicks < tuning.baseLeadTicks) {
+      error = tuning.baseLeadTicks - this.leadLowTicks;
+    } else if (this.leadLowTicks > tuning.baseLeadTicks + tuning.leadBandTicks) {
+      error = tuning.baseLeadTicks + tuning.leadBandTicks - this.leadLowTicks;
+    }
+    // But never buy safety with unlimited delay.
+    if (this.leadTicks + error > tuning.maxLeadTicks) error = tuning.maxLeadTicks - this.leadTicks;
+
+    const adjust = Math.max(
+      -tuning.maxRateAdjust,
+      Math.min(tuning.maxRateAdjust, error * tuning.rateGain),
     );
-    const error = this.targetLeadTicks - this.leadTicks;
-    const adjust =
-      Math.abs(error) < tuning.leadDeadbandTicks
-        ? 0
-        : Math.max(-tuning.maxRateAdjust, Math.min(tuning.maxRateAdjust, error * tuning.rateGain));
     this.rate = 1 + adjust;
   }
 }
