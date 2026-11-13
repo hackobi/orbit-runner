@@ -192,21 +192,42 @@ export class TestWorld {
   }
 }
 
-/** Fixed delay plus uniform jitter, in milliseconds, from a seeded generator. */
-export function delay(meanMs: number, jitterMs: number, seed: number): Shaper {
+/**
+ * Fixed delay plus uniform jitter, in milliseconds, from a seeded generator.
+ * A share `loss` of messages arrives `stallMs` later still, and because the
+ * link delivers in order, everything behind such a message waits for it.
+ */
+export function delay(
+  meanMs: number,
+  jitterMs: number,
+  seed: number,
+  loss = 0,
+  stallMs = 0,
+): Shaper {
   const rng = new Rng(seed);
-  return () => meanMs + (rng.next() * 2 - 1) * jitterMs;
+  return () => {
+    const base = meanMs + (rng.next() * 2 - 1) * jitterMs;
+    return loss > 0 && rng.next() < loss ? base + stallMs : base;
+  };
 }
 
-/** The brief's network profiles, as one-way mean and jitter in milliseconds. */
+/**
+ * The brief's network profiles, as one-way mean and jitter in milliseconds.
+ * The lossy one loses 2% of messages as a 260 ms in-order stall, as the
+ * network proxy of the browser suite does (decision D4).
+ */
 export const PROFILES = {
-  clean: { oneWayMs: 0, jitterMs: 0 },
-  '100ms': { oneWayMs: 50, jitterMs: 10 },
-  '200ms': { oneWayMs: 100, jitterMs: 25 },
+  clean: { oneWayMs: 0, jitterMs: 0, loss: 0, stallMs: 0 },
+  '100ms': { oneWayMs: 50, jitterMs: 10, loss: 0, stallMs: 0 },
+  '200ms': { oneWayMs: 100, jitterMs: 25, loss: 0, stallMs: 0 },
+  '200ms-lossy': { oneWayMs: 100, jitterMs: 25, loss: 0.02, stallMs: 260 },
 } as const;
 
 export function profileLink(profile: keyof typeof PROFILES, seed: number): LinkOptions {
-  const { oneWayMs, jitterMs } = PROFILES[profile];
+  const { oneWayMs, jitterMs, loss, stallMs } = PROFILES[profile];
   if (oneWayMs === 0) return {};
-  return { up: delay(oneWayMs, jitterMs, seed), down: delay(oneWayMs, jitterMs, seed + 1) };
+  return {
+    up: delay(oneWayMs, jitterMs, seed, loss, stallMs),
+    down: delay(oneWayMs, jitterMs, seed + 1, loss, stallMs),
+  };
 }

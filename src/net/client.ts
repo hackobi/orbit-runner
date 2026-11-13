@@ -218,6 +218,23 @@ function sameBullet(a: Bullet, b: Bullet): boolean {
   );
 }
 
+/**
+ * True if a predicted bullet is the one the server announced. The
+ * announcement is rounded to 32-bit floats, so equal means within that
+ * rounding and well inside anything that could change a hit.
+ */
+function matchesAnnouncement(predicted: Bullet, announced: Bullet): boolean {
+  const near = (a: number, b: number, limit: number): boolean => a - b < limit && b - a < limit;
+  return (
+    near(predicted.ox, announced.ox, 0.01) &&
+    near(predicted.oy, announced.oy, 0.01) &&
+    near(predicted.oz, announced.oz, 0.01) &&
+    near(predicted.dx, announced.dx, 1e-4) &&
+    near(predicted.dy, announced.dy, 1e-4) &&
+    near(predicted.dz, announced.dz, 1e-4)
+  );
+}
+
 interface RemoteBullet {
   readonly bullet: Bullet;
   /** The server tick it hit something. Infinity while it is still flying. */
@@ -601,40 +618,79 @@ export class ClientCore {
    */
   private testOwnBullets(input: Input, nowMs: number): void {
     if (this.ownBullets.length === 0) return;
-    const viewTick = this.tick - input.viewDelay / VIEW_DELAY_STEPS_PER_TICK;
-    const targets = this.remotes.ids();
-    for (const own of this.ownBullets) {
-      if (own.spent || own.bullet.spawnTick > this.tick) continue;
-      let hitTarget = -1;
-      let hitAt = Infinity;
-      for (const id of targets) {
-        const seen = this.remotes.poseAt(id, viewTick);
-        if (!seen?.alive || seen.invulnerable || !seen.full) continue;
-        // The ship is drawn as it was a moment ago. If it is known to have
-        // been destroyed since, the server will not count a hit on it.
-        if (this.destroyedSince(id, seen.stateTick, seen.hp)) continue;
-        const at = bulletHit(own.bullet, this.tick, seen.x, seen.y, seen.z);
-        if (at >= 0 && at < hitAt) {
-          hitAt = at;
-          hitTarget = id;
-        }
-      }
-      if (hitTarget < 0) continue;
-      own.spent = true;
-      this.noteDamage(hitTarget, this.tick);
-      const hit: ViewHit = {
-        timeMs: nowMs,
-        ownerId: this.playerId,
-        spawnTick: own.bullet.spawnTick,
-        targetId: hitTarget,
-        tick: this.tick,
-      };
-      // A shot the server has not confirmed yet may never have happened (the
-      // ship may have died a moment before). Its hit waits for the confirmation.
-      if (own.confirmed) this.reportViewHit(hit);
-      else own.pendingHit = hit;
-    }
+    for (const own of this.ownBullets) this.testBullet(own, this.tick, input.viewDelay, nowMs);
     this.ownBullets = this.ownBullets.filter((own) => !bulletExpired(own.bullet, this.tick));
+  }
+
+  /** Tests one bullet over one tick, against the other ships as they were seen on that tick. */
+  private testBullet(own: OwnBullet, tick: number, viewDelay: number, nowMs: number): void {
+    if (own.spent || own.bullet.spawnTick > tick || bulletExpired(own.bullet, tick)) return;
+    const viewTick = tick - viewDelay / VIEW_DELAY_STEPS_PER_TICK;
+    let hitTarget = -1;
+    let hitAt = Infinity;
+    for (const id of this.remotes.ids()) {
+      const seen = this.remotes.poseAt(id, viewTick);
+      if (!seen?.alive || seen.invulnerable || !seen.full) continue;
+      // The ship is drawn as it was a moment ago. If it is known to have
+      // been destroyed since, the server will not count a hit on it.
+      if (this.destroyedSince(id, seen.stateTick, seen.hp, tick)) continue;
+      const at = bulletHit(own.bullet, tick, seen.x, seen.y, seen.z);
+      if (at >= 0 && at < hitAt) {
+        hitAt = at;
+        hitTarget = id;
+      }
+    }
+    if (hitTarget < 0) return;
+    own.spent = true;
+    this.noteDamage(hitTarget, tick);
+    const hit: ViewHit = {
+      timeMs: nowMs,
+      ownerId: this.playerId,
+      spawnTick: own.bullet.spawnTick,
+      targetId: hitTarget,
+      tick,
+    };
+    // A shot the server has not confirmed yet may never have happened (the
+    // ship may have died a moment before). Its hit waits for the confirmation.
+    if (own.confirmed) this.reportViewHit(hit);
+    else own.pendingHit = hit;
+  }
+
+  /**
+   * Tests a bullet over the ticks that have already gone by. A bullet that
+   * is learned of late, or whose path changed when the own ship was
+   * corrected, has missed its tests for those ticks; the server has not.
+   * Each tick is tested with the view delay that was sent for it.
+   */
+  private testPastTicks(own: OwnBullet, nowMs: number): void {
+    for (let tick = own.bullet.spawnTick; tick <= this.tick && !own.spent; tick++) {
+      const slot = tick & (HISTORY_SIZE - 1);
+      if (this.historyTick[slot] !== tick) continue;
+      this.testBullet(own, tick, (this.historyInput[slot] ?? NEUTRAL_INPUT).viewDelay, nowMs);
+    }
+  }
+
+  /**
+   * Removes the bullets `keep` rejects. A hit one of them was holding back
+   * never happened, so the damage noted for it is taken back.
+   */
+  private dropOwnBullets(keep: (own: OwnBullet) => boolean): number {
+    const before = this.ownBullets.length;
+    this.ownBullets = this.ownBullets.filter((own) => {
+      if (keep(own)) return true;
+      this.forgetPendingHit(own);
+      return false;
+    });
+    return before - this.ownBullets.length;
+  }
+
+  private forgetPendingHit(own: OwnBullet): void {
+    const hit = own.pendingHit;
+    if (!hit) return;
+    own.pendingHit = null;
+    const ticks = this.recentDamage.get(hit.targetId);
+    const index = ticks ? ticks.indexOf(hit.tick) : -1;
+    if (ticks && index >= 0) ticks.splice(index, 1);
   }
 
   private noteDamage(targetId: number, tick: number): void {
@@ -643,24 +699,32 @@ export class ClientCore {
       ticks = [];
       this.recentDamage.set(targetId, ticks);
     }
-    ticks.push(tick);
+    // Kept in tick order; a hit found for a tick already past goes in its place.
+    let at = ticks.length;
+    while (at > 0 && (ticks[at - 1] ?? 0) > tick) at--;
+    ticks.splice(at, 0, tick);
     // Samples are never drawn more than a second or two behind.
-    while (ticks.length > 0 && (ticks[0] ?? 0) < tick - 120) ticks.shift();
+    while (ticks.length > 0 && (ticks[0] ?? 0) < this.tick - 120) ticks.shift();
   }
 
   /**
    * True if a ship that was alive with `hpSeen` hit points at `seenTick` is
-   * known to be dead by the current tick: the server has said so, or the
+   * known to be dead by `atTick`: the server has said so, or the
    * hits known to have landed since then add up to all it had.
    */
-  private destroyedSince(targetId: number, seenTick: number, hpSeen: number): boolean {
+  private destroyedSince(
+    targetId: number,
+    seenTick: number,
+    hpSeen: number,
+    atTick: number,
+  ): boolean {
     const died = this.lastDeathTick.get(targetId);
-    if (died !== undefined && died > seenTick && died <= this.tick) return true;
+    if (died !== undefined && died > seenTick && died <= atTick) return true;
     const ticks = this.recentDamage.get(targetId);
     if (!ticks) return false;
     let damage = 0;
     for (const tick of ticks) {
-      if (tick > seenTick && tick <= this.tick) damage += SIM.bulletDamage;
+      if (tick > seenTick && tick <= atTick) damage += SIM.bulletDamage;
     }
     return damage >= hpSeen;
   }
@@ -714,11 +778,9 @@ export class ClientCore {
     // The server announces every bullet before the snapshot of the tick it
     // was fired. A predicted bullet from that tick or earlier that was never
     // announced did not happen.
-    const before = this.ownBullets.length;
-    this.ownBullets = this.ownBullets.filter(
+    this.counters.ghostBullets += this.dropOwnBullets(
       (own) => own.confirmed || own.bullet.spawnTick > snapshot.serverTick,
     );
-    this.counters.ghostBullets += before - this.ownBullets.length;
 
     const present = this.state;
     if (!present) return;
@@ -739,11 +801,13 @@ export class ClientCore {
     // Rewind to the server's state and replay every input sent since. Shots
     // predicted in the replayed ticks are predicted again: one that comes out
     // the same keeps what is known about it, one that differs is replaced,
-    // and one that no longer happens is dropped.
+    // and one that no longer happens is dropped. A new or replaced shot is
+    // then tested over the ticks it has already flown.
     this.historyState[slot] = snapshot.ship;
     let state = snapshot.ship;
     let previous = snapshot.ship;
     const refired = new Set<number>();
+    const changed: OwnBullet[] = [];
     for (let tick = snapshot.serverTick + 1; tick <= this.tick; tick++) {
       const replaySlot = tick & (HISTORY_SIZE - 1);
       previous = state;
@@ -754,13 +818,17 @@ export class ClientCore {
       const bullet = spawnBullet(this.playerId, tick, state);
       const index = this.ownBullets.findIndex((own) => own.bullet.spawnTick === tick);
       const existing = this.ownBullets[index];
-      if (!existing) {
-        this.ownBullets.push({ bullet, confirmed: false, spent: false, pendingHit: null });
-      } else if (!existing.confirmed && !sameBullet(existing.bullet, bullet)) {
-        this.ownBullets[index] = { bullet, confirmed: false, spent: false, pendingHit: null };
+      if (existing && (existing.confirmed || sameBullet(existing.bullet, bullet))) continue;
+      const fresh: OwnBullet = { bullet, confirmed: false, spent: false, pendingHit: null };
+      if (existing) {
+        this.forgetPendingHit(existing);
+        this.ownBullets[index] = fresh;
+      } else {
+        this.ownBullets.push(fresh);
       }
+      changed.push(fresh);
     }
-    this.ownBullets = this.ownBullets.filter(
+    this.dropOwnBullets(
       (own) =>
         own.confirmed ||
         own.bullet.spawnTick <= snapshot.serverTick ||
@@ -768,57 +836,55 @@ export class ClientCore {
     );
     this.previousState = previous;
     this.state = state;
+    for (const own of changed) this.testPastTicks(own, arrivedAtMs);
     this.finishCorrection(present, snapshot.serverTick, arrivedAtMs);
   }
 
   private dropUnconfirmedBulletsAfter(serverTick: number): void {
-    this.ownBullets = this.ownBullets.filter(
-      (own) => own.confirmed || own.bullet.spawnTick <= serverTick,
-    );
+    this.dropOwnBullets((own) => own.confirmed || own.bullet.spawnTick <= serverTick);
   }
 
   private applyEvent(event: GameEvent): void {
     switch (event.kind) {
       case 'bullet': {
+        const announced = bulletFrom(
+          event.ownerId,
+          event.spawnTick,
+          event.x,
+          event.y,
+          event.z,
+          event.yaw,
+          event.pitch,
+        );
         if (event.ownerId !== this.playerId) {
-          this.remoteBullets.push({
-            bullet: bulletFrom(
-              event.ownerId,
-              event.spawnTick,
-              event.x,
-              event.y,
-              event.z,
-              event.yaw,
-              event.pitch,
-            ),
-            hitTick: Infinity,
-          });
+          this.remoteBullets.push({ bullet: announced, hitTick: Infinity });
           break;
         }
-        const predicted = this.ownBullets.find((own) => own.bullet.spawnTick === event.spawnTick);
-        if (predicted) {
+        const index = this.ownBullets.findIndex((own) => own.bullet.spawnTick === event.spawnTick);
+        const predicted = this.ownBullets[index];
+        if (predicted && matchesAnnouncement(predicted.bullet, announced)) {
           predicted.confirmed = true;
           if (predicted.pendingHit) {
             this.reportViewHit(predicted.pendingHit);
             predicted.pendingHit = null;
           }
-        } else {
-          // The server fired a shot this client did not predict.
-          this.ownBullets.push({
-            bullet: bulletFrom(
-              event.ownerId,
-              event.spawnTick,
-              event.x,
-              event.y,
-              event.z,
-              event.yaw,
-              event.pitch,
-            ),
-            confirmed: true,
-            spent: false,
-            pendingHit: null,
-          });
+          break;
         }
+        // The server fired a shot this client did not predict, or fired it
+        // from somewhere else. The server's shot is the real one.
+        const real: OwnBullet = {
+          bullet: announced,
+          confirmed: true,
+          spent: false,
+          pendingHit: null,
+        };
+        if (predicted) {
+          this.forgetPendingHit(predicted);
+          this.ownBullets[index] = real;
+        } else {
+          this.ownBullets.push(real);
+        }
+        this.testPastTicks(real, this.now());
         break;
       }
       case 'hit': {

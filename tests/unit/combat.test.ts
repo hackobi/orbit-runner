@@ -834,6 +834,57 @@ describe('four hunters', () => {
   );
 });
 
+// --- A bad link: late inputs, corrections and stalls ----------------------------
+
+describe('on the 200 ms lossy profile', () => {
+  it('the shooter is shown the hits the server counted, though its own ship keeps being corrected', () => {
+    // As in the browser suite: two hunters, two ships flying erratically,
+    // and every ship kept alive so that only lag compensation is measured.
+    const world = new TestWorld(7);
+    const clients = [0, 1, 2, 3].map((i) =>
+      world.addClient({
+        controls: i % 2 === 0 ? hunter() : wanderer(11 + i),
+        link: profileLink('200ms-lossy', 70 + 2 * i),
+      }),
+    );
+    world.run(600);
+    clients.forEach((client, i) => {
+      const angle = (i / 4) * 2 * Math.PI;
+      world.place(client.core.playerId, {
+        ...STILL,
+        x: Math.sin(angle) * 150,
+        z: 4400 + Math.cos(angle) * 150,
+        yaw: angle + Math.PI,
+        speed: 20,
+        targetSpeed: 20,
+      });
+    });
+    world.clock.every(TICK_MS, () => {
+      for (const client of clients) world.place(client.core.playerId, { hp: SIM.maxHp });
+    });
+    world.run(42_000);
+
+    // The link really was bad: inputs arrived late and ships were corrected.
+    const hunters = [clients[0], clients[2]].filter((c): c is TestClient => c !== undefined);
+    for (const shooter of hunters) {
+      expect(shooter.core.counters.missedInputs).toBeGreaterThan(100);
+      expect(shooter.corrections.length).toBeGreaterThan(100);
+    }
+
+    // Judge the hits whose news has had time to reach the shooter.
+    const settled = (hit: { tick: number }): boolean => hit.tick <= world.room.tick - 120;
+    const ids = new Set(hunters.map((c) => c.core.playerId));
+    const counted = world.hits.filter((h) => ids.has(h.ownerId) && settled(h));
+    const shown = hunters.flatMap((c) => c.viewHits).filter(settled);
+    const result = hitAgreement(shown, counted);
+    expect(counted.length).toBeGreaterThan(150);
+    // A shot fired from a place the server then corrected is tested again
+    // from the corrected place. Without that, one hit in seven went unshown.
+    expect(result.unseen / counted.length).toBeLessThan(0.02);
+    expect(result.agreement).toBeGreaterThanOrEqual(THRESHOLDS.hitAgreementMin);
+  });
+});
+
 describe('a kill seen from the shooter', () => {
   it.each(['clean', '100ms', '200ms'] as const)(
     'on the %s profile the shooter sees exactly the hits that counted, and none on the wreck',
