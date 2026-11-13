@@ -80,7 +80,8 @@ Tasks:
 8. Network proxy with seeded delay, jitter and the two loss modes.
 9. `tests/thresholds.ts` and the metric calculators.
 10. Playwright suite: one server, 2 to 4 contexts across Chromium, WebKit, iPhone and Pixel profiles, scripted inputs, three network profiles.
-11. Load test: 16 bots for 5 minutes.
+11. One desktop Firefox smoke run on the clean profile: connect, fly, see a second player. Firefox is a target browser but is outside the brief's full suite.
+12. Load test: 16 bots for 5 minutes.
 
 Acceptance:
 
@@ -129,7 +130,7 @@ Acceptance:
 
 ## Phase 4: Mac app
 
-Tasks: Electron main process loading the bundled web build from a privileged `app://` scheme, server address from config, service worker disabled in this build, packaged `.app` with ad-hoc signing, Playwright smoke test that launches it, connects and flies.
+Tasks: Electron main process that loads the client from the game server's HTTPS origin (so it stays in step with the server's protocol version), with a bundled copy on a privileged `app://` scheme for local development; server address from config; packaged `.app` with ad-hoc signing; Playwright smoke test that launches it, connects and flies.
 
 Acceptance: the smoke test passes; the `.app` opens on this Mac; frame pacing on the real display is recorded as measured or UNVERIFIED.
 
@@ -167,7 +168,7 @@ Design points already fixed so this fits without rework: server-decided kills an
 
 ### 2026-11-13: Phase 0
 
-- Read v1: `README.md`, `PVP_MULTIPLAYER.md`, `git log` (198 commits), `main.js` in full, `server/index.js` in full, the pending ReadPixels todo and the earlier audit report. Spot-checked the key constants and server claims by line.
+- Read v1: `README.md`, `PVP_MULTIPLAYER.md`, `git log` (198 commits), `server/index.js` in full, the pending ReadPixels todo and the earlier audit report. `main.js`: gameplay, rendering and networking read in full (lines 1–90, 236–483, 541–660, 3790–10230); the wallet, payment and overlay code in between was only grep-swept and needs a proper read in Phase 5. Spot-checked the key constants and server claims by line.
 - Checked current docs and registries for versions, WebGPU and WebTransport support, Colyseus 0.18, Playwright, Tauri, Electron, iOS constraints.
 - Tested on this Mac: Node 22.22.3 runs `.ts` files with `.ts` imports directly.
 - Created the repo and branch `feature/v2-rebuild`. Wrote `DECISIONS.md` and this file.

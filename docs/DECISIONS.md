@@ -19,7 +19,7 @@ Each has a default. If you approve the plan without comment, the defaults apply.
 | D1 | Netcode: write it or use Colyseus 0.18 | Write it, on plain `ws` ([section 4](#4-netcode-library-write-it-or-use-colyseus)) | Colyseus 0.18 built-in prediction and rewind | Phase 1 |
 | D2 | Shooting model | Server-simulated projectiles (v1's 230 u/s bullets), each tested against targets rewound by the shooter's view delay ([5.6](#56-shots-and-lag-compensation)) | Hitscan with a cosmetic tracer | Phase 2 |
 | D3 | Meaning of "100 ms ± 20 ms" | Round trip: 50 ± 10 ms each way | One-way: twice as harsh | Phase 2 |
-| D4 | Meaning of "2% loss" on a WebSocket | A lost message arrives late and holds up everything behind it, as TCP does ([7.2](#72-network-profiles)) | Messages are dropped | Phase 2 |
+| D4 | Meaning of "2% loss" on a WebSocket | A lost message arrives late and holds up everything behind it, as TCP does. This is harsh: about a third of the time the input stream is stalled ([7.2](#72-network-profiles)) | Messages are dropped, which is milder but is not what a WebSocket does | Phase 2 |
 | D5 | Death in free play | Respawn after 3 s in the belt with 1.3 s invulnerability. "Death = exit, pay again" becomes a room rule switched on in Phase 5 | Death always exits | Phase 2 |
 | D6 | Disconnect or backgrounded tab | Seat held 10 s. The ship flies straight and can be hit. After 10 s it dies with cause `disconnect` | v1 rule: disconnect is instant death | Phase 2 |
 | D7 | Mac wrapper | Electron ([section 9](#9-mac-app)) | Tauri 2, or no wrapper (installed PWA) | Phase 4 |
@@ -148,8 +148,9 @@ tests/        Vitest (unit, virtual-time, bots) and Playwright (multi-client).
 
 - **Content.** One input per tick: tick number, yaw axis and pitch axis as int8 (−127..127), throttle (−1, 0, +1), button bits (fire, bomb), and the view time described in [5.6](#56-shots-and-lag-compensation). About 10 bytes.
 - **Encoded input is the input.** The client quantises first, then predicts from the quantised value it sends, so client and server step from identical numbers.
-- **Tick alignment.** The client runs ahead of the server by its one-way latency plus a small margin, so the input for tick T arrives before the server simulates tick T. This is the Overwatch model. Each snapshot tells the client how early its inputs arrived; the client speeds up or slows down its tick clock by up to 5% to hold a margin of about two ticks. It never skips a tick number.
-- **Missing input.** If the input for tick T has not arrived, the server reuses the previous one and moves on. A late input is discarded. The ship never freezes for others, and a lag switch gains nothing.
+- **Tick alignment.** The client runs ahead of the server by its one-way latency plus a margin, so the input for tick T arrives before the server simulates tick T. This is the Overwatch model. Each snapshot tells the client how early its inputs arrived; the client speeds up or slows down its tick clock by up to 5% to hold the margin. It never skips a tick number.
+- **Adaptive margin.** The margin starts at two ticks and grows with observed lateness, up to a cap of six ticks (100 ms, config value). A larger margin means fewer late inputs but a longer view delay, so it is capped.
+- **Missing input.** If the input for tick T has not arrived, the server reuses the previous one and moves on. A late input is discarded. The ship never freezes for others, and a lag switch gains nothing. A reused input causes a correction only if the player changed their controls during the gap.
 - **Redundancy.** Each input message also carries the previous few inputs. Over WebSocket this is unused; it is there so a datagram transport works without a protocol change.
 - **Limits enforced by the server.** At most one input per tick per player, axes clamped to ±1, fire rate enforced by the sim's cooldown, view time clamped to a window. Speed hacks are impossible by construction: inputs are per tick, and carry no time step.
 
@@ -207,7 +208,7 @@ interface Transport {
 - **Baseline: WebSocket** (`ws` on the server, browser `WebSocket` on the client), binary frames, one coalesced send per tick. Both channels map to the same socket.
 - **Why two channels now.** Snapshots and inputs are `droppable`: the protocol tolerates losing them. Spawns, deaths and other events are `reliable`. The test proxy uses the flag, and a datagram transport would map it directly.
 - **Also implemented:** a loopback transport on a fake clock, for Vitest.
-- **WebTransport: not added.** It is confirmed in Safari on iOS since 26.4 (2026-03-24), including datagrams. The browser is no longer the obstacle. The server side is: Node has no production WebTransport (`node:quic` is absent in Node 22 and experimental later; the main library describes itself as "a duct tape-style solution"), and Railway documents HTTP/1.1, HTTP/2 and TCP only, with no inbound UDP. Devices below iOS 26.4 would still need WebSocket. Revisit when hosting changes.
+- **WebTransport: not added.** It is confirmed in Safari on iOS since 26.4 (2026-03-24), including datagrams. The browser is no longer the obstacle. The server side is: Node has no production WebTransport (`node:quic` is absent in Node 22 and experimental later; the main library describes itself as "a duct tape-style solution"), and Railway documents HTTP/1.1, HTTP/2 and a TCP proxy; its docs do not mention inbound UDP or HTTP/3. Devices below iOS 26.4 would still need WebSocket. Revisit when hosting changes.
 - **WebRTC data channels: not added.** They work on iOS Safari, but need signalling, ICE and a UDP port range.
 
 ### 5.8 Resilience
@@ -256,6 +257,7 @@ A standalone Node WebSocket proxy sits between each browser and the server. It w
 
 - **D3.** I read the brief's latency as round trip, as a ping display shows it. It is one config value.
 - **D4, loss mode `stall` (default).** A WebSocket never loses a message; TCP retransmits it and everything behind it waits. So a "lost" message is delivered about one round trip plus 60 ms late, and later messages in that direction queue behind it. This is what players on a lossy connection will feel.
+- **What `stall` costs, derived.** At 60 input messages a second and 2% loss there are about 1.2 stalls a second upstream, each about 260 ms. Inputs are held up roughly 30% of the time, and snapshots (30 a second) about 16% of the time. The six-tick margin cannot absorb a 260 ms stall, so late inputs and visible hitches are expected on this profile whatever the netcode does. The lossy correction threshold may fail for that reason; if it does I report it as a failure with the numbers, and the fix is a datagram transport or a different threshold, not hiding it.
 - **Loss mode `drop`.** `droppable` messages are discarded; `reliable` ones stall. It runs in the Node bot tests to prove the protocol survives real loss.
 
 ### 7.3 Pass thresholds
@@ -265,7 +267,7 @@ All in one file, `tests/thresholds.ts`. Ship length is derived from the hull con
 | Check | Pass | How it is measured |
 |---|---|---|
 | Remote position error | p95 < 2.0 units (0.5 ship length), max < 8.0 units, on the 100 ms profile | Drawn position at sim time t against the server's position at t, excluding flagged teleports |
-| No visible snaps | Frame-to-frame change of a remote ship ≤ 3 × (that ship's current max speed × the frame's real `dt`) | Every frame, all profiles |
+| No visible snaps | Frame-to-frame change of a remote ship ≤ 3 × (speed limit × the frame's real `dt`). The speed limit is the larger of that ship's current max speed and its actual server speed at that sim time, so a ship still slowing down after a boost is not counted as a snap | Every frame, all profiles |
 | Local corrections, lossy | p95 < 4.0 units | Correction events, 200 ms lossy profile |
 | Local corrections, clean | Zero events larger than 0.01 units, with no collisions, after a 2 s warm-up | Clean profile, Chromium and WebKit |
 | Hit agreement | ≥ 95% of shooter-view hits confirmed by the server, 100 ms profile | Client hit log joined to server hit log by bullet ID |
@@ -312,11 +314,13 @@ A controller watches frame time and moves between quality tiers with hysteresis.
 | Automated test | Playwright launches and drives it, same runner as the rest | Needs a second stack (WebdriverIO with an embedded driver plugin) | None beyond the browser tests |
 | Frame pacing | Follows the display in Chromium generally. Electron at 120 Hz specifically is unconfirmed | WKWebView prefers about 60 fps by default; WebKit bug 294338 is open; Tauri closed its issue as not planned | As the browser |
 | Size | 80–100 MB zipped | A few MB | 0 |
-| Service worker | Not needed; assets are bundled | Not possible on `tauri://` | Yes |
-| Demos wallet extension | No | No | Plausibly, in a Chrome-installed PWA (unconfirmed) |
+| Service worker | Not needed | Not possible on `tauri://` | Yes |
+| Demos wallet extension | Not checked; the brief assumes no | Browser extensions are documented as unsupported on macOS | Plausibly, in a Chrome-installed PWA (unconfirmed) |
 | Toolchain | Node only | Rust 1.90+ (1.95 is installed) | None |
 
 Why Electron: the Mac app can be smoke-tested by the same Playwright suite, it behaves like the Chrome build we already measure, and it avoids WKWebView's unresolved 60 fps question. The price is size.
+
+Update path: the server rejects clients whose protocol version or constants differ ([5.8](#58-resilience)), so a Mac app with a bundled client would stop working after any such change. Phase 4 therefore loads the client from the game server's HTTPS origin by default, and uses the bundled copy only for local development.
 
 The web build is an installable PWA regardless, so "Install app" in Chrome and "Add to Dock" in Safari work at no cost. Distribution outside this Mac would need an Apple Developer ID and notarisation ($99 a year); that is out of scope unless you ask.
 
@@ -337,6 +341,7 @@ SDK notes for Phase 5: `@kynesyslabs/demosdk` is at 4.0.21, ESM. Its `D402Server
 | Item | Resolved in |
 |---|---|
 | WebGL and `requestAnimationFrame` in four headless contexts, Playwright WebKit and Chromium, on this Mac | Phase 1, first task |
+| Desktop Firefox: headless WebGL, and the game itself | Phase 2, one smoke run. The brief's full suite covers Chromium and WebKit only |
 | Whether the ReadPixels warning appears in a GPU-backed browser | Phase 3 |
 | Electron `requestAnimationFrame` rate on a 120 Hz display | Phase 4, on your Mac |
 | iOS suspension timing; iOS WebGL context loss on backgrounding | Phase 3, on your iPhone |
@@ -363,7 +368,7 @@ Checked 2026-11-13. Items marked ◆ I fetched directly; the rest were fetched b
 - WebGPURenderer performance: https://github.com/mrdoob/three.js/issues/33821, https://github.com/mrdoob/three.js/issues/30560, https://discourse.threejs.org/t/91904
 - ReadPixels reports: https://github.com/mrdoob/three.js/issues/27339, https://discourse.threejs.org/t/75621
 - three.js responsive manual: https://github.com/mrdoob/three.js/blob/r187/manual/pages/responsive.html
-- ◆ WebGPU support: https://caniuse.com/webgpu
+- ◆ WebGPU support, caniuse data file: https://raw.githubusercontent.com/Fyrd/caniuse/main/features-json/webgpu.json
 - WebGPU implementation status: https://github.com/gpuweb/gpuweb/wiki/Implementation-Status
 
 **Netcode**
@@ -376,7 +381,7 @@ Checked 2026-11-13. Items marked ◆ I fetched directly; the rest were fetched b
 - `ws` Nagle and deflate defaults: https://github.com/websockets/ws/blob/8.23.0/lib/websocket.js#L269, https://github.com/websockets/ws/blob/8.23.0/lib/websocket-server.js#L79
 
 **Transport and background behaviour**
-- ◆ WebTransport support: https://caniuse.com/webtransport
+- ◆ WebTransport support, caniuse data file: https://raw.githubusercontent.com/Fyrd/caniuse/main/features-json/webtransport.json
 - Safari 26.4: https://webkit.org/blog/17862/webkit-features-for-safari-26-4/
 - `@fails-components/webtransport` README: https://github.com/fails-components/webtransport/blob/master/main/readme.md
 - Node QUIC docs: https://github.com/nodejs/node/blob/v24.x/doc/api/quic.md
@@ -416,7 +421,7 @@ Checked 2026-11-13. Items marked ◆ I fetched directly; the rest were fetched b
 
 ## Appendix A: v1 tuning constants and what v2 changes
 
-Values are read from `main.js`. I re-checked the ones marked ✓ by line number myself; the rest come from a full read of the file by a research pass.
+Values are read from `main.js`. A ✓ follows each individual value I re-checked by line number myself. The rest come from a research pass that read lines 1–90, 236–483, 541–660 and 3790–10230 in full and grep-swept the remainder (wallet, payment and overlay code, which is Phase 5 territory) for writes to gameplay state.
 
 ### A.1 Ported unchanged
 
@@ -438,16 +443,16 @@ Values are read from `main.js`. I re-checked the ones marked ✓ by line number 
 | Camera look target | ship + forward × 20 | 8872 |
 | FOV | 70 + `clamp((speed − 14) × 0.7 + kick, 0, 28)`, kick 10 while boosting, follow `min(1, 6·dt)` | 333, 8726 |
 | Camera shake | linear decay 6.0 per second; y axis × 0.6; trigger amounts per the v1 table (0.08 to 1.2) | 8865 |
-| Planet | origin, radius 1200, lethal inside 1220 ✓ | 4524, 9623 |
+| Planet | origin ✓, radius 1200 ✓, lethal inside 1220 ✓ | 4524, 9623 |
 | Belt | inner 3600, outer 5200; 2000 ring asteroids | 4606, 4873 |
-| Ring asteroid size / orbit | scale 2 to 9, collision radius scale × 0.95; 0.012 to 0.042 rad/s ✓ | 4840, 4862 |
+| Ring asteroid size / orbit | scale 2 to 9, collision radius scale × 0.95; orbit 0.012 to 0.042 rad/s ✓ | 4840, 4862 |
 | Spawn | random belt angle, radius 3600 to 5200, y ± 50 | 4608 |
 | HP / shield | 100 / 0 to 100 | 4314 |
-| Bullet | 230 u/s, 3.0 s, radius 0.25, muzzle 1.8 ahead ✓ | 351, 6019 |
-| Fenix beam | 300 u/s, range 772.8, radius 0.45 ✓ | 353 |
+| Bullet | 230 u/s ✓, 3.0 s ✓, radius 0.25 ✓, muzzle 1.8 ahead ✓ | 351, 6019, 6048 |
+| Fenix beam | 300 u/s ✓, range 772.8 ✓, radius 0.45 | 353 |
 | PvP damage | 15 bullet, 30 Fenix | 9872 |
 | Hit radii | 2.0 ship vs bullets; 1.8 ship vs asteroids ✓; 2.2 pickups ✓ | 9811, 4494 |
-| Asteroid crash | HP 45 to 75, shield 22 to 44, halved for Fenix; 0.6 s crash immunity ✓ | 8496, 8509 |
+| Asteroid crash | HP 45 to 75 ✓, shield 22 to 44 ✓, halved for Fenix; 0.6 s crash immunity ✓ | 8496, 8509 |
 | Near-miss spark | within asteroid radius + 3.2; 1.2 s cooldown per asteroid | 8946 |
 | Respawn invulnerability | 1.3 s (from v1's server) | server:3102 |
 | Orb radii | shield 1.2, pink 1.6, Fenix 1.7, Zaphire 2.4, wormhole 1.8, boost 1.2 | 5109–5697 |
@@ -508,8 +513,8 @@ What v1's server accepts from clients that affects score, kills, survival or mon
 
 Also relevant to Phase 5:
 
-- **The pot is a counter, not money.** The client sends one 2 DEM transfer to the server wallet (main.js:1575); the "1 DEM to pot" is `pvpState.pot += 1` (server:1249). Payouts come from a separate treasury wallet.
-- **Doc and code disagree.** `PVP_MULTIPLAYER.md` says the entry fee is 3 DEM; the client sends 2.
+- **The pot is a counter, not money.** The client sends one transfer of `serverShare || 2` DEM to the server wallet (main.js:1570-1578 ✓), and `/pay/verify` checks for exactly `SERVER_SHARE` = 2 DEM (server:1227 ✓). The "1 DEM to pot" is `pvpState.pot += PVP_CONFIG.POT_SHARE` (server:1249 ✓). Payouts come from a separate treasury wallet.
+- **Doc and code disagree.** `PVP_MULTIPLAYER.md` and `PVP_CONFIG.ENTRY_FEE` say the entry fee is 3 DEM; the transfer the client sends and the server verifies is 2.
 - **Rows 7 and 8 together** let anyone reset the record and then claim the treasury payout with a self-reported score, if this code is what is deployed. I did not test the live service. This is outside the rebuild and v1 was not touched.
 
 What the economy needs from the game, for Phase 5: who joined (verified wallet or none, paid or not, join time), each death (unique ID, victim, killer or none, cause, survival time, victim's kills), who the longest-surviving paid player is at that moment, and a server-produced run summary for leaderboards. The v1 split to preserve is 66% survivor, 22% killer, 12% stays, in whole DEM with `Math.floor`; on-chain amounts are OS units (1 DEM = 1e9 OS).
