@@ -1,10 +1,14 @@
 // What a bot does with the controls. A behaviour sees only what a player
 // would: its own predicted ship and the other ships as its client draws them.
 
-import { SIM } from '../../src/shared/constants.ts';
-import { NEUTRAL_CONTROLS } from '../../src/shared/sim/ship.ts';
-import type { Controls } from '../../src/shared/sim/ship.ts';
-import type { ClientCore } from '../../src/net/client.ts';
+import { SIM } from '../shared/constants.ts';
+import { Rng } from '../shared/rng.ts';
+import { NEUTRAL_CONTROLS } from '../shared/sim/ship.ts';
+import type { Controls } from '../shared/sim/ship.ts';
+import type { ClientCore } from './client.ts';
+
+/** Decides the controls for a tick from what the client can see. */
+export type Behaviour = (tick: number, core: ClientCore) => Controls;
 
 const wrap = (angle: number): number => {
   let a = angle;
@@ -19,7 +23,7 @@ const clampAxis = (value: number): number => Math.max(-1, Math.min(1, value));
  * Chases the nearest ship it can see and shoots when lined up. It aims ahead
  * of the target by the bullet's flight time, as a player learns to.
  */
-export function hunter(): (tick: number, core: ClientCore) => Controls {
+export function hunter(): Behaviour {
   const lastSeen = new Map<number, { x: number; y: number; z: number; viewTick: number }>();
   return (_tick, core) => {
     const me = core.state;
@@ -64,4 +68,53 @@ export function hunter(): (tick: number, core: ClientCore) => Controls {
       fire: linedUp && best.distance < 650,
     };
   };
+}
+
+/**
+ * A player-like script: every so often pick new stick positions and hold
+ * them. The same seed gives the same script, keyed by tick.
+ */
+export function wanderer(seed: number, fire = false): Behaviour {
+  const rng = new Rng(seed);
+  let current: Controls = NEUTRAL_CONTROLS;
+  let holdUntil = 0;
+  let lastTick = -1;
+  return (tick) => {
+    if (tick !== lastTick && tick >= holdUntil) {
+      current = {
+        yaw: rng.next() * 2 - 1,
+        // Pitch is kept gentle so a minute of flying stays inside the belt.
+        pitch: (rng.next() * 2 - 1) * 0.3,
+        throttle: Math.floor(rng.next() * 3) - 1,
+        fire,
+      };
+      holdUntil = tick + 5 + Math.floor(rng.next() * 40);
+    }
+    lastTick = tick;
+    return current;
+  };
+}
+
+/** Flies a steady circle. `yaw` is the stick position, −1 to 1. */
+export function circler(yaw: number, fire = false): Behaviour {
+  return () => ({ yaw, pitch: 0, throttle: 0, fire });
+}
+
+/** A behaviour by name, so that tests can ask a browser page for one. */
+export type BehaviourSpec =
+  | { kind: 'hunter'; fire?: boolean }
+  | { kind: 'wanderer'; seed: number; fire?: boolean }
+  | { kind: 'circler'; yaw: number; fire?: boolean };
+
+export function behaviourFrom(spec: BehaviourSpec): Behaviour {
+  switch (spec.kind) {
+    case 'hunter': {
+      const hunt = hunter();
+      return spec.fire === false ? (tick, core) => ({ ...hunt(tick, core), fire: false }) : hunt;
+    }
+    case 'wanderer':
+      return wanderer(spec.seed, spec.fire ?? false);
+    case 'circler':
+      return circler(spec.yaw, spec.fire ?? false);
+  }
 }

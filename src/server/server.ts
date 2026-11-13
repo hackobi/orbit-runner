@@ -7,7 +7,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { performance } from 'node:perf_hooks';
 import { WebSocketServer } from 'ws';
-import { TICK_RATE } from '../shared/constants.ts';
+import { SIM, TICK_RATE } from '../shared/constants.ts';
 import {
   MAX_CLIENT_MESSAGE_BYTES,
   PROTOCOL_VERSION,
@@ -25,8 +25,9 @@ export interface ServerOptions {
   host?: string;
   seed?: number;
   /**
-   * Adds the /debug endpoints: reading what the server simulated, and moving
-   * ships. For tests only. Without it those paths do not exist.
+   * Adds the /debug endpoints: reading what the server simulated, moving
+   * ships, and keeping them alive. For tests only. Without it those paths do
+   * not exist.
    */
   testHooks?: boolean;
   listener?: RoomListener;
@@ -62,11 +63,27 @@ function readBody(request: IncomingMessage): Promise<string> {
 
 export function startServer(options: ServerOptions): Promise<RunningServer> {
   const recorder = options.testHooks ? new Recorder() : null;
-  const room = new Room({
+  // Test hook: while on, every living ship is topped up each tick, so a
+  // measurement can run for as long as it needs without anyone dying.
+  let sustain = false;
+  const room: Room = new Room({
     now: () => performance.now(),
     seed: options.seed ?? (Date.now() ^ (process.pid << 16)) >>> 0,
     createToken: () => randomBytes(SESSION_TOKEN_BYTES),
-    ...(recorder ? { listener: recorder.listener, onTick: recorder.onTick } : {}),
+    ...(recorder
+      ? {
+          listener: recorder.listener,
+          onTick: (tick, current) => {
+            recorder.onTick(tick, current);
+            if (!sustain) return;
+            for (const id of current.playerIds()) {
+              current.placeShip(id, (ship) =>
+                ship.alive && ship.hp < SIM.maxHp ? { ...ship, hp: SIM.maxHp } : ship,
+              );
+            }
+          },
+        }
+      : {}),
     ...(options.listener ? { listener: options.listener } : {}),
   });
 
@@ -88,6 +105,11 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
       const body = JSON.parse(await readBody(request)) as { id: number; ship: Partial<ShipState> };
       room.placeShip(body.id, (ship) => ({ ...ship, ...body.ship }));
       sendJson(response, 200, { ok: true, tick: room.tick, ship: room.shipOf(body.id) ?? null });
+      return true;
+    }
+    if (request.method === 'POST' && url.pathname === '/debug/sustain') {
+      sustain = (JSON.parse(await readBody(request)) as { on: boolean }).on;
+      sendJson(response, 200, { ok: true, sustain });
       return true;
     }
     return false;

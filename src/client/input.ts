@@ -1,6 +1,8 @@
 // Keyboard and pointer steering. Every device ends up as the same two axes
 // and a throttle, clamped to ±1, so no device turns faster than another.
 //
+// Space fires (main.js:6264).
+//
 // Key bindings and the pointer control are v1's (main.js:6256-6263 and
 // 8762-8763): hold the pointer down and its position on screen steers, at up
 // to 0.6 of the full rate. v1 added keys and pointer together to as much as
@@ -72,7 +74,7 @@ export class InputDevices {
       yaw: clampAxis(yawKeys - yawKeysRight + pointerYaw),
       pitch: clampAxis(pitchUp - pitchDown + pointerPitch),
       throttle: key('KeyW') - key('KeyS'),
-      fire: false,
+      fire: this.held.has('Space'),
     };
   }
 
@@ -98,4 +100,5 @@ const KEYS = new Set([
   'KeyS',
   'KeyI',
   'KeyK',
+  'Space',
 ]);

@@ -1,15 +1,21 @@
-// The picture: planet, stars, the own ship and the chase camera. It draws
-// whatever the netcode says the ship's pose is; it decides nothing.
+// The picture: planet, stars, ships, bullets and the chase camera. It draws
+// whatever the netcode says is where; it decides nothing.
 
 import {
   ACESFilmicToneMapping,
+  AdditiveBlending,
   AmbientLight,
   BufferAttribute,
   BufferGeometry,
+  Color,
   DirectionalLight,
+  DynamicDrawUsage,
   Euler,
   Group,
+  InstancedMesh,
+  Matrix4,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   PerspectiveCamera,
   Points,
@@ -22,7 +28,8 @@ import {
   Vector3,
   WebGLRenderer,
 } from 'three';
-import type { ShipView } from '../net/client.ts';
+import type { BulletView, ShipView } from '../net/client.ts';
+import type { RemoteView } from '../net/remotes.ts';
 import { SHIP_HULL_RADIUS, SIM } from '../shared/constants.ts';
 import { Rng } from '../shared/rng.ts';
 
@@ -37,10 +44,21 @@ const FOV_MAX_EXTRA = 28;
 const FOV_FOLLOW = 6; // per second, main.js:8730
 const MAX_PIXEL_RATIO = 1.75; // main.js:283
 
-/** v1's saucer (main.js:4207-4275): matte disc, glowing dome, engine ring, rim lights. */
-function buildSaucer(): Group {
+/** v1 draws other players' ships half as big again as its own (main.js:6836). */
+const REMOTE_SHIP_SCALE = 1.5;
+
+const MAX_BULLETS = 512;
+const MAX_MARKERS = 32;
+const MAX_SPARKS = 24;
+const SPARK_SECONDS = 0.3;
+
+const OWN_BULLET_COLOR = new Color(0xfff2a8);
+const OTHER_BULLET_COLOR = new Color(0xff7a4d);
+
+/** v1's saucer (main.js:4207-4275): disc, glowing dome, engine ring, rim lights. */
+function buildSaucer(hullColor: number): Group {
   const group = new Group();
-  const hull = new MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.1, roughness: 0.9 });
+  const hull = new MeshStandardMaterial({ color: hullColor, metalness: 0.1, roughness: 0.9 });
 
   const top = new SphereGeometry(SHIP_HULL_RADIUS, 24, 8, 0, Math.PI * 2, 0, Math.PI * 0.5);
   top.scale(1, 0.3, 1);
@@ -126,11 +144,23 @@ function buildStars(): Points {
   );
 }
 
+interface Spark {
+  mesh: Mesh;
+  material: MeshBasicMaterial;
+  age: number;
+}
+
 export class GameScene {
   private readonly renderer: WebGLRenderer;
   private readonly scene = new Scene();
   private readonly camera: PerspectiveCamera;
-  private readonly ship = buildSaucer();
+  private readonly ship = buildSaucer(0x1a1a1a);
+  private readonly remoteShips = new Map<number, Group>();
+  private readonly bullets: InstancedMesh;
+  private readonly markers: Points;
+  private readonly markerPositions: Float32Array;
+  private readonly sparks: Spark[] = [];
+  private nextSpark = 0;
 
   // Scratch objects, reused every frame.
   private readonly euler = new Euler(0, 0, 0, 'YXZ');
@@ -138,6 +168,11 @@ export class GameScene {
   private readonly offset = new Vector3();
   private readonly forward = new Vector3();
   private readonly lookAt = new Vector3();
+  private readonly matrix = new Matrix4();
+  private readonly position = new Vector3();
+  private readonly direction = new Vector3();
+  private readonly bulletScale = new Vector3(1, 1, 7);
+  private readonly zAxis = new Vector3(0, 0, 1);
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new WebGLRenderer({ canvas, antialias: true });
@@ -164,7 +199,47 @@ export class GameScene {
         roughness: 0.85,
       }),
     );
-    this.scene.add(planet, buildStars(), this.ship);
+
+    // Every bullet is one instance of the same small glowing shape.
+    this.bullets = new InstancedMesh(
+      new SphereGeometry(SIM.bulletRadius, 8, 6),
+      new MeshBasicMaterial({ color: 0xffffff }),
+      MAX_BULLETS,
+    );
+    this.bullets.instanceMatrix.setUsage(DynamicDrawUsage);
+    this.bullets.frustumCulled = false;
+    this.bullets.count = 0;
+
+    // A dot on every other ship, the same size at any distance, so players
+    // can find each other across the belt.
+    this.markerPositions = new Float32Array(MAX_MARKERS * 3);
+    const markerGeometry = new BufferGeometry();
+    const markerAttribute = new BufferAttribute(this.markerPositions, 3);
+    markerAttribute.setUsage(DynamicDrawUsage);
+    markerGeometry.setAttribute('position', markerAttribute);
+    markerGeometry.setDrawRange(0, 0);
+    this.markers = new Points(
+      markerGeometry,
+      new PointsMaterial({ color: 0xff5533, size: 5, sizeAttenuation: false, depthTest: false }),
+    );
+    this.markers.frustumCulled = false;
+
+    const sparkGeometry = new SphereGeometry(1, 10, 8);
+    for (let i = 0; i < MAX_SPARKS; i++) {
+      const material = new MeshBasicMaterial({
+        color: 0xff6644,
+        transparent: true,
+        opacity: 0,
+        blending: AdditiveBlending,
+        depthWrite: false,
+      });
+      const mesh = new Mesh(sparkGeometry, material);
+      mesh.visible = false;
+      this.sparks.push({ mesh, material, age: SPARK_SECONDS });
+      this.scene.add(mesh);
+    }
+
+    this.scene.add(planet, buildStars(), this.ship, this.bullets, this.markers);
 
     this.resize();
     window.addEventListener('resize', () => {
@@ -172,14 +247,34 @@ export class GameScene {
     });
   }
 
+  /** A short flash where a bullet met a ship. */
+  spark(x: number, y: number, z: number): void {
+    const spark = this.sparks[this.nextSpark];
+    this.nextSpark = (this.nextSpark + 1) % MAX_SPARKS;
+    if (!spark) return;
+    spark.age = 0;
+    spark.mesh.position.set(x, y, z);
+    spark.mesh.visible = true;
+  }
+
   /** Draws one frame. `elapsedSeconds` is real time since the previous frame. */
-  render(view: ShipView, elapsedSeconds: number): void {
+  render(
+    view: ShipView,
+    remotes: readonly RemoteView[],
+    bullets: readonly BulletView[],
+    ownId: number,
+    elapsedSeconds: number,
+  ): void {
     // The ship's orientation is yaw, then pitch, then roll (main.js:8835).
     this.euler.set(view.pitch, view.yaw, view.roll, 'YXZ');
     this.orientation.setFromEuler(this.euler);
     this.ship.position.set(view.x, view.y, view.z);
     this.ship.quaternion.copy(this.orientation);
     this.ship.visible = view.alive;
+
+    this.drawRemotes(remotes);
+    this.drawBullets(bullets, ownId);
+    this.drawSparks(elapsedSeconds);
 
     // Rigid chase camera: a fixed offset in the ship's frame, looking at a
     // point ahead of the nose (main.js:8863-8875).
@@ -198,6 +293,76 @@ export class GameScene {
     this.camera.updateProjectionMatrix();
 
     this.renderer.render(this.scene, this.camera);
+  }
+
+  private drawRemotes(remotes: readonly RemoteView[]): void {
+    const seen = new Set<number>();
+    let markers = 0;
+    for (const remote of remotes) {
+      seen.add(remote.id);
+      let mesh = this.remoteShips.get(remote.id);
+      if (!mesh) {
+        // v1 draws other players in a light hull (main.js:6823).
+        mesh = buildSaucer(0xf5f5f5);
+        mesh.scale.setScalar(REMOTE_SHIP_SCALE);
+        this.remoteShips.set(remote.id, mesh);
+        this.scene.add(mesh);
+      }
+      // A distant ship arrives as a position only: it is a dot, not a model.
+      mesh.visible = remote.alive && remote.full;
+      if (mesh.visible) {
+        this.euler.set(remote.pitch, remote.yaw, remote.roll, 'YXZ');
+        mesh.quaternion.setFromEuler(this.euler);
+        mesh.position.set(remote.x, remote.y, remote.z);
+      }
+      if (remote.alive && markers < MAX_MARKERS) {
+        this.markerPositions[markers * 3] = remote.x;
+        this.markerPositions[markers * 3 + 1] = remote.y;
+        this.markerPositions[markers * 3 + 2] = remote.z;
+        markers++;
+      }
+    }
+    for (const [id, mesh] of this.remoteShips) {
+      if (seen.has(id)) continue;
+      this.scene.remove(mesh);
+      this.remoteShips.delete(id);
+    }
+    const geometry = this.markers.geometry;
+    geometry.setDrawRange(0, markers);
+    const attribute = geometry.getAttribute('position');
+    attribute.needsUpdate = true;
+  }
+
+  private drawBullets(bullets: readonly BulletView[], ownId: number): void {
+    const count = Math.min(bullets.length, MAX_BULLETS);
+    for (let i = 0; i < count; i++) {
+      const bullet = bullets[i];
+      if (!bullet) break;
+      // A stretched dot pointing along its flight.
+      this.position.set(bullet.x, bullet.y, bullet.z);
+      this.direction.set(bullet.dx, bullet.dy, bullet.dz);
+      this.orientation.setFromUnitVectors(this.zAxis, this.direction);
+      this.matrix.compose(this.position, this.orientation, this.bulletScale);
+      this.bullets.setMatrixAt(i, this.matrix);
+      this.bullets.setColorAt(i, bullet.ownerId === ownId ? OWN_BULLET_COLOR : OTHER_BULLET_COLOR);
+    }
+    this.bullets.count = count;
+    this.bullets.instanceMatrix.needsUpdate = true;
+    if (this.bullets.instanceColor) this.bullets.instanceColor.needsUpdate = true;
+  }
+
+  private drawSparks(elapsedSeconds: number): void {
+    for (const spark of this.sparks) {
+      if (!spark.mesh.visible) continue;
+      spark.age += elapsedSeconds;
+      const t = spark.age / SPARK_SECONDS;
+      if (t >= 1) {
+        spark.mesh.visible = false;
+        continue;
+      }
+      spark.mesh.scale.setScalar(1 + t * 5);
+      spark.material.opacity = 0.9 * (1 - t);
+    }
   }
 
   private resize(): void {

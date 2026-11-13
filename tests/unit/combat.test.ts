@@ -7,8 +7,8 @@ import type { Controls, ShipState } from '../../src/shared/sim/ship.ts';
 import type { ClientCore } from '../../src/net/client.ts';
 import { AWAY_GRACE_TICKS } from '../../src/server/room.ts';
 import { THRESHOLDS } from '../thresholds.ts';
-import { hunter } from '../support/behaviours.ts';
-import { PROFILES, TestWorld, profileLink, wanderingControls } from '../support/harness.ts';
+import { hunter, wanderer } from '../../src/net/behaviours.ts';
+import { PROFILES, TestWorld, profileLink } from '../support/harness.ts';
 import type { TestClient } from '../support/harness.ts';
 import { distance, hitAgreement, percentile, snapExcess } from '../support/metrics.ts';
 import { joined } from '../support/rawClient.ts';
@@ -168,7 +168,7 @@ describe('two players', () => {
         null;
       const world = new TestWorld(9);
       const mover = world.addClient({
-        controls: wanderingControls(77),
+        controls: wanderer(77),
         link: profileLink(profile, 31),
       });
       // The watcher follows the mover around so it stays in view.
@@ -561,7 +561,7 @@ describe('disconnect (decision D6)', () => {
 describe('reconnect', () => {
   it('within the grace period the same token gets the same seat, ship and kills', () => {
     const world = new TestWorld(8);
-    const player = world.addSession({ controls: wanderingControls(3) });
+    const player = world.addSession({ controls: wanderer(3) });
     world.run(3000);
     const id = player.session.core.playerId;
     world.place(id, { hp: 55 });
@@ -636,7 +636,7 @@ describe('hidden tab', () => {
     let previous: { x: number; y: number; z: number; atMs: number } | null = null;
     const world = new TestWorld(12);
     const hider = world.addSession({
-      controls: wanderingControls(5),
+      controls: wanderer(5),
       link: profileLink('100ms', 5),
     });
     const watcher = world.addClient({

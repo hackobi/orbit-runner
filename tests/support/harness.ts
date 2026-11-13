@@ -210,28 +210,3 @@ export function profileLink(profile: keyof typeof PROFILES, seed: number): LinkO
   if (oneWayMs === 0) return {};
   return { up: delay(oneWayMs, jitterMs, seed), down: delay(oneWayMs, jitterMs, seed + 1) };
 }
-
-/**
- * A player-like script: every so often pick new stick positions and hold
- * them. The same seed gives the same script, keyed by tick.
- */
-export function wanderingControls(seed: number, fire = false): (tick: number) => Controls {
-  const rng = new Rng(seed);
-  let current: Controls = NEUTRAL_CONTROLS;
-  let holdUntil = 0;
-  let lastTick = -1;
-  return (tick) => {
-    if (tick !== lastTick && tick >= holdUntil) {
-      current = {
-        yaw: rng.next() * 2 - 1,
-        // Pitch is kept gentle so a minute of flying stays inside the belt.
-        pitch: (rng.next() * 2 - 1) * 0.3,
-        throttle: Math.floor(rng.next() * 3) - 1,
-        fire,
-      };
-      holdUntil = tick + 5 + Math.floor(rng.next() * 40);
-    }
-    lastTick = tick;
-    return current;
-  };
-}

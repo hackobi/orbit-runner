@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { wanderer } from '../../src/net/behaviours.ts';
 import { TICK_MS } from '../../src/shared/constants.ts';
 import { decodeClientMessage } from '../../src/shared/protocol.ts';
 import { shipStatesEqual } from '../../src/shared/sim/ship.ts';
 import type { ShipView } from '../../src/net/client.ts';
 import type { Controls } from '../../src/shared/sim/ship.ts';
-import { TestWorld, delay, wanderingControls } from '../support/harness.ts';
+import { TestWorld, delay } from '../support/harness.ts';
 import type { TestClient } from '../support/harness.ts';
 
 const WARM_UP_MS = 2000;
@@ -27,7 +28,7 @@ function expectPredictionMatchesTruth(world: TestWorld, client: TestClient): num
 describe('prediction on a clean link', () => {
   it('60 s of steering with no latency: zero corrections', () => {
     const world = new TestWorld(11);
-    const client = world.addClient({ controls: wanderingControls(5) });
+    const client = world.addClient({ controls: wanderer(5) });
     world.run(60_000);
 
     expect(client.core.status).toBe('playing');
@@ -50,7 +51,7 @@ describe('prediction on a clean link', () => {
     ['120 fps', 1000 / 120],
   ])('zero corrections after warm-up at %s', (_name, frameMs) => {
     const world = new TestWorld(4);
-    const client = world.addClient({ controls: wanderingControls(21), frameMs });
+    const client = world.addClient({ controls: wanderer(21), frameMs });
     world.run(30_000);
     const late = client.corrections.filter((c) => c.timeMs > WARM_UP_MS);
     expect(late).toEqual([]);
@@ -65,7 +66,7 @@ describe('prediction with latency and jitter', () => {
   ])('%s: zero corrections once no input arrives late', (_name, oneWayMs, jitterMs) => {
     const world = new TestWorld(8);
     const client = world.addClient({
-      controls: wanderingControls(13),
+      controls: wanderer(13),
       link: { up: delay(oneWayMs, jitterMs, 101), down: delay(oneWayMs, jitterMs, 202) },
     });
     world.run(WARM_UP_MS);
@@ -96,7 +97,7 @@ describe('the tick clock', () => {
     (_name, oneWayMs, jitterMs, frameMs) => {
       const world = new TestWorld(8);
       const client = world.addClient({
-        controls: wanderingControls(13),
+        controls: wanderer(13),
         frameMs,
         link: oneWayMs
           ? { up: delay(oneWayMs, jitterMs, 101), down: delay(oneWayMs, jitterMs, 202) }
@@ -137,7 +138,7 @@ describe('the tick clock', () => {
       return 60 + (seed / 4294967296) * 2 * jitterMs;
     };
     const client = world.addClient({
-      controls: wanderingControls(13),
+      controls: wanderer(13),
       link: { up: jittery, down: jittery },
     });
     world.run(15_000);
@@ -159,7 +160,7 @@ describe('the tick clock', () => {
     // Now and then a message takes 250 ms longer: far more than six ticks.
     let count = 0;
     const client = world.addClient({
-      controls: wanderingControls(13),
+      controls: wanderer(13),
       link: { up: () => (count++ % 97 === 0 ? 270 : 20), down: () => 20 },
     });
     world.run(30_000);
@@ -294,7 +295,7 @@ describe('reconciliation', () => {
     const world = new TestWorld(2);
     let dropped = 0;
     const client = world.addClient({
-      controls: wanderingControls(31),
+      controls: wanderer(31),
       link: {
         up: (data) => {
           const message = decodeClientMessage(data);
@@ -316,7 +317,7 @@ describe('reconciliation', () => {
     const world = new TestWorld(2);
     let count = 0;
     const client = world.addClient({
-      controls: wanderingControls(32),
+      controls: wanderer(32),
       link: { down: (_data, channel) => (channel === 'droppable' && count++ % 7 === 3 ? null : 0) },
     });
     world.run(20_000);
@@ -328,7 +329,7 @@ describe('reconciliation', () => {
     const world = new TestWorld(6);
     let stallUntilMs = 0;
     const client = world.addClient({
-      controls: wanderingControls(41),
+      controls: wanderer(41),
       // During the stall nothing gets through, then it all arrives at once.
       link: { up: () => Math.max(0, stallUntilMs - world.clock.now()) },
     });
@@ -372,7 +373,7 @@ describe('reconciliation', () => {
 
   it('a client whose clock runs 10% slow resyncs and keeps playing', () => {
     const world = new TestWorld(6);
-    const client = world.addClient({ controls: wanderingControls(51), clockRate: 0.9 });
+    const client = world.addClient({ controls: wanderer(51), clockRate: 0.9 });
     world.run(30_000);
     expect(client.core.status).toBe('playing');
     expect(client.core.counters.resyncs).toBeGreaterThan(0);
