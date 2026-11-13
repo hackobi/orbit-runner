@@ -1,0 +1,39 @@
+{
+  "name": "orbit-runner-v2",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "scripts": {
+    "dev": "vite",
+    "server": "node src/server/main.ts",
+    "build": "vite build",
+    "typecheck": "tsc -p . && tsc -p src/shared && tsc -p src/net && tsc -p src/client && tsc -p src/server && tsc -p tests && tsc -p scripts",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "test": "vitest run tests/unit",
+    "test:bots": "vitest run tests/bots",
+    "test:e2e": "playwright test",
+    "spike:webgl": "node scripts/spike-headless-webgl.ts"
+  },
+  "dependencies": {
+    "three": "0.187.0",
+    "ws": "8.23.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.65.0",
+    "@types/node": "22.20.5",
+    "@types/three": "0.187.0",
+    "@types/ws": "8.18.2",
+    "eslint": "10.14.0",
+    "globals": "17.14.0",
+    "prettier": "3.10.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2",
+    "vite": "8.3.8",
+    "vitest": "5.1.0"
+  }
+}
