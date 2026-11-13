@@ -2,8 +2,17 @@ import { defineConfig, devices } from '@playwright/test';
 
 // Ports are fixed and different from the dev defaults, so the suite can run
 // while a dev server is open.
-const CLIENT_PORT = 5273;
-const SERVER_PORT = 8797;
+export const CLIENT_PORT = 5273;
+export const SERVER_PORT = 8797;
+export const PROXY_PORT = 8798;
+
+/**
+ * Headless Chromium renders WebGL in software unless told to use Metal:
+ * 6 frames a second against a steady 60 (scripts/spike-headless-webgl.ts).
+ */
+export const CHROMIUM_ARGS = ['--use-angle=metal'];
+
+const SINGLE_CLIENT = /(determinism|flight)\.spec\.ts/;
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -15,14 +24,14 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: {
-        ...devices['Desktop Chrome'],
-        // Headless Chromium renders WebGL in software unless told to use
-        // Metal: 6 fps against a steady 60 (scripts/spike-headless-webgl.ts).
-        launchOptions: { args: ['--use-angle=metal'] },
-      },
+      testMatch: SINGLE_CLIENT,
+      use: { ...devices['Desktop Chrome'], launchOptions: { args: CHROMIUM_ARGS } },
     },
-    { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+    { name: 'webkit', testMatch: SINGLE_CLIENT, use: { ...devices['Desktop Safari'] } },
+    // These specs open several browsers of their own, of both engines, in one room.
+    { name: 'multiplayer', testMatch: /(multiplayer|resilience)\.spec\.ts/ },
+    // Firefox is a target browser but outside the brief's full suite: one smoke run.
+    { name: 'firefox', testMatch: /smoke\.spec\.ts/, use: { ...devices['Desktop Firefox'] } },
   ],
   webServer: [
     {
