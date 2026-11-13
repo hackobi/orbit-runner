@@ -5,7 +5,8 @@ import { REJECT_VERSION } from '../shared/protocol.ts';
 import type { GameEvent } from '../shared/protocol.ts';
 import { createDebugRecorder } from './debugHook.ts';
 import { InputDevices } from './input.ts';
-import { GameScene } from './scene.ts';
+import { asteroidPosition, asteroidTouching } from '../shared/sim/belt.ts';
+import { GameScene, NEAR_MISS_SPARK } from './scene.ts';
 
 /** Set by the build. True only when VITE_TEST_HOOKS=1. */
 declare const __ORBIT_TEST_HOOKS__: boolean;
@@ -91,6 +92,25 @@ function statusText(): string {
   }
 }
 
+// A rock passing within 3.2 units of the hull throws a blue spark, at most
+// once every 1.2 s per rock (main.js:8945-8954).
+const NEAR_MISS_DISTANCE = 3.2;
+const NEAR_MISS_REPEAT_MS = 1200;
+const nearMissAtMs = new Map<number, number>();
+
+function nearMiss(nowMs: number, x: number, y: number, z: number): void {
+  const core = session.core;
+  const world = core.world;
+  if (!world) return;
+  const tick = Math.floor(core.drawTick);
+  const id = asteroidTouching(world.belt, core, tick, x, y, z, NEAR_MISS_DISTANCE);
+  const rock = world.belt.asteroids[id];
+  if (!rock || nowMs - (nearMissAtMs.get(id) ?? -Infinity) < NEAR_MISS_REPEAT_MS) return;
+  nearMissAtMs.set(id, nowMs);
+  const at = asteroidPosition(rock, tick);
+  scene.spark(at.x, at.y, at.z, NEAR_MISS_SPARK, 1.5);
+}
+
 let lastFrameMs = performance.now();
 const shown = new Map<HTMLElement, string>();
 
@@ -111,7 +131,9 @@ function frame(nowMs: number): void {
   if (view) {
     const remotes = core.remoteViews();
     const bullets = core.bulletViews();
-    scene.render(view, remotes, bullets, core.playerId, elapsedMs / 1000);
+    const belt = core.world ? { world: core.world, tick: core.drawTick, gone: core } : null;
+    if (view.alive) nearMiss(nowMs, view.x, view.y, view.z);
+    scene.render(view, remotes, bullets, core.playerId, elapsedMs / 1000, belt);
     recorder?.frame(nowMs, elapsedMs, core, view, remotes, bullets.length);
   }
 

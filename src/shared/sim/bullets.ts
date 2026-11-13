@@ -70,8 +70,8 @@ export function bulletTravel(bullet: Bullet, tick: number): number {
 }
 
 /**
- * Tests the path a bullet covers during `tick` against a sphere of the hit
- * distance around (cx, cy, cz). Returns how far along the path the first
+ * Tests the path a bullet covers during `tick` against a sphere of radius
+ * `hitDistance` around (cx, cy, cz); by default a ship's. Returns how far along the path the first
  * contact is, 0 to 1, or −1 for a miss.
  *
  * On the tick it is fired the path runs from the ship's centre to the muzzle,
@@ -83,6 +83,7 @@ export function bulletHit(
   cx: number,
   cy: number,
   cz: number,
+  hitDistance = BULLET_HIT_DISTANCE,
 ): number {
   const age = tick - bullet.spawnTick;
   const from = age === 0 ? -SIM.muzzleOffset : (age - 1) * BULLET_STEP;
@@ -94,7 +95,7 @@ export function bulletHit(
   const pz = bullet.oz + bullet.dz * from - cz;
 
   const distanceSq = px * px + py * py + pz * pz;
-  const radiusSq = BULLET_HIT_DISTANCE * BULLET_HIT_DISTANCE;
+  const radiusSq = hitDistance * hitDistance;
   if (distanceSq <= radiusSq) return 0;
 
   // Closest approach of the ray to the centre, as a distance along the ray.

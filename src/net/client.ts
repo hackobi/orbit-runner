@@ -22,6 +22,8 @@ import type {
   SnapshotMessage,
   WelcomeMessage,
 } from '../shared/protocol.ts';
+import { DestroyedAsteroids, bulletAsteroidHit, createBelt } from '../shared/sim/belt.ts';
+import type { GoneView } from '../shared/sim/belt.ts';
 import {
   BULLET_STEP,
   bulletExpired,
@@ -38,9 +40,10 @@ import {
   firedThisTick,
   quantiseControls,
   shipStatesEqual,
-  stepShip,
 } from '../shared/sim/ship.ts';
 import type { Controls, Input, ShipState } from '../shared/sim/ship.ts';
+import { stepPlayer } from '../shared/sim/world.ts';
+import type { World, WorldEffect } from '../shared/sim/world.ts';
 import type { Transport } from '../shared/transport.ts';
 import { RemoteShips } from './remotes.ts';
 import type { RemoteTuning, RemoteView } from './remotes.ts';
@@ -205,7 +208,11 @@ interface OwnBullet {
    * shot turns out never to have happened.
    */
   pendingHit: ViewHit | null;
+  /** The rock this bullet was predicted to destroy, until the server confirms it. */
+  rock: number;
 }
+
+const NO_ROCK = -1;
 
 function sameBullet(a: Bullet, b: Bullet): boolean {
   return (
@@ -248,7 +255,7 @@ function shortestArc(from: number, to: number): number {
   return delta;
 }
 
-export class ClientCore {
+export class ClientCore implements GoneView {
   status: ClientStatus = 'connecting';
   rejectReason: RejectReason | null = null;
   closeReason: string | null = null;
@@ -277,6 +284,9 @@ export class ClientCore {
   viewDelayTicks = 0;
 
   readonly remotes: RemoteShips;
+
+  /** The belt, built from the seed in the welcome. Null until then. */
+  world: World | null = null;
 
   readonly counters = {
     inputsSent: 0,
@@ -333,6 +343,14 @@ export class ClientCore {
   private offsetYaw = 0;
   private offsetPitch = 0;
   private offsetRoll = 0;
+
+  // Destroyed rocks. What the server has announced, and on top of it what
+  // this client predicts and has not heard back about: rocks its own ship
+  // crashed into, and rocks its own bullets hit. Id → tick.
+  private destroyed = new DestroyedAsteroids(0);
+  private readonly predictedCrashes = new Map<number, number>();
+  private readonly predictedShots = new Map<number, number>();
+  private readonly effects: WorldEffect[] = [];
 
   private ownBullets: OwnBullet[] = [];
   private remoteBullets: RemoteBullet[] = [];
@@ -432,6 +450,25 @@ export class ClientCore {
     };
   }
 
+  /**
+   * The tick the own ship is drawn at, with its fraction. Rocks and this
+   * player's bullets are drawn at this moment too, so the ship crashes into
+   * rocks where they are seen. Other ships are drawn earlier (see
+   * remotes.viewTick) and can appear to pass through a rock.
+   */
+  get drawTick(): number {
+    return this.tick - 1 + this.accumulatorMs / TICK_MS;
+  }
+
+  /** True if a rock is destroyed at `tick`, as far as this client knows or predicts. */
+  asteroidGone(id: number, tick: number): boolean {
+    if (this.destroyed.asteroidGone(id, tick)) return true;
+    const crashed = this.predictedCrashes.get(id);
+    if (crashed !== undefined && crashed <= tick) return true;
+    const shot = this.predictedShots.get(id);
+    return shot !== undefined && shot <= tick;
+  }
+
   /** Every other ship as it should be drawn now. */
   remoteViews(): RemoteView[] {
     return this.remotes.views();
@@ -457,7 +494,7 @@ export class ClientCore {
         dz: bullet.dz,
       });
     };
-    const ownTick = this.tick - 1 + this.accumulatorMs / TICK_MS;
+    const ownTick = this.drawTick;
     for (const own of this.ownBullets) if (!own.spent) place(own.bullet, ownTick);
     const remoteTick = this.remotes.viewTick;
     for (const remote of this.remoteBullets) {
@@ -520,6 +557,21 @@ export class ClientCore {
     this.recentDamage.clear();
     this.lastDeathTick.clear();
     this.remotes.clear();
+    // The belt is the same for the life of a room; which rocks are gone is
+    // told again after every welcome.
+    if (
+      !this.world ||
+      this.world.seed !== welcome.worldSeed ||
+      this.world.belt.asteroids.length !== welcome.asteroidCount
+    ) {
+      this.world = {
+        seed: welcome.worldSeed,
+        belt: createBelt(welcome.worldSeed, welcome.asteroidCount),
+      };
+    }
+    this.destroyed = new DestroyedAsteroids(welcome.asteroidCount);
+    this.predictedCrashes.clear();
+    this.predictedShots.clear();
     this.alignTo(welcome.serverTick, welcome.ship, NEUTRAL_INPUT);
   }
 
@@ -582,10 +634,11 @@ export class ClientCore {
 
   private advance(input: Input, send: boolean, nowMs: number): void {
     const state = this.state;
-    if (!state) return;
+    const world = this.world;
+    if (!state || !world) return;
     this.tick += 1;
     this.previousState = state;
-    this.state = stepShip(state, input);
+    this.state = this.stepOwnShip(state, input, this.tick, world);
     this.store(this.tick, input, this.state, send ? nowMs : NOT_SENT);
     if (firedThisTick(this.state)) {
       this.ownBullets.push({
@@ -593,6 +646,7 @@ export class ClientCore {
         confirmed: false,
         spent: false,
         pendingHit: null,
+        rock: NO_ROCK,
       });
       this.counters.shotsFired += 1;
     }
@@ -611,6 +665,14 @@ export class ClientCore {
     this.counters.inputsSent += 1;
   }
 
+  /** One tick of the own ship, with the rocks it crashes into noted as predictions. */
+  private stepOwnShip(state: ShipState, input: Input, tick: number, world: World): ShipState {
+    this.effects.length = 0;
+    const next = stepPlayer(state, input, tick, world, this, this.effects);
+    for (const effect of this.effects) this.predictedCrashes.set(effect.id, tick);
+    return next;
+  }
+
   /**
    * The shooter's own hit test, run once per tick with exactly the numbers
    * the server will use: this tick, this input's view delay, and the other
@@ -622,7 +684,11 @@ export class ClientCore {
     this.ownBullets = this.ownBullets.filter((own) => !bulletExpired(own.bullet, this.tick));
   }
 
-  /** Tests one bullet over one tick, against the other ships as they were seen on that tick. */
+  /**
+   * Tests one bullet over one tick: against the other ships as they were
+   * seen on that tick, and against the rocks where they were. As on the
+   * server, the bullet stops at whichever is first on its path.
+   */
   private testBullet(own: OwnBullet, tick: number, viewDelay: number, nowMs: number): void {
     if (own.spent || own.bullet.spawnTick > tick || bulletExpired(own.bullet, tick)) return;
     const viewTick = tick - viewDelay / VIEW_DELAY_STEPS_PER_TICK;
@@ -633,12 +699,19 @@ export class ClientCore {
       if (!seen?.alive || seen.invulnerable || !seen.full) continue;
       // The ship is drawn as it was a moment ago. If it is known to have
       // been destroyed since, the server will not count a hit on it.
-      if (this.destroyedSince(id, seen.stateTick, seen.hp, tick)) continue;
+      if (this.destroyedSince(id, seen.stateTick, seen.hp + seen.shield, tick)) continue;
       const at = bulletHit(own.bullet, tick, seen.x, seen.y, seen.z);
       if (at >= 0 && at < hitAt) {
         hitAt = at;
         hitTarget = id;
       }
+    }
+    const rock = this.world ? bulletAsteroidHit(this.world.belt, this, own.bullet, tick) : null;
+    if (rock && rock.at < hitAt) {
+      own.spent = true;
+      own.rock = rock.id;
+      this.predictedShots.set(rock.id, tick);
+      return;
     }
     if (hitTarget < 0) return;
     own.spent = true;
@@ -671,20 +744,25 @@ export class ClientCore {
   }
 
   /**
-   * Removes the bullets `keep` rejects. A hit one of them was holding back
-   * never happened, so the damage noted for it is taken back.
+   * Removes the bullets `keep` rejects. What one of them was predicted to
+   * have hit never happened, so it is taken back.
    */
   private dropOwnBullets(keep: (own: OwnBullet) => boolean): number {
     const before = this.ownBullets.length;
     this.ownBullets = this.ownBullets.filter((own) => {
       if (keep(own)) return true;
-      this.forgetPendingHit(own);
+      this.forgetPrediction(own);
       return false;
     });
     return before - this.ownBullets.length;
   }
 
-  private forgetPendingHit(own: OwnBullet): void {
+  /** Takes back the hit a bullet was holding and the rock it was predicted to destroy. */
+  private forgetPrediction(own: OwnBullet): void {
+    if (own.rock !== NO_ROCK) {
+      this.predictedShots.delete(own.rock);
+      own.rock = NO_ROCK;
+    }
     const hit = own.pendingHit;
     if (!hit) return;
     own.pendingHit = null;
@@ -708,7 +786,7 @@ export class ClientCore {
   }
 
   /**
-   * True if a ship that was alive with `hpSeen` hit points at `seenTick` is
+   * True if a ship that was alive with `hpSeen` hit points and shield at `seenTick` is
    * known to be dead by `atTick`: the server has said so, or the
    * hits known to have landed since then add up to all it had.
    */
@@ -781,14 +859,24 @@ export class ClientCore {
     this.counters.ghostBullets += this.dropOwnBullets(
       (own) => own.confirmed || own.bullet.spawnTick > snapshot.serverTick,
     );
+    // The same goes for rocks: every one destroyed by this tick has been
+    // announced, so a prediction still waiting from then was wrong.
+    for (const [id, tick] of this.predictedCrashes) {
+      if (tick <= snapshot.serverTick) this.predictedCrashes.delete(id);
+    }
+    for (const [id, tick] of this.predictedShots) {
+      if (tick <= snapshot.serverTick) this.predictedShots.delete(id);
+    }
 
     const present = this.state;
-    if (!present) return;
+    const world = this.world;
+    if (!present || !world) return;
 
     if (snapshot.serverTick >= this.tick || !known) {
       // The server has caught up with or passed the prediction, or the tick
       // has left the history. Start again from the server's state.
       this.counters.resyncs += 1;
+      this.predictedCrashes.clear();
       this.dropUnconfirmedBulletsAfter(snapshot.serverTick);
       this.alignTo(snapshot.serverTick, snapshot.ship, this.lastSentInput);
       this.finishCorrection(present, snapshot.serverTick, arrivedAtMs);
@@ -804,6 +892,8 @@ export class ClientCore {
     // and one that no longer happens is dropped. A new or replaced shot is
     // then tested over the ticks it has already flown.
     this.historyState[slot] = snapshot.ship;
+    // Crashes after the server's tick are predicted afresh by the replay.
+    this.predictedCrashes.clear();
     let state = snapshot.ship;
     let previous = snapshot.ship;
     const refired = new Set<number>();
@@ -811,7 +901,7 @@ export class ClientCore {
     for (let tick = snapshot.serverTick + 1; tick <= this.tick; tick++) {
       const replaySlot = tick & (HISTORY_SIZE - 1);
       previous = state;
-      state = stepShip(state, this.historyInput[replaySlot] ?? NEUTRAL_INPUT);
+      state = this.stepOwnShip(state, this.historyInput[replaySlot] ?? NEUTRAL_INPUT, tick, world);
       this.historyState[replaySlot] = state;
       if (!firedThisTick(state)) continue;
       refired.add(tick);
@@ -819,9 +909,15 @@ export class ClientCore {
       const index = this.ownBullets.findIndex((own) => own.bullet.spawnTick === tick);
       const existing = this.ownBullets[index];
       if (existing && (existing.confirmed || sameBullet(existing.bullet, bullet))) continue;
-      const fresh: OwnBullet = { bullet, confirmed: false, spent: false, pendingHit: null };
+      const fresh: OwnBullet = {
+        bullet,
+        confirmed: false,
+        spent: false,
+        pendingHit: null,
+        rock: NO_ROCK,
+      };
       if (existing) {
-        this.forgetPendingHit(existing);
+        this.forgetPrediction(existing);
         this.ownBullets[index] = fresh;
       } else {
         this.ownBullets.push(fresh);
@@ -877,9 +973,10 @@ export class ClientCore {
           confirmed: true,
           spent: false,
           pendingHit: null,
+          rock: NO_ROCK,
         };
         if (predicted) {
-          this.forgetPendingHit(predicted);
+          this.forgetPrediction(predicted);
           this.ownBullets[index] = real;
         } else {
           this.ownBullets.push(real);
@@ -911,6 +1008,25 @@ export class ClientCore {
       case 'death':
         this.lastDeathTick.set(event.victimId, event.tick);
         break;
+      case 'asteroid': {
+        this.destroyed.destroy(event.asteroidId, event.tick);
+        this.predictedCrashes.delete(event.asteroidId);
+        this.predictedShots.delete(event.asteroidId);
+        if (!event.byBullet) break;
+        if (event.playerId === this.playerId) {
+          const own = this.ownBullets.find((b) => b.bullet.spawnTick === event.spawnTick);
+          if (own) {
+            own.spent = true;
+            own.rock = NO_ROCK;
+          }
+        } else {
+          const remote = this.remoteBullets.find(
+            (b) => b.bullet.ownerId === event.playerId && b.bullet.spawnTick === event.spawnTick,
+          );
+          if (remote) remote.hitTick = event.tick;
+        }
+        break;
+      }
     }
     this.onGameEvent?.(event);
   }

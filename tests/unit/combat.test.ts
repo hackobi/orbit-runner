@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { SIM, TICK_MS } from '../../src/shared/constants.ts';
-import { CAUSE_DISCONNECT, CAUSE_PLAYER, encodeInput } from '../../src/shared/protocol.ts';
+import {
+  CAUSE_DISCONNECT,
+  CAUSE_PLAYER,
+  FAR_ENTRY_BYTES,
+  NEAR_ENTRY_BYTES,
+  SNAPSHOT_HEADER_BYTES,
+  encodeInput,
+} from '../../src/shared/protocol.ts';
 import { Rng } from '../../src/shared/rng.ts';
 import { inputFromWire, maxSpeedOf, shipStatesEqual } from '../../src/shared/sim/ship.ts';
 import type { Controls, ShipState } from '../../src/shared/sim/ship.ts';
@@ -439,12 +446,13 @@ describe('interest tiers', () => {
     const nearBytes = world.room.stats.bytesSent - nearBefore;
     expect(a.core.remoteViews()[0]).toMatchObject({ id: b.core.playerId, full: true });
 
-    // Per player per second: 30 snapshots of 86 bytes, plus the other ship.
+    // Per player per second: 30 snapshots of the header, plus the other ship.
     const perSecond = (bytes: number): number => bytes / 2 / 10;
-    expect(perSecond(farBytes)).toBeGreaterThan(30 * 86);
-    expect(perSecond(farBytes)).toBeLessThan(30 * 86 + 5 * 13 + 30);
-    expect(perSecond(nearBytes)).toBeGreaterThan(30 * (86 + 20) - 30);
-    expect(perSecond(nearBytes)).toBeLessThan(30 * (86 + 20) + 30);
+    const header = SNAPSHOT_HEADER_BYTES;
+    expect(perSecond(farBytes)).toBeGreaterThan(30 * header);
+    expect(perSecond(farBytes)).toBeLessThan(30 * header + 5 * FAR_ENTRY_BYTES + 30);
+    expect(perSecond(nearBytes)).toBeGreaterThan(30 * (header + NEAR_ENTRY_BYTES) - 30);
+    expect(perSecond(nearBytes)).toBeLessThan(30 * (header + NEAR_ENTRY_BYTES) + 30);
   });
 
   it('a ship leaving the near tier stays near until 2,200 units, so it does not flicker', () => {

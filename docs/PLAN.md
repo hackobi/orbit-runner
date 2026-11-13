@@ -368,3 +368,41 @@ Blockers: none.
 - Not done in Phase 2, by design: touch controls, asteroids, orbs, scoring, minimap, sound, PWA, Mac app.
 
 Blockers: none.
+
+### 2026-11-14: Phase 3
+
+Task status (update as each lands):
+
+| Task | Status |
+|---|---|
+| 1. Asteroid belt | **Done.** Code, 17 tests, browser suite green with rocks on |
+| 2–3. Orbs, Fenix, wormhole, shield, world edge | In progress. Design below |
+| 4. Scoring, store, scoreboard | Not started |
+| 5–11 | Not started |
+
+Asteroids, as built:
+
+- 2,000 rocks on v1's ring. Each rock's place is a closed-form function of the room seed and the tick (`src/shared/sim/belt.ts`), so rocks are never sent. The welcome carries the seed and the count.
+- The ship step that server and client share (`src/shared/sim/world.ts`) includes the crash, so a client predicts its own crashes exactly: 0 corrections on the clean and 100 ms profiles in `tests/unit/belt.test.ts`.
+- Which rocks are destroyed is server state. It goes to every player, not only those nearby, and a late joiner gets the list. A client predicts the rocks its own ship and bullets destroy and drops a prediction the server does not confirm by that tick's snapshot.
+- A bullet stops at the first thing on its path, ship or rock, on the server and in the shooter's own test alike.
+- Wire format is version 3: shield and crash pause in the ship, shield in the remote sample, seed and rock count in the welcome, rock events.
+- The trace behind the fingerprint now covers orbits a month into a room's life, crashes and the shield. Pinned hash re-recorded: 766322025.
+
+Decided while building (also in `DECISIONS.md` A.2):
+
+- **Rocks are drawn at the own ship's moment in time**, so the ship crashes into rocks where the player sees them. Other ships are drawn a view delay earlier (about 230 ms at 100 ms of latency), so another ship can appear to clip a rock, or break up a little way from one. The other choice would have had the own ship crash into empty space.
+- **No drifting rocks outside the ring.** v1 scattered 250 around the solo player's spawn point; a shared room has no single spawn point.
+- **A destroyed rock comes back after 30 s** in its orbit.
+- **A crash costs 45 to 75, taken from the shield first** (D8). v1 took a second, smaller amount from the shield and all of the first from the hull.
+- **Spawn protection also covers crashes.** A ship can spawn inside a rock.
+
+Design for orbs, Fenix and scoring (not built yet):
+
+- Orbs are fixed in place on the ring at v1's caps (shield 160, pink 120, Fenix 120, Zaphire 120, wormhole 120, boost 120, miner 300, hunter 300), from the room seed. A taken orb comes back after a delay.
+- Flying through an orb is part of the shared ship step, so the pilot's client predicts it exactly, as with crashes.
+- Shooting an orb is decided by the server in the same contest as ships and rocks. Its effect on the shooter's ship is announced at once and applied half a second later on a tick the announcement names, so the client applies it on the same tick and is not corrected. v1 applied it at once.
+- A wormhole jump raises the ship's spawn counter, which is already the marker every part of the netcode treats as an intended jump.
+- Score, the two multiplier timers and store purchases are server state. A purchase is a fourth client message; the server checks the points.
+
+Blockers: none.

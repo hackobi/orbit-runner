@@ -34,8 +34,23 @@ export const SIM = {
   beltOuter: 5200, // main.js:4607
   spawnYSpread: 100, // spawn y is ±50, main.js:4613
 
+  // Asteroid belt (main.js:4835-4873). Rocks orbit the planet in the XZ plane.
+  asteroidCount: 2000, // main.js:4873
+  asteroidYSpread: 120, // height is ±60, main.js:4839
+  asteroidScaleMin: 2, // main.js:4843
+  asteroidScaleSpread: 7, // scale is 2 to 9, main.js:4843
+  asteroidRadiusFactor: 0.95, // collision radius is scale × this, main.js:4858
+  asteroidOrbitMin: 0.012, // rad/s, main.js:4862
+  asteroidOrbitSpread: 0.03, // orbit speed is 0.012 to 0.042 rad/s, main.js:4862
+  asteroidRespawnTicks: 1800, // 30 s. v1 never brought a rock back; a room runs for days
+  shipCrashRadius: 1.8, // ship against asteroids, main.js:4494
+  crashDamageMin: 45, // main.js:8496
+  crashDamageSpread: 30, // a crash costs 45 to 75, main.js:8496
+  crashCooldownTicks: 36, // 0.6 s without another crash, main.js:8509
+
   // Life cycle
   maxHp: 100, // main.js:4314
+  maxShield: 100, // main.js:9099
   respawnTicks: 180, // 3 s (decision D5; v1's server used 3000 ms, server:2132)
   invulnerableTicks: 78, // 1.3 s after every spawn, server:3102
 

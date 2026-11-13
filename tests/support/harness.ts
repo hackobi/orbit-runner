@@ -1,7 +1,7 @@
 // Runs the real room and real client cores against each other in one
 // process, on the virtual clock, over in-memory links.
 
-import { TICK_MS } from '../../src/shared/constants.ts';
+import { SIM, TICK_MS } from '../../src/shared/constants.ts';
 import type { GameEvent } from '../../src/shared/protocol.ts';
 import { Rng } from '../../src/shared/rng.ts';
 import { NEUTRAL_CONTROLS } from '../../src/shared/sim/ship.ts';
@@ -68,12 +68,17 @@ export class TestWorld {
   readonly deaths: DeathRecord[] = [];
   readonly left: number[] = [];
 
-  constructor(seed = 1) {
+  /**
+   * `asteroidCount` is the full belt unless a test of one mechanism asks
+   * for empty space, so that nothing but that mechanism decides its result.
+   */
+  constructor(seed = 1, asteroidCount: number = SIM.asteroidCount) {
     // Tokens only need to be distinct here, so a seeded generator will do.
     const tokens = new Rng(seed ^ 0x5eed);
     this.room = new Room({
       now: this.clock.now,
       seed,
+      asteroidCount,
       createToken: () => Uint8Array.from({ length: 16 }, () => Math.floor(tokens.next() * 256)),
       listener: {
         hit: (hit) => this.hits.push(hit),

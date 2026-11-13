@@ -17,6 +17,7 @@ export interface RemoteSample {
   readonly pitch: number;
   readonly roll: number;
   readonly hp: number;
+  readonly shield: number;
   readonly spawnSeq: number;
   readonly alive: boolean;
   readonly boosting: boolean;
@@ -50,6 +51,7 @@ export function sampleOf(tick: number, ship: ShipState): RemoteSample {
     pitch: quantiseAngle(ship.pitch) / ANGLE_SCALE,
     roll: quantiseAngle(ship.roll) / ANGLE_SCALE,
     hp: ship.hp,
+    shield: ship.shield,
     spawnSeq: ship.spawnSeq,
     alive: ship.alive,
     boosting: ship.boostTicks > 0,
@@ -66,6 +68,7 @@ export function distantSampleOf(sample: RemoteSample): RemoteSample {
     pitch: 0,
     roll: 0,
     hp: 0,
+    shield: 0,
     boosting: false,
     invulnerable: false,
     full: false,
@@ -81,6 +84,7 @@ export interface TrackPose {
   pitch: number;
   roll: number;
   hp: number;
+  shield: number;
   spawnSeq: number;
   alive: boolean;
   boosting: boolean;
@@ -89,7 +93,7 @@ export interface TrackPose {
   /** 0 when the pose lies between two samples; otherwise how many ticks past the newest it was pushed. */
   extrapolatedTicks: number;
   /**
-   * The tick of the sample that hp and the flags were taken from. They are
+   * The tick of the sample that hp, shield and the flags were taken from. They are
    * not interpolated: they are as of this tick, which is at or before the
    * tick asked for.
    */
@@ -112,6 +116,7 @@ function poseAt(sample: RemoteSample): TrackPose {
     pitch: sample.pitch,
     roll: sample.roll,
     hp: sample.hp,
+    shield: sample.shield,
     spawnSeq: sample.spawnSeq,
     alive: sample.alive,
     boosting: sample.boosting,

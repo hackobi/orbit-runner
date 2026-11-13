@@ -9,14 +9,27 @@
 import { CONSTANTS_HASH, SIM } from '../constants.ts';
 import { encodeShipState } from '../protocol.ts';
 import { Rng } from '../rng.ts';
-import { damageShip, quantiseControls, spawnShip, stepShip } from './ship.ts';
+import { cos, sin } from '../math.ts';
+import { DestroyedAsteroids, asteroidAngle, createBelt } from './belt.ts';
+import { damageShip, quantiseControls, spawnShip } from './ship.ts';
 import type { Input, ShipState } from './ship.ts';
+import { stepPlayer } from './world.ts';
+import type { World, WorldEffect } from './world.ts';
 
 export interface TraceResult {
   hash: number;
   deaths: number;
   boostTicks: number;
+  crashes: number;
   final: ShipState;
+}
+
+const scratch = new DataView(new ArrayBuffer(8));
+const scratchBytes = new Uint8Array(scratch.buffer);
+
+function mixNumber(hash: number, value: number): number {
+  scratch.setFloat64(0, value, true);
+  return mix(hash, scratchBytes);
 }
 
 function mix(hash: number, bytes: Uint8Array): number {
@@ -30,8 +43,9 @@ function mix(hash: number, bytes: Uint8Array): number {
 
 /**
  * A fixed, seeded flight. It covers turning, pitching against the clamp,
- * throttle, boost, firing, damage, death on the planet and by damage, and
- * respawn with its protection.
+ * throttle, boost, firing, damage, death on the planet and by damage,
+ * respawn with its protection, the orbits of the belt far into a room's
+ * life, and crashes into its rocks.
  */
 export function runTrace(seed: number, ticks: number): TraceResult {
   const rng = new Rng(seed);
@@ -42,10 +56,17 @@ export function runTrace(seed: number, ticks: number): TraceResult {
   let hash = 0x811c9dc5;
   let deaths = 0;
   let boostTicks = 0;
+  let crashes = 0;
 
-  for (let tick = 1; tick <= ticks; tick++) {
+  // The clock starts weeks into a room's life, where the orbit angles are large.
+  const world: World = { seed, belt: createBelt(seed, SIM.asteroidCount) };
+  const destroyed = new DestroyedAsteroids(SIM.asteroidCount);
+  const effects: WorldEffect[] = [];
+
+  for (let step = 1; step <= ticks; step++) {
+    const tick = TRACE_START_TICK + step;
     // Hold each input for a random while, as a player would.
-    if (tick > 600 && rng.next() < 0.05) {
+    if (step > 600 && rng.next() < 0.05) {
       input = quantiseControls({
         yaw: rng.next() * 2.4 - 1.2,
         pitch: rng.next() * 2.4 - 1.2,
@@ -53,22 +74,49 @@ export function runTrace(seed: number, ticks: number): TraceResult {
         fire: rng.next() < 0.5,
       });
     }
-    if (ship.alive && tick % 1500 === 0) ship = { ...ship, boostTicks: 180 + (tick % 181) };
+    if (ship.alive && step % 1500 === 0) ship = { ...ship, boostTicks: 180 + (step % 181) };
 
     // Take a bullet's worth of damage now and then, and one fatal blow.
-    if (tick % 700 === 0) ship = damageShip(ship, SIM.bulletDamage);
-    if (tick === 1900) ship = damageShip(ship, SIM.maxHp);
+    if (step % 700 === 0) ship = damageShip(ship, SIM.bulletDamage);
+    if (step === 1900) ship = damageShip(ship, SIM.maxHp + SIM.maxShield);
+    // A shield now and then, so damage is seen coming off it first.
+    if (ship.alive && step % 900 === 450) ship = { ...ship, shield: 40 };
+    // Put the ship on a rock now and then, so that it crashes.
+    const target = world.belt.asteroids[step % SIM.asteroidCount];
+    if (ship.alive && target && step % 400 === 300) {
+      const angle = asteroidAngle(target, tick);
+      ship = {
+        ...ship,
+        x: cos(angle) * target.orbitRadius,
+        y: target.y,
+        z: sin(angle) * target.orbitRadius,
+        invulnTicks: 0,
+        crashTicks: 0,
+      };
+    }
 
     const wasAlive = ship.alive;
-    ship = stepShip(ship, input);
+    effects.length = 0;
+    ship = stepPlayer(ship, input, tick, world, destroyed, effects);
+    for (const effect of effects) {
+      destroyed.destroy(effect.id, tick);
+      crashes++;
+      hash = mix(hash, Uint8Array.of(effect.id & 255, effect.id >> 8));
+    }
     if (wasAlive && !ship.alive) deaths++;
     if (ship.boostTicks > 0) boostTicks++;
     if (!ship.alive && ship.respawnTicks === 0) ship = spawnShip(rng, ship.spawnSeq + 1);
 
     hash = mix(hash, encodeShipState(ship));
+    // One rock's angle each tick, a different rock every time.
+    const rock = world.belt.asteroids[(step * 7) % SIM.asteroidCount];
+    if (rock) hash = mixNumber(hash, asteroidAngle(rock, tick));
   }
-  return { hash, deaths, boostTicks, final: ship };
+  return { hash, deaths, boostTicks, crashes, final: ship };
 }
+
+/** Thirty days at 60 ticks a second. */
+const TRACE_START_TICK = 30 * 24 * 3600 * 60;
 
 const TWO_POW_MINUS_30 = 1 / 1073741824;
 

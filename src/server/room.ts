@@ -8,6 +8,7 @@
 
 import { SIM, TICK_MS } from '../shared/constants.ts';
 import {
+  CAUSE_ASTEROID,
   CAUSE_DISCONNECT,
   CAUSE_PLANET,
   CAUSE_PLAYER,
@@ -33,6 +34,7 @@ import type {
 import { distantSampleOf, sampleOf, sampleTrack } from '../shared/remote.ts';
 import type { RemoteSample } from '../shared/remote.ts';
 import { Rng } from '../shared/rng.ts';
+import { DestroyedAsteroids, bulletAsteroidHit, createBelt } from '../shared/sim/belt.ts';
 import { bulletExpired, bulletHit, spawnBullet } from '../shared/sim/bullets.ts';
 import type { Bullet } from '../shared/sim/bullets.ts';
 import { SIM_FINGERPRINT } from '../shared/sim/fingerprint.ts';
@@ -43,9 +45,10 @@ import {
   destroyShip,
   firedThisTick,
   spawnShip,
-  stepShip,
 } from '../shared/sim/ship.ts';
 import type { Input, ShipState } from '../shared/sim/ship.ts';
+import { stepPlayer } from '../shared/sim/world.ts';
+import type { World, WorldEffect } from '../shared/sim/world.ts';
 import type { Channel, Transport } from '../shared/transport.ts';
 
 export const MAX_PLAYERS = 16;
@@ -116,6 +119,8 @@ export interface RoomOptions {
   /** 16 unguessable bytes for a new player's session. */
   createToken: () => Uint8Array;
   maxPlayers?: number;
+  /** Rocks in the belt. The default is the full belt; tests of one mechanism ask for empty space. */
+  asteroidCount?: number;
   listener?: RoomListener;
   /** Called after every simulated tick. Tests use it to record what really happened. */
   onTick?: (tick: number, room: Room) => void;
@@ -140,6 +145,8 @@ export interface RoomStats {
   bulletsFired: number;
   hits: number;
   deaths: number;
+  asteroidsShot: number;
+  asteroidsCrashed: number;
 }
 
 interface Connection {
@@ -210,7 +217,14 @@ export class Room {
     bulletsFired: 0,
     hits: 0,
     deaths: 0,
+    asteroidsShot: 0,
+    asteroidsCrashed: 0,
   };
+
+  /** The belt this room was built with. Clients build the same one from the welcome. */
+  readonly world: World;
+  /** Which rocks are destroyed. The only true copy. */
+  readonly destroyed: DestroyedAsteroids;
 
   private readonly now: () => number;
   private readonly rng: Rng;
@@ -235,6 +249,10 @@ export class Room {
     this.listener = options.listener ?? {};
     this.onTick = options.onTick;
     this.onWork = options.onWork;
+    const asteroidCount = options.asteroidCount ?? SIM.asteroidCount;
+    const worldSeed = options.seed >>> 0;
+    this.world = { seed: worldSeed, belt: createBelt(worldSeed, asteroidCount) };
+    this.destroyed = new DestroyedAsteroids(asteroidCount);
   }
 
   get playerCount(): number {
@@ -334,6 +352,7 @@ export class Room {
   }
 
   private stepShips(): void {
+    const effects: WorldEffect[] = [];
     for (const player of this.players.values()) {
       let input: Input;
       if (player.away) {
@@ -358,8 +377,24 @@ export class Room {
       player.input = input;
 
       const before = player.ship;
-      player.ship = stepShip(before, input);
-      if (before.alive && !player.ship.alive) this.recordDeath(player, null, CAUSE_PLANET);
+      effects.length = 0;
+      player.ship = stepPlayer(before, input, this.tick, this.world, this.destroyed, effects);
+      // A rock destroyed by one ship is gone for the ships stepped after it.
+      for (const effect of effects) {
+        this.destroyed.destroy(effect.id, this.tick);
+        this.stats.asteroidsCrashed += 1;
+        this.broadcast({
+          kind: 'asteroid',
+          asteroidId: effect.id,
+          tick: this.tick,
+          playerId: player.id,
+          spawnTick: 0,
+          byBullet: false,
+        });
+      }
+      if (before.alive && !player.ship.alive) {
+        this.recordDeath(player, null, effects.length > 0 ? CAUSE_ASTEROID : CAUSE_PLANET);
+      }
       if (firedThisTick(player.ship)) this.fire(player);
     }
   }
@@ -385,7 +420,8 @@ export class Room {
   }
 
   /**
-   * Moves every bullet one tick and decides hits.
+   * Moves every bullet one tick and decides hits. A bullet stops at the
+   * first thing on its path this tick, ship or rock; a ship wins a tie.
    *
    * Lag compensation (decision D2): a bullet is tested against each target
    * where its shooter was seeing that target on this tick. The shooter's
@@ -416,6 +452,22 @@ export class Room {
         }
       }
 
+      // Rocks are tested where they are now: every client computes the same
+      // place for them, so there is nothing to rewind.
+      const rock = bulletAsteroidHit(this.world.belt, this.destroyed, bullet, this.tick);
+      if (rock && rock.at < hitAt) {
+        this.destroyed.destroy(rock.id, this.tick);
+        this.stats.asteroidsShot += 1;
+        this.broadcast({
+          kind: 'asteroid',
+          asteroidId: rock.id,
+          tick: this.tick,
+          playerId: owner.id,
+          spawnTick: bullet.spawnTick,
+          byBullet: true,
+        });
+        continue;
+      }
       if (!hitTarget) {
         survivors.push(live);
         continue;
@@ -436,6 +488,7 @@ export class Room {
           targetId: hitTarget.id,
           tick: this.tick,
           hp: hitTarget.ship.hp,
+          shield: hitTarget.ship.shield,
         },
         hitTarget.ship.x,
         hitTarget.ship.y,
@@ -492,6 +545,11 @@ export class Room {
       cause,
       tick: this.tick,
     };
+    this.broadcast(event);
+  }
+
+  /** Queues an event for every player. World state goes this way, wherever they are. */
+  private broadcast(event: GameEvent): void {
     for (const player of this.players.values()) player.outbox.push(event);
   }
 
@@ -672,8 +730,9 @@ export class Room {
 
   /**
    * Attaches a connection to a player and tells the client everything it
-   * needs to start from scratch: the tick, its ship, and every bullet in
-   * flight. Used for a first join, a reconnect, and a tab coming back.
+   * needs to start from scratch: the tick, its ship, the belt and which of
+   * its rocks are gone, and every bullet in flight. Used for a first join, a
+   * reconnect, and a tab coming back.
    */
   private welcomeBack(player: Player, connection: Connection, clientTimeMs: number): void {
     player.connection = connection;
@@ -696,9 +755,21 @@ export class Room {
         clientTimeMs,
         sessionToken: player.token,
         ship: player.ship,
+        worldSeed: this.world.seed,
+        asteroidCount: this.world.belt.asteroids.length,
       }),
       'reliable',
     );
+    for (const gone of this.destroyed.goneAt(this.tick)) {
+      player.outbox.push({
+        kind: 'asteroid',
+        asteroidId: gone.id,
+        tick: gone.tick,
+        playerId: NO_PLAYER,
+        spawnTick: 0,
+        byBullet: false,
+      });
+    }
     for (const live of this.bullets) player.outbox.push(live.announcement);
     this.flushEvents();
   }

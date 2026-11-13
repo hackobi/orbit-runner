@@ -136,6 +136,8 @@ describe('server messages', () => {
       clientTimeMs: 99.5,
       sessionToken: token,
       ship,
+      worldSeed: 0xdeadbeef,
+      asteroidCount: 2000,
     };
     expect(decodeServerMessage(encodeWelcome(message))).toEqual({ type: 'welcome', ...message });
   });
@@ -201,8 +203,8 @@ describe('server messages', () => {
   });
 
   it('a snapshot is 86 bytes plus 20 per nearby ship', () => {
-    expect(SNAPSHOT_HEADER_BYTES).toBe(86);
-    expect(NEAR_ENTRY_BYTES).toBe(20);
+    expect(SNAPSHOT_HEADER_BYTES).toBe(88);
+    expect(NEAR_ENTRY_BYTES).toBe(21);
     expect(FAR_ENTRY_BYTES).toBe(13);
   });
 
@@ -218,7 +220,15 @@ describe('server messages', () => {
         yaw: 0.5,
         pitch: -0.25,
       },
-      { kind: 'hit', ownerId: 2, spawnTick: 1000, targetId: 5, tick: 1012, hp: 70 },
+      { kind: 'hit', ownerId: 2, spawnTick: 1000, targetId: 5, tick: 1012, hp: 70, shield: 25 },
+      {
+        kind: 'asteroid',
+        asteroidId: 1999,
+        tick: 1013,
+        playerId: 2,
+        spawnTick: 1001,
+        byBullet: true,
+      },
       { kind: 'death', deathId: 77, victimId: 5, killerId: 2, cause: CAUSE_PLAYER, tick: 1100 },
       { kind: 'death', deathId: 78, victimId: 6, killerId: NO_PLAYER, cause: 1, tick: 1101 },
       { kind: 'left', playerId: 9 },

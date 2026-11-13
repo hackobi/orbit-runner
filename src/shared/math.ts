@@ -98,3 +98,16 @@ export function wrapAngle(angle: number): number {
   if (angle <= -PI) return angle + TWO_PI;
   return angle;
 }
+
+/** Wraps any angle into [−π, π]. Division and rounding are exact, so every engine agrees. */
+export function wrapTurns(angle: number): number {
+  return angle - TWO_PI * Math.round(angle / TWO_PI);
+}
+
+/** A well-mixed unsigned 32-bit number from three integers. Integer operations only. */
+export function hash3(a: number, b: number, c: number): number {
+  let h = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ b;
+  h = Math.imul(h ^ (h >>> 15), 0xc2b2ae35) ^ c;
+  h = Math.imul(h ^ (h >>> 13), 0x27d4eb2f);
+  return (h ^ (h >>> 16)) >>> 0;
+}

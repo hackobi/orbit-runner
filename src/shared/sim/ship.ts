@@ -103,10 +103,14 @@ export interface ShipState {
   /** Goes up by one at every spawn. A change means the ship teleported. */
   readonly spawnSeq: number;
   readonly hp: number;
+  /** 0 to 100. Damage comes off the shield first and only the rest off the hull (decision D8). */
+  readonly shield: number;
   /** Ticks of spawn protection left. The ship cannot be damaged while above 0. */
   readonly invulnTicks: number;
   /** Ticks until the gun can fire again. */
   readonly fireCooldown: number;
+  /** Ticks until the ship can crash into another asteroid (main.js:8509). */
+  readonly crashTicks: number;
 }
 
 export const SPAWN_SEQ_MODULO = 256;
@@ -138,6 +142,7 @@ export function stepShip(s: ShipState, input: Input): ShipState {
   // the moment it reaches zero. The caller spawns the bullet; see firedThisTick.
   let fireCooldown = s.fireCooldown > 0 ? s.fireCooldown - 1 : 0;
   if (input.fire && fireCooldown === 0) fireCooldown = SIM.fireCooldownTicks;
+  const crashTicks = s.crashTicks > 0 ? s.crashTicks - 1 : 0;
 
   // Boost timer (main.js:8690).
   const boosting = s.boostTicks > 0;
@@ -185,8 +190,10 @@ export function stepShip(s: ShipState, input: Input): ShipState {
     respawnTicks: 0,
     spawnSeq: s.spawnSeq,
     hp: s.hp,
+    shield: s.shield,
     invulnTicks,
     fireCooldown,
+    crashTicks,
   };
   // The planet is at the origin and kills on contact (main.js:9620-9624).
   return x * x + y * y + z * z < KILL_RADIUS_SQ ? destroyed(moved) : moved;
@@ -202,8 +209,10 @@ function destroyed(s: ShipState): ShipState {
     alive: false,
     respawnTicks: SIM.respawnTicks,
     hp: 0,
+    shield: 0,
     invulnTicks: 0,
     fireCooldown: 0,
+    crashTicks: 0,
   };
 }
 
@@ -213,11 +222,15 @@ export function firedThisTick(after: ShipState): boolean {
   return after.alive && after.fireCooldown === SIM.fireCooldownTicks;
 }
 
-/** Takes hit points off a ship. Spawn protection and death both make it a no-op. */
+/**
+ * Damages a ship: the shield takes what it can and the hull takes the rest
+ * (decision D8). Spawn protection and death both make it a no-op.
+ */
 export function damageShip(s: ShipState, amount: number): ShipState {
   if (!s.alive || s.invulnTicks > 0) return s;
-  const hp = Math.max(0, s.hp - amount);
-  return hp === 0 ? destroyed(s) : { ...s, hp };
+  const absorbed = Math.min(s.shield, amount);
+  const hp = Math.max(0, s.hp - (amount - absorbed));
+  return hp === 0 ? destroyed(s) : { ...s, hp, shield: s.shield - absorbed };
 }
 
 /** Kills a ship outright, whatever its protection. */
@@ -247,8 +260,10 @@ export function spawnShip(rng: Rng, spawnSeq: number): ShipState {
     respawnTicks: 0,
     spawnSeq: spawnSeq % SPAWN_SEQ_MODULO,
     hp: SIM.maxHp,
+    shield: 0,
     invulnTicks: SIM.invulnerableTicks,
     fireCooldown: 0,
+    crashTicks: 0,
   };
 }
 
@@ -268,7 +283,9 @@ export function shipStatesEqual(a: ShipState, b: ShipState): boolean {
     a.respawnTicks === b.respawnTicks &&
     a.spawnSeq === b.spawnSeq &&
     a.hp === b.hp &&
+    a.shield === b.shield &&
     a.invulnTicks === b.invulnTicks &&
-    a.fireCooldown === b.fireCooldown
+    a.fireCooldown === b.fireCooldown &&
+    a.crashTicks === b.crashTicks
   );
 }

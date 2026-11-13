@@ -499,8 +499,8 @@ Values are read from `main.js`. A ✓ follows each individual value I re-checked
 | Dev turbo, teleport | Accepted from any client | Dev and test builds only | Cheats |
 | Per-wormhole cube cameras | 120 to 220 render targets | Shader | Startup cost |
 | Renderer `logarithmicDepthBuffer` | On | Decided in Phase 3 after measuring | It costs a depth write per fragment; the PvP map may not need it |
-| Asteroid field outside the ring | 800 "far" + 200 "near" around the origin; all the near ones and about 18% of the far ones spawn inside the planet (derived) | Only those outside the planet; exact count set in Phase 3 | The hidden ones are invisible cost |
-| Destroyed asteroids | Never respawn | Respawn after a delay, value set in Phase 3 | Rooms run indefinitely |
+| Asteroid field outside the ring | 200 "far" + 50 "near" rocks drifting around the solo player's spawn point (main.js:4827-4832) | None. The belt's 2,000 ring rocks are the only rocks | A shared room has no single spawn point to scatter them around, and a rock that drifts in a straight line leaves the map in a room that runs for days |
+| Destroyed asteroids | Never respawn | Back in their orbit after 30 s | Rooms run indefinitely |
 | Orb counts | Seeded above the caps by a double loop, then topped up around the ship, off the ring | Fixed counts at v1's caps (shield 160, pink 120, Fenix 120, Zaphire 120, wormhole 120, boost 120, miner 300, hunter 300), server-owned, on the ring | v1's counts are accidents of two bugs |
 | Exhaust and impact particles | Pooled meshes never reset opacity, so most are invisible; none spawn at 144 fps at cruise | Working pool, time-based spawn | v1 bugs |
 | Planet contact | Skipped during the 0.6 s after an asteroid crash (main.js:8493) | Always lethal inside 1220 | The exemption only delayed the death by up to 0.6 s |
@@ -514,6 +514,9 @@ Values are read from `main.js`. A ✓ follows each individual value I re-checked
 | Bullets and the dead | A bullet keeps flying after its owner dies | Same, but removed when its owner leaves the room | The server needs the owner's view delay to place it |
 | Hits on a ship you cannot be seeing | n/a (client decided) | No hit unless the shooter was looking at the same life of the target, alive and past its spawn protection | Follows from lag compensation |
 | Remote ship size | 1.5× (main.js:6836) | 1.5×, plus a red dot at any distance | Kept; the dot stands in for the minimap until Phase 3 |
+| Asteroid crash | 45 to 75 off the hull and, separately, 22 to 44 off the shield; `Math.random` | 45 to 75, off the shield first and the rest off the hull (D8); the amount is fixed by the room seed, the rock and the tick | The server and the predicting client must get the same number |
+| Crash during spawn protection | n/a (v1 had no protection on first spawn) | No crash, and the rock survives | Spawn points are random, so a ship can appear inside a rock |
+| When rocks are drawn | One clock for everything | At the own ship's predicted tick. Other ships are drawn a view delay earlier and can appear to clip a rock | The own ship must crash into rocks where the player sees them |
 | Decisions D8–D12 | See [section 1](#1-decisions-that-need-your-answer) | | |
 
 ### A.3 v1 behaviours that look accidental

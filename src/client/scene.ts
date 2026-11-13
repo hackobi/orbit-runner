@@ -1,4 +1,4 @@
-// The picture: planet, stars, ships, bullets and the chase camera. It draws
+// The picture: planet, stars, rocks, ships, bullets and the chase camera. It draws
 // whatever the netcode says is where; it decides nothing.
 
 import {
@@ -9,6 +9,7 @@ import {
   BufferGeometry,
   Color,
   DirectionalLight,
+  DodecahedronGeometry,
   DynamicDrawUsage,
   Euler,
   Group,
@@ -32,6 +33,15 @@ import type { BulletView, ShipView } from '../net/client.ts';
 import type { RemoteView } from '../net/remotes.ts';
 import { SHIP_HULL_RADIUS, SIM } from '../shared/constants.ts';
 import { Rng } from '../shared/rng.ts';
+import type { GoneView } from '../shared/sim/belt.ts';
+import type { World } from '../shared/sim/world.ts';
+
+/** What the scene needs to draw the belt: the rocks, the moment, and which are gone. */
+export interface BeltView {
+  world: World;
+  tick: number;
+  gone: GoneView;
+}
 
 // Camera values are v1's.
 const CAMERA_OFFSET = new Vector3(0, 3.7, -10.8); // main.js:4498
@@ -51,6 +61,12 @@ const MAX_BULLETS = 512;
 const MAX_MARKERS = 32;
 const MAX_SPARKS = 24;
 const SPARK_SECONDS = 0.3;
+
+const HIT_SPARK = 0xff6644;
+/** v1's burst when a rock breaks up (main.js:8998). */
+const ROCK_SPARK = 0xffaa66;
+/** v1's burst when a rock passes close (main.js:8951). */
+export const NEAR_MISS_SPARK = 0x66ccff;
 
 const OWN_BULLET_COLOR = new Color(0xfff2a8);
 const OTHER_BULLET_COLOR = new Color(0xff7a4d);
@@ -148,6 +164,7 @@ interface Spark {
   mesh: Mesh;
   material: MeshBasicMaterial;
   age: number;
+  size: number;
 }
 
 export class GameScene {
@@ -157,6 +174,12 @@ export class GameScene {
   private readonly ship = buildSaucer(0x1a1a1a);
   private readonly remoteShips = new Map<number, Group>();
   private readonly bullets: InstancedMesh;
+  private rocks: InstancedMesh | null = null;
+  private rocksOf: World | null = null;
+  /** Each rock's fixed tumble, so the belt is not two thousand copies of one stone. */
+  private rockTurns: Quaternion[] = [];
+  private rockWasGone: boolean[] = [];
+  private readonly rockScale = new Vector3();
   private readonly markers: Points;
   private readonly markerPositions: Float32Array;
   private readonly sparks: Spark[] = [];
@@ -235,7 +258,7 @@ export class GameScene {
       });
       const mesh = new Mesh(sparkGeometry, material);
       mesh.visible = false;
-      this.sparks.push({ mesh, material, age: SPARK_SECONDS });
+      this.sparks.push({ mesh, material, age: SPARK_SECONDS, size: 1 });
       this.scene.add(mesh);
     }
 
@@ -247,12 +270,14 @@ export class GameScene {
     });
   }
 
-  /** A short flash where a bullet met a ship. */
-  spark(x: number, y: number, z: number): void {
+  /** A short flash: where a bullet met a ship, or a rock broke up or passed close. */
+  spark(x: number, y: number, z: number, color = HIT_SPARK, size = 1): void {
     const spark = this.sparks[this.nextSpark];
     this.nextSpark = (this.nextSpark + 1) % MAX_SPARKS;
     if (!spark) return;
     spark.age = 0;
+    spark.size = size;
+    spark.material.color.setHex(color);
     spark.mesh.position.set(x, y, z);
     spark.mesh.visible = true;
   }
@@ -264,6 +289,7 @@ export class GameScene {
     bullets: readonly BulletView[],
     ownId: number,
     elapsedSeconds: number,
+    belt: BeltView | null,
   ): void {
     // The ship's orientation is yaw, then pitch, then roll (main.js:8835).
     this.euler.set(view.pitch, view.yaw, view.roll, 'YXZ');
@@ -272,6 +298,7 @@ export class GameScene {
     this.ship.quaternion.copy(this.orientation);
     this.ship.visible = view.alive;
 
+    if (belt) this.drawRocks(belt);
     this.drawRemotes(remotes);
     this.drawBullets(bullets, ownId);
     this.drawSparks(elapsedSeconds);
@@ -293,6 +320,70 @@ export class GameScene {
     this.camera.updateProjectionMatrix();
 
     this.renderer.render(this.scene, this.camera);
+  }
+
+  /**
+   * The belt. Every rock is one instance of v1's twelve-sided stone
+   * (main.js:4754, 4841-4847), placed where its orbit puts it at the moment
+   * the own ship is drawn. A rock that has just gone breaks up in a flash.
+   */
+  private drawRocks(view: BeltView): void {
+    const asteroids = view.world.belt.asteroids;
+    if (this.rocksOf !== view.world) {
+      if (this.rocks) {
+        this.scene.remove(this.rocks);
+        this.rocks.geometry.dispose();
+      }
+      this.rocksOf = view.world;
+      this.rocks = new InstancedMesh(
+        new DodecahedronGeometry(1, 0),
+        new MeshStandardMaterial({
+          color: 0xa8a8a8,
+          roughness: 0.95,
+          metalness: 0.05,
+          emissive: 0x222222,
+          emissiveIntensity: 0.18,
+          flatShading: true,
+        }),
+        Math.max(1, asteroids.length),
+      );
+      this.rocks.instanceMatrix.setUsage(DynamicDrawUsage);
+      this.rocks.frustumCulled = false;
+      this.rocks.count = asteroids.length;
+      this.scene.add(this.rocks);
+      const rng = new Rng(view.world.seed);
+      this.rockTurns = asteroids.map(() =>
+        new Quaternion().setFromEuler(
+          new Euler(rng.next() * Math.PI * 2, rng.next() * Math.PI * 2, rng.next() * Math.PI * 2),
+        ),
+      );
+      this.rockWasGone = asteroids.map((_, id) => view.gone.asteroidGone(id, view.tick));
+    }
+    const rocks = this.rocks;
+    if (!rocks) return;
+
+    const wholeTick = Math.floor(view.tick);
+    for (let id = 0; id < asteroids.length; id++) {
+      const rock = asteroids[id];
+      const turn = this.rockTurns[id];
+      if (!rock || !turn) continue;
+      // Drawing may use the platform's sin and cos: nothing is decided here.
+      const angle = rock.angle0 + rock.anglePerTick * view.tick;
+      this.position.set(
+        Math.cos(angle) * rock.orbitRadius,
+        rock.y,
+        Math.sin(angle) * rock.orbitRadius,
+      );
+      const gone = view.gone.asteroidGone(id, wholeTick);
+      if (gone && this.rockWasGone[id] === false) {
+        this.spark(this.position.x, this.position.y, this.position.z, ROCK_SPARK, rock.scale);
+      }
+      this.rockWasGone[id] = gone;
+      this.rockScale.setScalar(gone ? 0 : rock.scale);
+      this.matrix.compose(this.position, turn, this.rockScale);
+      rocks.setMatrixAt(id, this.matrix);
+    }
+    rocks.instanceMatrix.needsUpdate = true;
   }
 
   private drawRemotes(remotes: readonly RemoteView[]): void {
@@ -360,7 +451,7 @@ export class GameScene {
         spark.mesh.visible = false;
         continue;
       }
-      spark.mesh.scale.setScalar(1 + t * 5);
+      spark.mesh.scale.setScalar(spark.size * (1 + t * 5));
       spark.material.opacity = 0.9 * (1 - t);
     }
   }

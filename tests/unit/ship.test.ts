@@ -158,19 +158,21 @@ describe('determinism', () => {
     expect(Array.from(encodeShipState(a.final))).toEqual(Array.from(encodeShipState(b.final)));
   });
 
-  it('the trace exercises death, respawn and boost', () => {
+  it('the trace exercises death, respawn, boost and crashes into the belt', () => {
     const t = runTrace(20261113, 10_000);
-    expect(t.deaths).toBeGreaterThan(0);
+    expect(t.deaths).toBeGreaterThan(1);
     expect(t.boostTicks).toBeGreaterThan(0);
+    expect(t.crashes).toBeGreaterThan(10);
     expect(t.final.spawnSeq).toBeGreaterThan(0);
   });
 
   it('gives the pinned hash on this machine', () => {
-    // Recorded on an ARM64 Mac (Node 22, Chromium 158 and WebKit 27.2 agree).
+    // Recorded on an ARM64 Mac (Node 22; Chromium, WebKit and Firefox are
+    // checked against Node by tests/e2e/determinism.spec.ts).
     // If this fails on another CPU with no change to the simulation, the
     // simulation is not portable and prediction will not match the server.
     // If the simulation or a constant changed on purpose, update the number.
-    expect(runTrace(20261113, 10_000).hash).toBe(411527464);
+    expect(runTrace(20261113, 10_000).hash).toBe(766322025);
   });
 
   it('never fuses a multiply and an add, even in optimised code', () => {
