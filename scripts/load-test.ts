@@ -15,6 +15,7 @@ import { spawn } from 'node:child_process';
 import { SIM } from '../src/shared/constants.ts';
 import { startServer } from '../src/server/server.ts';
 import type { Room } from '../src/server/room.ts';
+import { writeResult } from '../tests/support/results.ts';
 import { THRESHOLDS } from '../tests/thresholds.ts';
 
 const BOTS = 16;
@@ -156,6 +157,8 @@ const result = {
   botsAtEnd: lastBotReport,
 };
 console.log(JSON.stringify(result, null, 2));
+// A short trial run is not the measurement of record.
+if (seconds >= 300) writeResult('load', result);
 
 child.kill('SIGTERM');
 await server.close();

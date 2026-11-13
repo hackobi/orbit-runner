@@ -30,8 +30,13 @@ export default defineConfig({
     { name: 'webkit', testMatch: SINGLE_CLIENT, use: { ...devices['Desktop Safari'] } },
     // These specs open several browsers of their own, of both engines, in one room.
     { name: 'multiplayer', testMatch: /(multiplayer|resilience)\.spec\.ts/ },
-    // Firefox is a target browser but outside the brief's full suite: one smoke run.
-    { name: 'firefox', testMatch: /smoke\.spec\.ts/, use: { ...devices['Desktop Firefox'] } },
+    // Firefox is a target browser but outside the brief's full suite: the
+    // determinism check and one smoke run.
+    {
+      name: 'firefox',
+      testMatch: /(determinism|smoke)\.spec\.ts/,
+      use: { ...devices['Desktop Firefox'] },
+    },
   ],
   webServer: [
     {

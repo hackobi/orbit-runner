@@ -11,6 +11,7 @@ import { startServer } from '../../src/server/server.ts';
 import type { RunningServer } from '../../src/server/server.ts';
 import { hitAgreement } from '../support/metrics.ts';
 import { startProxy } from '../support/netProxy.ts';
+import { writeResult } from '../support/results.ts';
 
 // Real sockets and real timers: these take as long as they say. They run at
 // the same time, each against its own server.
@@ -86,6 +87,16 @@ describe.concurrent('headless bots over real WebSockets', () => {
       );
 
       expect(core.status).toBe('playing');
+      writeResult('bots-one', {
+        seconds: FLIGHT_MS / 1000,
+        inputs: core.counters.inputsSent,
+        snapshots: core.counters.snapshots,
+        corrections: bot.corrections.length,
+        missedInputs: server.room.stats.missedInputs,
+        roundTripMs: core.rttMs,
+        inputSlackTicks: core.leadTicks,
+      });
+
       expect(core.counters.inputsSent).toBeGreaterThan(3400);
       expect(core.counters.snapshots).toBeGreaterThan(1700);
       expect(bot.corrections).toEqual([]);
@@ -140,6 +151,18 @@ describe.concurrent('headless bots over real WebSockets', () => {
         expect(core.kills).toBe(server.room.killsOf(core.playerId));
         expect(bot.session.reconnects).toBe(0);
       }
+      writeResult('bots-four-hunters', {
+        seconds: FLIGHT_MS / 1000,
+        bullets: server.room.stats.bulletsFired,
+        serverHits: hits.length,
+        hitsSeen: result.seen,
+        hitsConfirmed: result.confirmed,
+        hitAgreement: result.agreement,
+        serverHitsNotSeen: result.unseen,
+        kills: kills.length,
+        missedInputs: server.room.stats.missedInputs,
+      });
+
       expect(hits.length).toBeGreaterThan(10);
       expect(kills.length).toBeGreaterThanOrEqual(1);
       expect(result.seen).toBeGreaterThan(10);
@@ -181,6 +204,16 @@ describe.concurrent('headless bots over real WebSockets', () => {
         `stalled ${proxy.stats.stalled}; ${server.room.stats.hits} hits, ${deaths.length} deaths, ` +
         `server missed ${server.room.stats.missedInputs} inputs`,
     );
+    writeResult('bots-drop', {
+      seconds: 40,
+      forwarded: proxy.stats.forwarded,
+      dropped: proxy.stats.dropped,
+      stalled: proxy.stats.stalled,
+      hits: server.room.stats.hits,
+      deaths: deaths.length,
+      missedInputs: server.room.stats.missedInputs,
+    });
+
     expect(proxy.stats.dropped).toBeGreaterThan(100);
     expect(server.room.stats.hits).toBeGreaterThan(5);
     for (const bot of bots) {
@@ -201,4 +234,84 @@ describe.concurrent('headless bots over real WebSockets', () => {
     await proxy.close();
     await server.close();
   }, 60_000);
+  it('free-for-all on the 100 ms profile: how often the server confirms what a shooter saw (reported)', async () => {
+    // The gated hit-agreement figure is measured with ships kept alive.
+    // This is the same question in real play: four hunters, real kills,
+    // 100 ms round trip with jitter. Ships are regrouped every 12 s so the
+    // fight goes on after each respawn scatters them.
+    const hits: HitRecord[] = [];
+    const deaths: DeathRecord[] = [];
+    const aliveAt = new Map<number, Map<number, boolean>>();
+    const server = await startServer({
+      port: 0,
+      seed: 9,
+      listener: { hit: (hit) => hits.push(hit), playerDied: (death) => deaths.push(death) },
+      onTick: (tick, room) => {
+        for (const id of room.playerIds()) {
+          let alive = aliveAt.get(id);
+          if (!alive) {
+            alive = new Map<number, boolean>();
+            aliveAt.set(id, alive);
+          }
+          alive.set(tick, room.shipOf(id)?.alive ?? false);
+        }
+      },
+    });
+    const proxy = await startProxy({ port: 0, target: `ws://127.0.0.1:${server.port}/ws` });
+    const bots = [1, 2, 3, 4].map((seed) =>
+      createBot({
+        openSocket: () => new WebSocket(proxy.url('100ms', seed)),
+        behaviour: hunter(),
+        now: () => performance.now(),
+      }),
+    );
+    const timer = setInterval(() => {
+      for (const bot of bots) bot.update();
+    }, 4);
+    await sleep(1500);
+    for (let round = 0; round < 5; round++) {
+      cluster(server, bots);
+      await sleep(12_000);
+    }
+    await sleep(1000);
+
+    const seen = bots.flatMap((bot) => bot.viewHits);
+    const result = hitAgreement(seen, hits);
+    const confirmed = new Set(hits.map((h) => `${h.ownerId}:${h.spawnTick}:${h.targetId}`));
+    const unconfirmed = seen.filter(
+      (hit) => !confirmed.has(`${hit.ownerId}:${hit.spawnTick}:${hit.targetId}`),
+    );
+    // Of the hits the server did not confirm, how many were on a ship that
+    // was already destroyed on the server at that tick.
+    const onDestroyedShip = unconfirmed.filter(
+      (hit) => aliveAt.get(hit.targetId)?.get(hit.tick) === false,
+    ).length;
+    const kills = deaths.filter((d) => d.cause === CAUSE_PLAYER).length;
+    console.log(
+      `free-for-all at 100 ms: ${result.confirmed} of ${result.seen} seen hits confirmed ` +
+        `(${(result.agreement * 100).toFixed(1)}%), ${unconfirmed.length} not confirmed of which ` +
+        `${onDestroyedShip} were on a ship already destroyed, ${result.unseen} server hits not seen, ` +
+        `${kills} kills`,
+    );
+    writeResult('bots-free-for-all-100ms', {
+      seconds: 60,
+      hitsSeen: result.seen,
+      hitsConfirmed: result.confirmed,
+      hitAgreement: result.agreement,
+      unconfirmed: unconfirmed.length,
+      unconfirmedOnDestroyedShip: onDestroyedShip,
+      serverHitsNotSeen: result.unseen,
+      kills,
+    });
+
+    // Reported, not gated at 95%: see the comment above. These only check
+    // that the run was a real fight and that nothing is badly wrong.
+    expect(result.seen).toBeGreaterThan(40);
+    expect(kills).toBeGreaterThanOrEqual(3);
+    expect(result.agreement).toBeGreaterThanOrEqual(0.8);
+    clearInterval(timer);
+    for (const bot of bots) bot.close();
+    await proxy.close();
+    await server.close();
+  }, 90_000);
 });

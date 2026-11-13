@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test';
 import { PROXY_PORT, SERVER_PORT } from '../../playwright.config.ts';
 import { startProxy } from '../support/netProxy.ts';
 import type { RunningProxy } from '../support/netProxy.ts';
+import { writeResult } from '../support/results.ts';
 import { THRESHOLDS } from '../thresholds.ts';
 import {
   CLIENT_KINDS,
@@ -90,6 +91,7 @@ test('a tab hidden for 3 s: the other player sees no snap, and the tab resumes',
     [await readTruth(fromTick - 60, await serverTick())],
   );
   console.log(`hidden tab, as the other player saw it:\n${describeMeasured(measured)}`);
+  writeResult('resilience-hidden-tab', measured);
   expect(measured.remoteSamples).toBeGreaterThan(300);
   expect(measured.snaps).toBe(0);
   expect(measured.remoteErrorMax).toBeLessThan(THRESHOLDS.remoteErrorMax);
@@ -170,6 +172,7 @@ test('a late joiner sees the same world as those already playing', async () => {
   const recording = await readRecording(late);
   const measured = measure(late, [recording], [await readTruth(fromTick - 60, await serverTick())]);
   console.log(`late joiner:\n${describeMeasured(measured)}`);
+  writeResult('resilience-late-joiner', measured);
   const lastFrame = recording.frames.at(-1);
   expect(lastFrame?.remotes.map((r) => r.id).sort()).toEqual(
     [first.playerId, second.playerId].sort(),

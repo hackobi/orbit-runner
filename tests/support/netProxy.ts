@@ -68,9 +68,16 @@ function toBuffer(data: RawData): Buffer {
   return data;
 }
 
-/** One direction of one connection: delays messages and keeps them in order. */
+/**
+ * One direction of one connection: delays messages and keeps them in order.
+ * Order is kept by construction: messages wait in one queue and are handed
+ * over from its head by a single timer, so two messages due at the same
+ * moment can never swap.
+ */
 class Lane {
   private lastDeliveryMs = 0;
+  private timer: NodeJS.Timeout | null = null;
+  private readonly queue: { dueMs: number; data: Buffer }[] = [];
   private readonly profile: NetProfile;
   private readonly rng: Rng;
   private readonly droppableType: number;
@@ -103,11 +110,31 @@ class Lane {
       delay += profile.stallMs;
     }
     const now = performance.now();
+    // A message never overtakes the one before it.
     this.lastDeliveryMs = Math.max(this.lastDeliveryMs, now + delay);
-    const wait = this.lastDeliveryMs - now;
     this.stats.forwarded += 1;
-    if (wait <= 0) this.deliver(data);
-    else setTimeout(this.deliver, wait, data);
+    this.queue.push({ dueMs: this.lastDeliveryMs, data });
+    // Due times never decrease, so a timer already set for the head still
+    // holds. Only start one if none is running.
+    if (!this.timer) this.drain();
+  }
+
+  private readonly drain = (): void => {
+    this.timer = null;
+    const now = performance.now();
+    for (let head = this.queue[0]; head && head.dueMs <= now; head = this.queue[0]) {
+      this.queue.shift();
+      this.deliver(head.data);
+    }
+    const next = this.queue[0];
+    if (next) this.timer = setTimeout(this.drain, Math.max(0, next.dueMs - performance.now()));
+  };
+
+  /** Drops whatever is still waiting. Called when the connection ends. */
+  stop(): void {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    this.queue.length = 0;
   }
 }
 
@@ -144,9 +171,11 @@ export function startProxy(options: { port: number; target: string }): Promise<R
       down.push(toBuffer(data));
     });
     client.on('close', () => {
+      up.stop();
       upstream.close();
     });
     upstream.on('close', () => {
+      down.stop();
       client.close();
     });
     client.on('error', () => {

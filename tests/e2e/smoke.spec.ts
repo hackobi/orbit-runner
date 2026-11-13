@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { SERVER_PORT } from '../../playwright.config.ts';
 import type { DebugHook } from '../../src/client/debugHook.ts';
+import { writeResult } from '../support/results.ts';
 
 declare global {
   interface Window {
@@ -57,6 +58,14 @@ test('connects, flies and sees another player', async ({ page, browser }) => {
     `[firefox] ${result.framesPerSecond.toFixed(0)} frames a second, WebGL2 ${result.webgl}, ` +
       `${result.corrections} corrections, slack ${result.status.leadTicks.toFixed(2)} ticks`,
   );
+
+  writeResult('firefox-smoke', {
+    framesPerSecond: result.framesPerSecond,
+    webgl2: result.webgl,
+    corrections: result.corrections,
+    remotesSeen: result.remotes,
+    browserVersion: browser.version(),
+  });
 
   expect(errors).toEqual([]);
   expect(result.webgl).toBe(true);

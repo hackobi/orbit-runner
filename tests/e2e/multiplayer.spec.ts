@@ -1,9 +1,9 @@
-import { writeFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 import { PROXY_PORT, SERVER_PORT } from '../../playwright.config.ts';
 import type { BehaviourSpec } from '../../src/net/behaviours.ts';
 import { NET_PROFILES, startProxy } from '../support/netProxy.ts';
 import type { NetProfileName, RunningProxy } from '../support/netProxy.ts';
+import { writeResult } from '../support/results.ts';
 import { THRESHOLDS } from '../thresholds.ts';
 import {
   CLIENT_KINDS,
@@ -69,7 +69,6 @@ async function measurePhase(
 
 for (const profile of ['clean', '100ms', '200ms-lossy'] as NetProfileName[]) {
   test(`four browsers on the ${profile} profile`, async () => {
-    const testInfo = test.info();
     test.setTimeout(180_000);
     await waitForEmptyRoom();
     await sustain(true);
@@ -97,10 +96,7 @@ for (const profile of ['clean', '100ms', '200ms-lossy'] as NetProfileName[]) {
         `${net.loss * 100}% loss (${net.lossMode})`,
     );
     for (const result of results) console.log(describeMeasured(result));
-    writeFileSync(
-      testInfo.outputPath(`multiplayer-${profile}.json`),
-      JSON.stringify(results, null, 2),
-    );
+    writeResult(`multiplayer-${profile}`, results);
 
     expect(problems).toEqual([]);
     for (const m of results) {

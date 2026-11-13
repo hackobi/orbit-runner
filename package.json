@@ -17,6 +17,7 @@
     "test:integration": "vitest run tests/integration",
     "test:e2e": "playwright test",
     "test:load": "node --expose-gc scripts/load-test.ts",
+    "results": "node scripts/results.ts",
     "spike:webgl": "node scripts/spike-headless-webgl.ts"
   },
   "dependencies": {

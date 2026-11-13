@@ -2,6 +2,8 @@ import { expect, test } from '@playwright/test';
 import type { DebugHook } from '../../src/client/debugHook.ts';
 import { SIM_FINGERPRINT, fusedMultiplyProbe, runTrace } from '../../src/shared/sim/fingerprint.ts';
 
+import { writeResult } from '../support/results.ts';
+
 declare global {
   interface Window {
     __orbit?: DebugHook;
@@ -31,6 +33,14 @@ test('the simulation produces the same bits here as in Node', async ({ page }) =
     },
     [seed, ticks] as const,
   );
+
+  writeResult(`determinism-${test.info().project.name}`, {
+    browserVersion: page.context().browser()?.version() ?? 'unknown',
+    traceHash: actual.trace.hash,
+    nodeTraceHash: expected.hash,
+    fusedMultiplyAdds: actual.fused,
+    fingerprintMatchesNode: actual.fingerprint === SIM_FINGERPRINT,
+  });
 
   expect(actual.trace.hash).toBe(expected.hash);
   expect(actual.trace.deaths).toBe(expected.deaths);
