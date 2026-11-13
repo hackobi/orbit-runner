@@ -253,10 +253,7 @@ const lines: string[] = [
   )}), but the server also counted ${sum(lossy, (m) => m.serverHitsNotSeen)} hits that were not shown (${percent(
     sum(lossy, (m) => m.serverHitsNotSeen) /
       Math.max(1, sum(lossy, (m) => m.hitsConfirmed) + sum(lossy, (m) => m.serverHitsNotSeen)),
-  )} of the server's hits; worst client ${worst(lossy, (m) => m.serverHitsNotSeen)}). Neither figure is gated on this profile. The view delay is pinned at the 350 ms cap there and ${percent(
-    worst(lossy, (m) => m.missedInputShare),
-    0,
-  )} of inputs at worst arrive late, so the server and the shooter are not always working from the same input. The cause of each unshown hit has not been classified.`,
+  )} of the server's hits; worst client ${worst(lossy, (m) => m.serverHitsNotSeen)}). Neither figure is gated on this profile, where the view delay is pinned at the 350 ms cap. The cause of each unshown hit has not been classified.`,
   '- Frame rates are headless browsers on a desktop GPU. They say nothing about phones.',
   '',
   '**Hit agreement in real play (reported, not gated)**',

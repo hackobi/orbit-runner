@@ -95,7 +95,7 @@ Acceptance (criteria as written before the work; results are in the next table):
 
 Not covered by these numbers:
 
-- On a link whose delays jump by more than six ticks (100 ms), the slack is capped and some inputs are late by design. A test covers this; the Phase 2 lossy profile will measure how much it costs.
+- On a link whose delays jump by more than six ticks (100 ms), the slack is capped and some inputs are late by design. A test covers this. Phase 2 measured the cost on the lossy profile: 15–18% of inputs late, own-ship correction p95 at most 1.27 units.
 - One Chromium run showed a single 433 ms frame and one WebKit run a 270 ms frame; two later runs showed none (worst 16.8 ms and 28 ms). Not explained. It did not cause a correction.
 - Frame rates are from headless browsers on a desktop GPU. They say nothing about phones: UNVERIFIED.
 
@@ -210,7 +210,7 @@ How to read the tables:
 - "Late inputs" is the share of the client's inputs that reached the server after their tick had been simulated.
 - "View delay" is how far behind its own ship a client sees the others. The server honours up to 350 ms of it. "Interp. delay" is the part of that spent waiting so there are two samples to draw between.
 - "Hits confirmed of seen" counts the hits a shooter's screen showed and whether the server agreed. "Server hits not shown" is the other direction: hits the server counted that the shooter's own test did not find, so the bullet vanished and the damage landed without a hit flash.
-- On the lossy profile the shooters' screens showed 283 hits and the server confirmed 283 of them (100.0%), but the server also counted 48 hits that were not shown (14.5% of the server's hits; worst client 22). Neither figure is gated on this profile. The view delay is pinned at the 350 ms cap there and 18% of inputs at worst arrive late, so the server and the shooter are not always working from the same input. The cause of each unshown hit has not been classified.
+- On the lossy profile the shooters' screens showed 283 hits and the server confirmed 283 of them (100.0%), but the server also counted 48 hits that were not shown (14.5% of the server's hits; worst client 22). Neither figure is gated on this profile, where the view delay is pinned at the 350 ms cap. The cause of each unshown hit has not been classified.
 - Frame rates are headless browsers on a desktop GPU. They say nothing about phones.
 
 **Hit agreement in real play (reported, not gated)**
