@@ -12,7 +12,7 @@ Line numbers refer to v1 at `/Users/jacobo/Documents/Claude/orbit-runner`, branc
 
 ## 1. Decisions that need your answer
 
-Each has a default. If you approve the plan without comment, the defaults apply.
+Each has a default. If you approve the plan without comment, the defaults apply. **The user approved D1–D7 on 2026-11-13 and D8–D12 on 2026-11-14, all at their defaults.**
 
 | # | Decision | Default | Alternative | Needed by |
 |---|---|---|---|---|
@@ -201,7 +201,8 @@ As built in Phase 2:
 - **Eligibility.** A target counts if it is alive now, and the shooter was looking at the same life of it, alive and past its spawn protection.
 - **Shots are confirmed.** The server announces every bullet to its owner too. A predicted bullet that is not announced by the snapshot of its tick never happened and is removed. A hit seen on an unconfirmed bullet waits for the confirmation before it is shown. This relies on events and snapshots arriving in order, which a WebSocket guarantees; a datagram transport would need a sequence number on events.
 - **Expected hit points.** The shooter's client counts its own recent hits and other players' announced hits on a target, from the tick the displayed hit points belong to, and stops registering hits on a ship that should already be dead. Without this the shooter saw one or two extra hits land on every wreck.
-- **Measured view delay:** 115–133 ms clean, 223–241 ms on the 100 ms profile (the estimate was 230), and pinned at the 350 ms cap on the 200 ms lossy profile, where the true figure is about 580 ms. There the shooter has to lead. Agreement on that profile is not gated and varied between runs: in earlier runs 83–100% of the hits a shooter saw were confirmed; in the run of record all 283 were, but the server counted 48 more (14.5% of its hits) that the shooter's test did not find, which land without a hit flash. The cause has not been classified (`PLAN.md`, Phase 3 task 8b).
+- **Measured view delay:** 115–133 ms clean, 222–241 ms on the 100 ms profile (the estimate was 230), and pinned at the 350 ms cap on the 200 ms lossy profile, where the true figure is about 580 ms. There the shooter has to lead. Agreement on that profile is not gated; in the run of record 432 of 434 hits a shooter saw were confirmed and the server counted none the shooter was not shown.
+- **A shot is tested again when it changes.** With late inputs the client fires from a predicted position the server then corrects. When a correction rebuilds a shot, or the server announces one from a different place, the client tests it over the ticks it has already flown, each with the view delay sent for that tick. Without this, one server hit in seven on the lossy profile was never shown (found and fixed 2026-11-14).
 - **What agreement cannot reach.** In a free-for-all, two players can shoot one ship; a hit seen on a ship another player destroyed a moment earlier is not confirmed. The 95% gate is therefore measured with ships kept alive by a test hook. Kills are tested separately (the shooter sees exactly the seven hits that counted), and free-for-all figures are reported in `PLAN.md`.
 
 Hitscan would be simpler and makes agreement near-perfect, but it removes dodging and changes how v1's combat feels.

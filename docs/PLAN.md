@@ -8,12 +8,12 @@ This file is the running checkpoint. A new session should read it first, then `d
 |---|---|---|
 | 0. Research and plan | Done 2026-11-13. Approved the same day with defaults D1–D7 | STOP |
 | 1. Core loop | **Done 2026-11-13.** Every acceptance check passes; numbers below | Node tests pass |
-| 2. Multiplayer | **Done 2026-11-13. Waiting for the user at the STOP.** Every acceptance check passes; numbers below | STOP, with measured numbers |
-| 3. Content and mobile | Not started | |
+| 2. Multiplayer | **Done 2026-11-13, approved 2026-11-14.** Every acceptance check passes; numbers below | STOP, with measured numbers |
+| 3. Content and mobile | In progress since 2026-11-14 | |
 | 4. Mac app | Not started | |
 | 5. Demos integration | Not started | Separate approval, and a payment proposal first |
 
-**Next action:** wait for the user. Phase 2 ends at a STOP. When they say go, start Phase 3 at task 1 (asteroid belt). Decisions D8–D12 in `DECISIONS.md` section 1 are needed for Phase 3; their defaults apply if the user does not comment.
+**Next action:** Phase 3, task 1 (asteroid belt). The user approved Phase 2 on 2026-11-14, asked for the unshown-hits fix first (done), and accepted the defaults for D8–D12.
 
 ## How to run it
 
@@ -158,18 +158,18 @@ Acceptance:
 
 ### Phase 2 results
 
-Measured on this Mac (M3 Ultra) with headless browsers. Browser suite: 2026-11-13T22:54Z. Load test: 2026-11-13. Thresholds are in `tests/thresholds.ts`; raw numbers are in `docs/results/`. Distances are world units; a ship is 4.0 long. This section is generated from those files by `npm run results`.
+Measured on this Mac (M3 Ultra) with headless browsers. Browser suite: 2026-11-13T23:27Z. Load test: 2026-11-13. Thresholds are in `tests/thresholds.ts`; raw numbers are in `docs/results/`. Distances are world units; a ship is 4.0 long. This section is generated from those files by `npm run results`.
 
 **Thresholds from the brief**
 
 | Threshold | Limit | Measured | Result |
 |---|---|---|---|
-| Remote position error p95, 100 ms profile | < 2.0 | 0.008 (worst of four clients) | Pass |
-| Remote position error max, 100 ms profile | < 8.0 | 0.017 (worst of four) | Pass |
+| Remote position error p95, 100 ms profile | < 2.0 | 0.007 (worst of four clients) | Pass |
+| Remote position error max, 100 ms profile | < 8.0 | 0.018 (worst of four) | Pass |
 | No visible snaps, every profile | 0 frames over 3 × speed limit × frame time | 0 (worst of four clients on three profiles) | Pass |
-| Own-ship corrections, 200 ms lossy profile | p95 < 4.0 | 1.274 (worst of four) | Pass |
+| Own-ship corrections, 200 ms lossy profile | p95 < 4.0 | 1.221 (worst of four) | Pass |
 | Own-ship corrections, clean network | none over 0.01 | largest 0.000; 0 corrections of any size | Pass |
-| Hit agreement, 100 ms profile (ships kept alive) | ≥ 95% | 100.0% (lowest of four; fewest hits seen by one client: 79; server hits not shown: 0) | Pass |
+| Hit agreement, 100 ms profile (ships kept alive) | ≥ 95% | 100.0% (lowest of four; fewest hits seen by one client: 57; server hits not shown: 0) | Pass |
 | Load: tick time p99, 16 bots, 300 s | ≤ 8.33 ms | 1.76 ms (p50 0.72, worst single tick 8.80) | Pass |
 | Load: heap after garbage collection, end against 1 minute | growth ≤ 10% | 13.0 MB → 8.6 MB (-34.4%) | Pass |
 | Load: bandwidth per client | reported | 15.2 kB/s down in 39 messages/s | Reported |
@@ -180,28 +180,28 @@ No threshold failed.
 
 | Client | Frames/s | Remote error p95 | Remote error max | Drawn past newest sample | Snaps | Own corrections | Correction p95 | Correction max | Hits confirmed of seen | Server hits not shown | Late inputs | View delay | Interp. delay |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Chromium desktop | 60 | 0.007 | 0.014 | 0.0% | 0 | 0 | 0.000 | 0.000 | 90 of 90 (100.0%) | 0 | 0.0% | 115 ms | 67 ms |
-| WebKit desktop | 100 | 0.007 | 0.016 | 0.0% | 0 | 0 | 0.000 | 0.000 | 78 of 78 (100.0%) | 0 | 0.0% | 129 ms | 67 ms |
-| iPhone 15 (WebKit) | 100 | 0.007 | 0.016 | 0.0% | 0 | 0 | 0.000 | 0.000 | 104 of 104 (100.0%) | 0 | 0.0% | 129 ms | 67 ms |
-| Pixel 7 (Chromium) | 60 | 0.007 | 0.010 | 0.0% | 0 | 0 | 0.000 | 0.000 | 100 of 100 (100.0%) | 0 | 0.0% | 132 ms | 67 ms |
+| Chromium desktop | 60 | 0.007 | 0.013 | 0.0% | 0 | 0 | 0.000 | 0.000 | 90 of 90 (100.0%) | 0 | 0.0% | 128 ms | 67 ms |
+| WebKit desktop | 100 | 0.007 | 0.016 | 0.0% | 0 | 0 | 0.000 | 0.000 | 77 of 77 (100.0%) | 0 | 0.0% | 129 ms | 67 ms |
+| iPhone 15 (WebKit) | 100 | 0.007 | 0.016 | 0.0% | 0 | 0 | 0.000 | 0.000 | 107 of 107 (100.0%) | 0 | 0.0% | 128 ms | 67 ms |
+| Pixel 7 (Chromium) | 60 | 0.007 | 0.009 | 0.0% | 0 | 0 | 0.000 | 0.000 | 111 of 111 (100.0%) | 0 | 0.0% | 126 ms | 67 ms |
 
 **100ms profile (100 ms round trip ± 20 ms)**
 
 | Client | Frames/s | Remote error p95 | Remote error max | Drawn past newest sample | Snaps | Own corrections | Correction p95 | Correction max | Hits confirmed of seen | Server hits not shown | Late inputs | View delay | Interp. delay |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Chromium desktop | 60 | 0.007 | 0.015 | 0.0% | 0 | 0 | 0.000 | 0.000 | 109 of 109 (100.0%) | 0 | 0.0% | 231 ms | 70 ms |
-| WebKit desktop | 100 | 0.008 | 0.016 | 0.0% | 0 | 0 | 0.000 | 0.000 | 79 of 79 (100.0%) | 0 | 0.0% | 231 ms | 71 ms |
-| iPhone 15 (WebKit) | 100 | 0.007 | 0.017 | 0.0% | 0 | 0 | 0.000 | 0.000 | 134 of 134 (100.0%) | 0 | 0.0% | 232 ms | 70 ms |
-| Pixel 7 (Chromium) | 60 | 0.007 | 0.009 | 0.0% | 0 | 0 | 0.000 | 0.000 | 109 of 109 (100.0%) | 0 | 0.0% | 223 ms | 70 ms |
+| Chromium desktop | 60 | 0.007 | 0.015 | 0.0% | 0 | 0 | 0.000 | 0.000 | 112 of 112 (100.0%) | 0 | 0.0% | 232 ms | 70 ms |
+| WebKit desktop | 100 | 0.007 | 0.018 | 0.0% | 0 | 0 | 0.000 | 0.000 | 57 of 57 (100.0%) | 0 | 0.0% | 232 ms | 71 ms |
+| iPhone 15 (WebKit) | 100 | 0.007 | 0.018 | 0.0% | 0 | 0 | 0.000 | 0.000 | 134 of 134 (100.0%) | 0 | 0.0% | 232 ms | 70 ms |
+| Pixel 7 (Chromium) | 60 | 0.007 | 0.010 | 0.0% | 0 | 0 | 0.000 | 0.000 | 109 of 109 (100.0%) | 0 | 0.0% | 222 ms | 71 ms |
 
 **200ms-lossy profile (200 ms round trip ± 50 ms, 2% loss as an in-order 260 ms stall).** Only the snap and correction columns are gated on this profile; the rest is reported.
 
 | Client | Frames/s | Remote error p95 | Remote error max | Drawn past newest sample | Snaps | Own corrections | Correction p95 | Correction max | Hits confirmed of seen | Server hits not shown | Late inputs | View delay | Interp. delay |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Chromium desktop | 60 | 0.058 | 3.288 | 8.1% | 0 | 118 | 0.605 | 0.756 | 77 of 77 (100.0%) | 19 | 17.9% | 350 ms | 250 ms |
-| WebKit desktop | 100 | 0.030 | 0.598 | 5.3% | 0 | 125 | 0.413 | 0.654 | 47 of 47 (100.0%) | 0 | 15.1% | 350 ms | 250 ms |
-| iPhone 15 (WebKit) | 100 | 0.045 | 0.522 | 7.9% | 0 | 121 | 0.335 | 0.493 | 103 of 103 (100.0%) | 22 | 15.3% | 350 ms | 250 ms |
-| Pixel 7 (Chromium) | 60 | 0.025 | 0.342 | 5.5% | 0 | 105 | 1.274 | 1.535 | 56 of 56 (100.0%) | 7 | 15.4% | 350 ms | 250 ms |
+| Chromium desktop | 60 | 0.058 | 3.313 | 7.9% | 0 | 114 | 0.481 | 1.013 | 118 of 118 (100.0%) | 0 | 18.2% | 350 ms | 250 ms |
+| WebKit desktop | 100 | 0.027 | 0.401 | 4.9% | 0 | 129 | 0.254 | 0.444 | 139 of 141 (98.6%) | 0 | 15.3% | 350 ms | 250 ms |
+| iPhone 15 (WebKit) | 100 | 0.041 | 0.572 | 7.7% | 0 | 114 | 0.286 | 0.358 | 85 of 85 (100.0%) | 0 | 15.4% | 350 ms | 250 ms |
+| Pixel 7 (Chromium) | 60 | 0.027 | 0.482 | 5.2% | 0 | 105 | 1.221 | 1.599 | 90 of 90 (100.0%) | 0 | 15.2% | 350 ms | 250 ms |
 
 How to read the tables:
 
@@ -209,25 +209,25 @@ How to read the tables:
 - "Remote error" is the distance between where a client drew another ship and where the server had that ship at the moment being drawn.
 - "Late inputs" is the share of the client's inputs that reached the server after their tick had been simulated.
 - "View delay" is how far behind its own ship a client sees the others. The server honours up to 350 ms of it. "Interp. delay" is the part of that spent waiting so there are two samples to draw between.
-- "Hits confirmed of seen" counts the hits a shooter's screen showed and whether the server agreed. "Server hits not shown" is the other direction: hits the server counted that the shooter's own test did not find, so the bullet vanished and the damage landed without a hit flash.
-- On the lossy profile the shooters' screens showed 283 hits and the server confirmed 283 of them (100.0%), but the server also counted 48 hits that were not shown (14.5% of the server's hits; worst client 22). Neither figure is gated on this profile, where the view delay is pinned at the 350 ms cap. The cause of each unshown hit has not been classified.
+- "Hits confirmed of seen" counts the hits a shooter's screen showed and whether the server agreed. "Server hits not shown" is the other direction: hits the server counted that the shooter's own test did not find, so the bullet vanishes and the damage lands without a hit flash.
+- On the lossy profile the shooters' screens showed 434 hits and the server confirmed 432 of them (99.5%), and the server counted 0 hits that were not shown (0.0% of the server's hits; worst client 0). Neither figure is gated on this profile, where the view delay is pinned at the 350 ms cap. Before the fix of 2026-11-14 (a shot is tested again over past ticks when a correction changes it) the server counted 48 unshown hits here, 14.5% of its hits.
 - Frame rates are headless browsers on a desktop GPU. They say nothing about phones.
 
 **Hit agreement in real play (reported, not gated)**
 
-Four hunter bots over real sockets through the proxy on the 100 ms profile, with real kills, regrouped every 12 s, 60 s: **140 of 146 hits seen by shooters were confirmed (95.9%)**, with 20 kills. Of the 6 not confirmed, 6 were on a ship another player had already destroyed on the server. The server decided 0 hits that the shooter's screen did not show. The gated figure above is higher because its ships cannot die; this run also clears 95%.
+Four hunter bots over real sockets through the proxy on the 100 ms profile, with real kills, regrouped every 12 s, 60 s: **140 of 145 hits seen by shooters were confirmed (96.6%)**, with 20 kills. Of the 5 not confirmed, 5 were on a ship another player had already destroyed on the server. The server decided 0 hits that the shooter's screen did not show. The gated figure above is higher because its ships cannot die; this run also clears 95%.
 
 **Other acceptance checks**
 
 | Check | Measured |
 |---|---|
-| One bot, real socket, 60 s | 3599 inputs, 1800 snapshots, 0 corrections, 0 late inputs, round trip 1.6 ms |
-| Four hunters, real sockets, no added latency, 60 s | all joined and saw each other; 110 bullets, 35 server hits, 35 of 36 seen hits confirmed (97.2%), 5 kills |
-| Loss mode `drop`: four hunters, 200 ms, 2% of inputs and snapshots discarded, 40 s | 328 messages dropped of 15547; 42 hits, 6 deaths; the server ran 0 ticks without an input; every bot ended in the right life of its ship and had heard of every death |
-| Tab hidden for 3 s, 100 ms profile | the other player saw 0 snaps and at most 0.012 units of error over 481 frames; the hidden client resumed in its seat without reconnecting |
+| One bot, real socket, 60 s | 3598 inputs, 1800 snapshots, 0 corrections, 0 late inputs, round trip 1.9 ms |
+| Four hunters, real sockets, no added latency, 60 s | all joined and saw each other; 111 bullets, 35 server hits, 35 of 36 seen hits confirmed (97.2%), 5 kills |
+| Loss mode `drop`: four hunters, 200 ms, 2% of inputs and snapshots discarded, 40 s | 323 messages dropped of 15536; 42 hits, 6 deaths; the server ran 0 ticks without an input; every bot ended in the right life of its ship and had heard of every death |
+| Tab hidden for 3 s, 100 ms profile | the other player saw 0 snaps and at most 0.009 units of error over 481 frames; the hidden client resumed in its seat without reconnecting |
 | Connections cut, 100 ms profile | both clients reconnected once and kept their player ids; nobody died (asserted by the test; no numbers) |
 | Late joiner, 100 ms profile | drew both other ships within 0.002 units (p95) of the server, 0 snaps, and drew their bullets |
-| Firefox 159.0 smoke run | WebGL2 yes, 100 frames a second, saw 1 other player, 0 corrections |
+| Firefox 159.0 smoke run | WebGL2 yes, 99 frames a second, saw 1 other player, 0 corrections |
 | Same simulation bits as Node: chromium 158.0.8127.18 | 10,000-tick hash equal, 0 fused multiply-adds in 2,000,000 tries, handshake fingerprint equal |
 | Same simulation bits as Node: webkit 27.2 | 10,000-tick hash equal, 0 fused multiply-adds in 2,000,000 tries, handshake fingerprint equal |
 | Same simulation bits as Node: firefox 159.0 | 10,000-tick hash equal, 0 fused multiply-adds in 2,000,000 tries, handshake fingerprint equal |
@@ -263,7 +263,7 @@ Goal: v1's gameplay content and look, and proper phone support.
 
 Tasks:
 
-0. Get the user's answers to D8–D12 (defaults apply otherwise).
+0. D8–D12: the user accepted the defaults on 2026-11-14 (shield absorbs first; wormhole exits at another wormhole; v1 pitch with an invert option; 9,000-unit combat zone; v1 pointer steering).
 1. Asteroid belt in the shared sim (closed-form ring orbits, spatial index), ship and bullet collisions, near-miss sparks.
 2. Orbs, server-owned: Shield, Pink, Fenix, Zaphire, Wormhole, Boost, and the two multiplier orbs.
 3. Fenix transform; wormhole teleport (D9); shield behaviour (D8); world edge (D11).
@@ -273,7 +273,6 @@ Tasks:
 7. Touch controls, tilt option, landscape overlay, safe areas.
 8. Adaptive quality controller.
 8a. Room rules left open by Phase 2 (`DECISIONS.md` section 6): an idle timeout for players who send nothing, and a limit on "back" presence messages.
-8b. Hits without a flash on bad links (Phase 2 log): classify the server hits the shooter's test missed on the lossy profile, then either close the gap or draw the flash when the server's hit arrives.
 9. PWA: manifest, icons, service worker, update prompt.
 10. LAN HTTPS dev server with instructions for trusting the certificate on the iPhone.
 11. Record the console of a headed, GPU-backed Chrome run for the ReadPixels warning.
@@ -365,7 +364,7 @@ Blockers: none.
 - After Phase 1's review: confirmed v1's working tree is unchanged from the Phase 0 baseline; added the fused-multiply probe, the pinned trace hash and the simulation fingerprint in the handshake; rewrote the tick-clock controller, which had been drifting.
 - Found by tests and fixed: hits shown for shots the server never fired; one or two extra hits shown on every destroyed ship; the tick clock reading its own adjustments as jitter; the drawn ship skipping a tick at the moment of death.
 - Found by tests and left as designed: on the lossy profile the view delay sits at its 350 ms cap, so the shooter must lead.
-- Found by the final run and **not fixed**: on the lossy profile the server counted 48 hits (14.5% of its hits) that the shooter's own test did not find. The damage lands and the bullet disappears, but `src/client/main.ts` draws a hit flash only for the shooter's own test or for other players' hits, so these land without a flash. Not gated; zero on the clean and 100 ms profiles. The cause of each one has not been classified. Phase 3 task 8b.
+- Found by the final run of 2026-11-13 and **fixed on 2026-11-14**: on the lossy profile the server counted 48 hits (14.5% of its hits) that the shooter was never shown. Cause, found by replaying the fight in virtual time and sorting every unshown hit: with late inputs the client predicts a shot from a ship position the server then corrects; the rebuilt shot was only tested from the present tick on, and the hit already found for the old one was thrown away. The client now tests a new or replaced shot over the ticks it has already flown, takes the server's shot when it was fired from somewhere else, and takes back damage noted for a discarded hit. After the fix: 0 unshown hits on all four browsers on the lossy profile, 432 of 434 shown hits confirmed. `tests/unit/combat.test.ts` has the test (24% unshown without the fix).
 - Not done in Phase 2, by design: touch controls, asteroids, orbs, scoring, minimap, sound, PWA, Mac app.
 
-Blockers: none. Waiting for the user at the Phase 2 STOP.
+Blockers: none.

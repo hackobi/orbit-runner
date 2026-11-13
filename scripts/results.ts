@@ -243,17 +243,17 @@ const lines: string[] = [
   '- "Remote error" is the distance between where a client drew another ship and where the server had that ship at the moment being drawn.',
   '- "Late inputs" is the share of the client\'s inputs that reached the server after their tick had been simulated.',
   '- "View delay" is how far behind its own ship a client sees the others. The server honours up to 350 ms of it. "Interp. delay" is the part of that spent waiting so there are two samples to draw between.',
-  '- "Hits confirmed of seen" counts the hits a shooter\'s screen showed and whether the server agreed. "Server hits not shown" is the other direction: hits the server counted that the shooter\'s own test did not find, so the bullet vanished and the damage landed without a hit flash.',
+  '- "Hits confirmed of seen" counts the hits a shooter\'s screen showed and whether the server agreed. "Server hits not shown" is the other direction: hits the server counted that the shooter\'s own test did not find, so the bullet vanishes and the damage lands without a hit flash.',
   `- On the lossy profile the shooters' screens showed ${sum(lossy, (m) => m.hitsSeen)} hits and the server confirmed ${sum(lossy, (m) => m.hitsConfirmed)} of them (${percent(
     sum(lossy, (m) => m.hitsConfirmed) /
       Math.max(
         1,
         sum(lossy, (m) => m.hitsSeen),
       ),
-  )}), but the server also counted ${sum(lossy, (m) => m.serverHitsNotSeen)} hits that were not shown (${percent(
+  )}), and the server counted ${sum(lossy, (m) => m.serverHitsNotSeen)} hits that were not shown (${percent(
     sum(lossy, (m) => m.serverHitsNotSeen) /
       Math.max(1, sum(lossy, (m) => m.hitsConfirmed) + sum(lossy, (m) => m.serverHitsNotSeen)),
-  )} of the server's hits; worst client ${worst(lossy, (m) => m.serverHitsNotSeen)}). Neither figure is gated on this profile, where the view delay is pinned at the 350 ms cap. The cause of each unshown hit has not been classified.`,
+  )} of the server's hits; worst client ${worst(lossy, (m) => m.serverHitsNotSeen)}). Neither figure is gated on this profile, where the view delay is pinned at the 350 ms cap. Before the fix of 2026-11-14 (a shot is tested again over past ticks when a correction changes it) the server counted 48 unshown hits here, 14.5% of its hits.`,
   '- Frame rates are headless browsers on a desktop GPU. They say nothing about phones.',
   '',
   '**Hit agreement in real play (reported, not gated)**',
