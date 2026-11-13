@@ -119,6 +119,12 @@ export interface RoomOptions {
   listener?: RoomListener;
   /** Called after every simulated tick. Tests use it to record what really happened. */
   onTick?: (tick: number, room: Room) => void;
+  /**
+   * Called after each advance that simulated something, with how long the
+   * work took (simulation, events and snapshots) and how many ticks it
+   * covered. The load test uses it.
+   */
+  onWork?: (durationMs: number, ticks: number) => void;
 }
 
 export interface RoomStats {
@@ -212,6 +218,7 @@ export class Room {
   private readonly maxPlayers: number;
   private readonly listener: RoomListener;
   private readonly onTick: ((tick: number, room: Room) => void) | undefined;
+  private readonly onWork: ((durationMs: number, ticks: number) => void) | undefined;
   private readonly connections = new Set<Connection>();
   private readonly players = new Map<number, Player>();
   private bullets: LiveBullet[] = [];
@@ -227,6 +234,7 @@ export class Room {
     this.maxPlayers = options.maxPlayers ?? MAX_PLAYERS;
     this.listener = options.listener ?? {};
     this.onTick = options.onTick;
+    this.onWork = options.onWork;
   }
 
   get playerCount(): number {
@@ -305,6 +313,7 @@ export class Room {
       if (this.tick % SNAPSHOT_EVERY_TICKS === 0) snapshotDue = true;
     }
     if (snapshotDue) this.sendSnapshots();
+    if (steps > 0) this.onWork?.(this.now() - now, steps);
 
     for (const connection of this.connections) {
       if (!connection.player && now - connection.openedAtMs > HELLO_TIMEOUT_MS) {

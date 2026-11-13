@@ -31,6 +31,9 @@ export interface ServerOptions {
    */
   testHooks?: boolean;
   listener?: RoomListener;
+  /** Passed to the room. See RoomOptions. */
+  onTick?: (tick: number, room: Room) => void;
+  onWork?: (durationMs: number, ticks: number) => void;
 }
 
 export interface RunningServer {
@@ -85,6 +88,8 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
         }
       : {}),
     ...(options.listener ? { listener: options.listener } : {}),
+    ...(options.onTick ? { onTick: options.onTick } : {}),
+    ...(options.onWork ? { onWork: options.onWork } : {}),
   });
 
   /** Test-only endpoints. Returns false if the request was not one of them. */
