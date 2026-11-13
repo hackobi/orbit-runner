@@ -199,6 +199,23 @@ interface OwnBullet {
   confirmed: boolean;
   /** It has met a ship, on this screen or by the server's word. It is no longer drawn. */
   spent: boolean;
+  /**
+   * A hit seen on this screen while the bullet was still only a prediction.
+   * It is reported when the server confirms the shot, and forgotten if the
+   * shot turns out never to have happened.
+   */
+  pendingHit: ViewHit | null;
+}
+
+function sameBullet(a: Bullet, b: Bullet): boolean {
+  return (
+    a.ox === b.ox &&
+    a.oy === b.oy &&
+    a.oz === b.oz &&
+    a.dx === b.dx &&
+    a.dy === b.dy &&
+    a.dz === b.dz
+  );
 }
 
 interface RemoteBullet {
@@ -302,6 +319,14 @@ export class ClientCore {
 
   private ownBullets: OwnBullet[] = [];
   private remoteBullets: RemoteBullet[] = [];
+  /**
+   * Recent damage to other ships that their drawn samples may not show yet:
+   * this player's own hits as seen here, and other players' hits as the
+   * server announced them. Target id → ticks of 15-point hits.
+   */
+  private readonly recentDamage = new Map<number, number[]>();
+  /** The tick each other ship was last reported destroyed. */
+  private readonly lastDeathTick = new Map<number, number>();
 
   constructor(options: ClientOptions) {
     this.transport = options.transport;
@@ -475,6 +500,8 @@ export class ClientCore {
     this.offsetYaw = this.offsetPitch = this.offsetRoll = 0;
     this.ownBullets = [];
     this.remoteBullets = [];
+    this.recentDamage.clear();
+    this.lastDeathTick.clear();
     this.remotes.clear();
     this.alignTo(welcome.serverTick, welcome.ship, NEUTRAL_INPUT);
   }
@@ -548,6 +575,7 @@ export class ClientCore {
         bullet: spawnBullet(this.playerId, this.tick, this.state),
         confirmed: false,
         spent: false,
+        pendingHit: null,
       });
       this.counters.shotsFired += 1;
     }
@@ -582,6 +610,9 @@ export class ClientCore {
       for (const id of targets) {
         const seen = this.remotes.poseAt(id, viewTick);
         if (!seen?.alive || seen.invulnerable || !seen.full) continue;
+        // The ship is drawn as it was a moment ago. If it is known to have
+        // been destroyed since, the server will not count a hit on it.
+        if (this.destroyedSince(id, seen.stateTick, seen.hp)) continue;
         const at = bulletHit(own.bullet, this.tick, seen.x, seen.y, seen.z);
         if (at >= 0 && at < hitAt) {
           hitAt = at;
@@ -590,16 +621,53 @@ export class ClientCore {
       }
       if (hitTarget < 0) continue;
       own.spent = true;
-      this.counters.viewHits += 1;
-      this.onViewHit?.({
+      this.noteDamage(hitTarget, this.tick);
+      const hit: ViewHit = {
         timeMs: nowMs,
         ownerId: this.playerId,
         spawnTick: own.bullet.spawnTick,
         targetId: hitTarget,
         tick: this.tick,
-      });
+      };
+      // A shot the server has not confirmed yet may never have happened (the
+      // ship may have died a moment before). Its hit waits for the confirmation.
+      if (own.confirmed) this.reportViewHit(hit);
+      else own.pendingHit = hit;
     }
     this.ownBullets = this.ownBullets.filter((own) => !bulletExpired(own.bullet, this.tick));
+  }
+
+  private noteDamage(targetId: number, tick: number): void {
+    let ticks = this.recentDamage.get(targetId);
+    if (!ticks) {
+      ticks = [];
+      this.recentDamage.set(targetId, ticks);
+    }
+    ticks.push(tick);
+    // Samples are never drawn more than a second or two behind.
+    while (ticks.length > 0 && (ticks[0] ?? 0) < tick - 120) ticks.shift();
+  }
+
+  /**
+   * True if a ship that was alive with `hpSeen` hit points at `seenTick` is
+   * known to be dead by the current tick: the server has said so, or the
+   * hits known to have landed since then add up to all it had.
+   */
+  private destroyedSince(targetId: number, seenTick: number, hpSeen: number): boolean {
+    const died = this.lastDeathTick.get(targetId);
+    if (died !== undefined && died > seenTick && died <= this.tick) return true;
+    const ticks = this.recentDamage.get(targetId);
+    if (!ticks) return false;
+    let damage = 0;
+    for (const tick of ticks) {
+      if (tick > seenTick && tick <= this.tick) damage += SIM.bulletDamage;
+    }
+    return damage >= hpSeen;
+  }
+
+  private reportViewHit(hit: ViewHit): void {
+    this.counters.viewHits += 1;
+    this.onViewHit?.(hit);
   }
 
   private store(tick: number, input: Input, state: ShipState, sentAtMs: number): void {
@@ -669,31 +737,38 @@ export class ClientCore {
     if (predicted && shipStatesEqual(predicted, snapshot.ship)) return;
 
     // Rewind to the server's state and replay every input sent since. Shots
-    // predicted in the replayed ticks are predicted again.
-    this.dropUnconfirmedBulletsAfter(snapshot.serverTick);
+    // predicted in the replayed ticks are predicted again: one that comes out
+    // the same keeps what is known about it, one that differs is replaced,
+    // and one that no longer happens is dropped.
     this.historyState[slot] = snapshot.ship;
     let state = snapshot.ship;
     let previous = snapshot.ship;
+    const refired = new Set<number>();
     for (let tick = snapshot.serverTick + 1; tick <= this.tick; tick++) {
       const replaySlot = tick & (HISTORY_SIZE - 1);
       previous = state;
       state = stepShip(state, this.historyInput[replaySlot] ?? NEUTRAL_INPUT);
       this.historyState[replaySlot] = state;
-      if (firedThisTick(state) && !this.hasOwnBullet(tick)) {
-        this.ownBullets.push({
-          bullet: spawnBullet(this.playerId, tick, state),
-          confirmed: false,
-          spent: false,
-        });
+      if (!firedThisTick(state)) continue;
+      refired.add(tick);
+      const bullet = spawnBullet(this.playerId, tick, state);
+      const index = this.ownBullets.findIndex((own) => own.bullet.spawnTick === tick);
+      const existing = this.ownBullets[index];
+      if (!existing) {
+        this.ownBullets.push({ bullet, confirmed: false, spent: false, pendingHit: null });
+      } else if (!existing.confirmed && !sameBullet(existing.bullet, bullet)) {
+        this.ownBullets[index] = { bullet, confirmed: false, spent: false, pendingHit: null };
       }
     }
+    this.ownBullets = this.ownBullets.filter(
+      (own) =>
+        own.confirmed ||
+        own.bullet.spawnTick <= snapshot.serverTick ||
+        refired.has(own.bullet.spawnTick),
+    );
     this.previousState = previous;
     this.state = state;
     this.finishCorrection(present, snapshot.serverTick, arrivedAtMs);
-  }
-
-  private hasOwnBullet(spawnTick: number): boolean {
-    return this.ownBullets.some((own) => own.bullet.spawnTick === spawnTick);
   }
 
   private dropUnconfirmedBulletsAfter(serverTick: number): void {
@@ -723,6 +798,10 @@ export class ClientCore {
         const predicted = this.ownBullets.find((own) => own.bullet.spawnTick === event.spawnTick);
         if (predicted) {
           predicted.confirmed = true;
+          if (predicted.pendingHit) {
+            this.reportViewHit(predicted.pendingHit);
+            predicted.pendingHit = null;
+          }
         } else {
           // The server fired a shot this client did not predict.
           this.ownBullets.push({
@@ -737,6 +816,7 @@ export class ClientCore {
             ),
             confirmed: true,
             spent: false,
+            pendingHit: null,
           });
         }
         break;
@@ -751,14 +831,19 @@ export class ClientCore {
             (b) => b.bullet.ownerId === event.ownerId && b.bullet.spawnTick === event.spawnTick,
           );
           if (remote) remote.hitTick = event.tick;
+          // Someone else's hit on a ship this player may be shooting at too.
+          if (event.targetId !== this.playerId) this.noteDamage(event.targetId, event.tick);
         }
         break;
       }
       case 'left':
         this.remotes.remove(event.playerId);
         this.remoteBullets = this.remoteBullets.filter((b) => b.bullet.ownerId !== event.playerId);
+        this.recentDamage.delete(event.playerId);
+        this.lastDeathTick.delete(event.playerId);
         break;
       case 'death':
+        this.lastDeathTick.set(event.victimId, event.tick);
         break;
     }
     this.onGameEvent?.(event);

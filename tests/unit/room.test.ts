@@ -4,71 +4,17 @@ import {
   PROTOCOL_VERSION,
   REJECT_FULL,
   REJECT_VERSION,
-  decodeServerMessage,
   encodeHello,
   encodeInput,
 } from '../../src/shared/protocol.ts';
-import type { ServerMessage, WelcomeMessage } from '../../src/shared/protocol.ts';
 import { SIM_FINGERPRINT } from '../../src/shared/sim/fingerprint.ts';
 import { quantiseControls, shipStatesEqual, stepShip } from '../../src/shared/sim/ship.ts';
-import type { Transport } from '../../src/shared/transport.ts';
 import { Room } from '../../src/server/room.ts';
 import { TestWorld } from '../support/harness.ts';
+import { RawClient, joined } from '../support/rawClient.ts';
 import { createLink } from '../support/loopback.ts';
 
 const FULL_LEFT = quantiseControls({ yaw: 1, pitch: 0, throttle: 1, fire: false });
-
-/** A hand-driven connection, for sending things a real client never would. */
-class RawClient {
-  readonly received: ServerMessage[] = [];
-  closed: string | null = null;
-  private readonly transport: Transport;
-
-  constructor(world: TestWorld) {
-    const link = createLink(world.clock);
-    world.room.connect(link.server);
-    this.transport = link.client;
-    this.transport.onMessage((data) => {
-      const message = decodeServerMessage(data);
-      if (message) this.received.push(message);
-    });
-    this.transport.onClose((reason) => {
-      this.closed = reason;
-    });
-  }
-
-  send(data: Uint8Array): void {
-    this.transport.send(data, 'reliable');
-  }
-
-  hello(
-    version = PROTOCOL_VERSION,
-    fingerprint = SIM_FINGERPRINT,
-    sessionToken: Uint8Array | null = null,
-  ): void {
-    this.send(
-      encodeHello({
-        protocolVersion: version,
-        simFingerprint: fingerprint,
-        clientTimeMs: 0,
-        sessionToken,
-      }),
-    );
-  }
-
-  get welcome(): WelcomeMessage | undefined {
-    return this.received.find((m) => m.type === 'welcome');
-  }
-}
-
-function joined(world: TestWorld): { client: RawClient; welcome: WelcomeMessage } {
-  const client = new RawClient(world);
-  client.hello();
-  world.run(5);
-  const welcome = client.welcome;
-  if (!welcome) throw new Error('no welcome');
-  return { client, welcome };
-}
 
 describe('joining', () => {
   it('welcomes a matching client with its id, the tick and its ship', () => {

@@ -88,6 +88,12 @@ export interface TrackPose {
   full: boolean;
   /** 0 when the pose lies between two samples; otherwise how many ticks past the newest it was pushed. */
   extrapolatedTicks: number;
+  /**
+   * The tick of the sample that hp and the flags were taken from. They are
+   * not interpolated: they are as of this tick, which is at or before the
+   * tick asked for.
+   */
+  stateTick: number;
 }
 
 function shortestArc(from: number, to: number): number {
@@ -112,6 +118,7 @@ function poseAt(sample: RemoteSample): TrackPose {
     invulnerable: sample.invulnerable,
     full: sample.full,
     extrapolatedTicks: 0,
+    stateTick: sample.tick,
   };
 }
 
