@@ -11,7 +11,7 @@ This file is the running checkpoint. A new session should read it first, then `d
 | 2. Multiplayer | **Done 2026-11-13, approved 2026-11-14.** Every acceptance check passes; numbers below | STOP, with measured numbers |
 | 3. Content and mobile | **Built and tested 2026-11-14, except what needs a real phone.** The device checklist (`docs/DEVICE-TESTING.md`) and the LAN HTTPS server are waiting for the user | |
 | 4. Mac app | **Built and tested 2026-11-14 on this Mac.** Other Macs and a 120 Hz display: UNVERIFIED | |
-| 5. Demos integration | Not started | Separate approval, and a payment proposal first |
+| 5. Demos integration | Not started. Direction from the user recorded under Phase 5 (reuse v1's payment flow; King of the Hill) | Separate approval, and a payment proposal first |
 
 **Next action:** wait for the user. Phases 1 to 4 are built. Phase 5 (Demos) needs separate approval and starts with a written payment proposal, not code. Open items that need the user: `npm run dev:lan` (it changes the Mac's keychain) and the phone checklist in `docs/DEVICE-TESTING.md`; opening the Mac app themselves.
 
@@ -20,6 +20,7 @@ This file is the running checkpoint. A new session should read it first, then `d
 | Command | What it does |
 |---|---|
 | `npm run server` | Game server on `127.0.0.1:8790` (Node runs the TypeScript directly; no build) |
+| `npm run build` then `ORBIT_CLIENT_DIR=dist npm run server` | The production setup: one server gives out the built page and runs the game socket on the same address. The `Dockerfile` does this, listening on `PORT` |
 | `npm run dev` | Vite on `localhost:5173`, proxying `/ws` to the game server. Open it in two windows and fly: A/D or the arrows turn, I/K or the arrows pitch, W/S change speed, Space fires, hold the mouse button to steer, 1 2 3 buy from the store, P shows the players. On a touch screen: stick on the left, buttons on the right |
 | `npm run dev:lan` | The same over HTTPS to the local network, for a phone. **Its first run changes the Mac's keychain.** Read `docs/DEVICE-TESTING.md` first. Not run yet |
 | `npm test` | Unit and virtual-time tests of the simulation, the netcode, the content and the client's logic (about 1 s) |
@@ -455,6 +456,11 @@ Before any code: a written proposal for how phone and Mac-app players pay or pla
 
 Design points already fixed so this fits without rework: server-decided kills and survival time, a unique ID per death, admission and economy behind interfaces.
 
+User direction, 2026-11-14:
+
+- Wallets and payments are wanted in v2. v1's payment flow (DEMOS entry, treasury payouts, Postgres) keeps running as the `orbit-runner` Railway service and should be reused where its architecture fits, rather than rewritten.
+- Competitions come next, starting with **King of the Hill**: the player with the most kills holds the title and a bounty; whoever destroys them takes both. The server already decides every kill and gives each death a unique ID, which is what a bounty needs.
+
 ## Manual device checklist
 
 Phones: `docs/DEVICE-TESTING.md` (18 checks, with the LAN HTTPS steps). Not run yet.
@@ -529,3 +535,9 @@ Blockers: none for Phase 4. For closing Phase 3's last two rows: the user's phon
 - Done outside the repository, for the record: Electron's binary (about 100 MB) and the mkcert plugin's package were downloaded by `npm install` (mkcert itself was not downloaded or run); browser and app windows were opened on the desktop by the headed checks and the Mac app tests, for under a minute each; `~/Library/Application Support/Electron`, a profile folder created by the first app test runs at 02:12 on 2026-11-14, was deleted after confirming its creation time, and the tests now use temporary folders; `release/` in the repository holds the 254 MB app and is ignored by git.
 
 Blockers: none. Waiting for the user: Phase 5 needs separate approval.
+
+### 2026-11-14: phone test and first deploy
+
+- The phone checklist was run on an iPhone through Tailscale: 16 of 18 passed. Fixed since: double-tap zoom (#6), and a dropped connection now keeps its seat and points for five minutes instead of losing them after 10 s (#13, decision D6). #13 is waiting for the user to check again.
+- The default port moved from 8787 to 8790; another local service held 8787.
+- The server can now serve the built client itself (`ORBIT_CLIENT_DIR`) and listens on `PORT`, so one container holds the whole game. `Dockerfile` and `railway.json` deploy it to Railway as a new `orbit-runner-v2` service in the `delightful-radiance` project, beside v1, which is left as it was.

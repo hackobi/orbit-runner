@@ -1,10 +1,12 @@
-// The game server process: one room, a WebSocket endpoint at /ws, and an
-// HTTP health check.
+// The game server process: one room, a WebSocket endpoint at /ws, an HTTP
+// health check and, when given a built client, the game's own files.
 
 import { randomBytes } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { WebSocketServer } from 'ws';
 import { SIM, TICK_RATE } from '../shared/constants.ts';
@@ -30,6 +32,12 @@ export interface ServerOptions {
    * not exist.
    */
   testHooks?: boolean;
+  /**
+   * A built client (`npm run build` makes `dist/`) to serve from this server,
+   * so that the page and its game socket share one address. Without it only
+   * /health and /ws answer.
+   */
+  clientDir?: string;
   listener?: RoomListener;
   /** Passed to the room. See RoomOptions. */
   onTick?: (tick: number, room: Room) => void;
@@ -40,6 +48,55 @@ export interface RunningServer {
   readonly room: Room;
   readonly port: number;
   close(): Promise<void>;
+}
+
+const CONTENT_TYPES: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.webmanifest': 'application/manifest+json',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+};
+
+/**
+ * Serves one file of the built client, or returns false if there is none.
+ * Files under assets/ carry a hash in their name and never change; anything
+ * else (the page, the service worker, the manifest) must be checked on every
+ * load, or an update would never reach the player.
+ */
+async function serveClientFile(
+  clientDir: string,
+  pathname: string,
+  response: ServerResponse,
+): Promise<boolean> {
+  let relative: string;
+  try {
+    relative = decodeURIComponent(pathname === '/' ? '/index.html' : pathname);
+  } catch {
+    return false;
+  }
+  const file = path.resolve(clientDir, '.' + relative);
+  if (!file.startsWith(clientDir + path.sep)) return false;
+  const type = CONTENT_TYPES[path.extname(file)];
+  if (!type) return false;
+  let body: Buffer;
+  try {
+    body = await readFile(file);
+  } catch {
+    return false;
+  }
+  response.writeHead(200, {
+    'content-type': type,
+    'cache-control': relative.startsWith('/assets/')
+      ? 'public, max-age=31536000, immutable'
+      : 'no-cache',
+  });
+  response.end(body);
+  return true;
 }
 
 /** How often the loop checks whether a tick is due. The room decides how many run. */
@@ -66,6 +123,7 @@ function readBody(request: IncomingMessage): Promise<string> {
 
 export function startServer(options: ServerOptions): Promise<RunningServer> {
   const recorder = options.testHooks ? new Recorder() : null;
+  const clientDir = options.clientDir ? path.resolve(options.clientDir) : null;
   // Test hook: while on, every living ship is topped up each tick, so a
   // measurement can run for as long as it needs without anyone dying.
   let sustain = false;
@@ -152,11 +210,14 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
       response.writeHead(404, { 'content-type': 'text/plain' });
       response.end('not found');
     };
-    if (!recorder) {
-      notFound();
-      return;
-    }
-    handleDebug(recorder, url, request, response)
+    const handle = async (): Promise<boolean> => {
+      if (recorder && (await handleDebug(recorder, url, request, response))) return true;
+      if (clientDir && (request.method === 'GET' || request.method === 'HEAD')) {
+        return serveClientFile(clientDir, url.pathname, response);
+      }
+      return false;
+    };
+    handle()
       .then((handled) => {
         if (!handled) notFound();
       })

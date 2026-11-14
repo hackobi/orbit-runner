@@ -1,0 +1,13 @@
+node_modules
+dist
+dist-e2e
+release
+app/client
+test-results
+playwright-report
+.cert
+.env
+.env.*
+*.log
+.DS_Store
+.git
