@@ -113,11 +113,16 @@ export const SEAT_TICKS = 300 * 60;
 export const WELCOME_EVERY_TICKS = 60;
 
 /**
- * A token whose connection sent an input this recently is in use. A second
- * connection presenting it (a duplicated browser tab copies the token) is a
- * second player, not the first one coming back.
+ * A token whose connection sent an input this recently may still be in use.
+ * A second connection presenting it is either the same player coming back (a
+ * reloaded page, whose old socket has not been seen to close yet) or a second
+ * player (a duplicated browser tab copies the token). The room waits to see
+ * which: if the old connection sends another input, the newcomer gets a seat
+ * of its own; if it stays silent for CLAIM_TICKS, or closes, the newcomer
+ * takes the seat.
  */
 export const TOKEN_IN_USE_TICKS = 60;
+export const CLAIM_TICKS = 30;
 
 /** Inputs numbered further ahead than this are refused, which bounds the buffer. */
 export const MAX_INPUT_LEAD_TICKS = 120;
@@ -210,6 +215,8 @@ interface Connection {
   readonly openedAtMs: number;
   malformed: number;
   player: Player | null;
+  /** It has said hello and is waiting to be seated. A second hello is malformed. */
+  claiming: boolean;
   closed: boolean;
 }
 
@@ -238,6 +245,8 @@ interface Player {
   lastWelcomeTick: number;
   /** The tick the newest input message arrived on. */
   lastInputAtTick: number;
+  /** A newcomer presenting this player's token, waiting to learn whether the seat is free. */
+  claim: { connection: Connection; clientTimeMs: number; atTick: number } | null;
   /** A "back" that arrived too soon after the last welcome, to be answered when a second has passed. */
   backDue: { connection: Connection; clientTimeMs: number } | null;
   kills: number;
@@ -388,6 +397,7 @@ export class Room {
       openedAtMs: this.now(),
       malformed: 0,
       player: null,
+      claiming: false,
       closed: false,
     };
     this.connections.add(connection);
@@ -742,6 +752,8 @@ export class Room {
         }
         continue;
       }
+      // A newcomer has waited long enough: the old connection has gone quiet.
+      if (player.claim && this.tick - player.claim.atTick >= CLAIM_TICKS) this.takeSeat(player);
       // A "back" that came too soon after the last welcome is answered now.
       const due = player.backDue;
       if (due && this.tick - player.lastWelcomeTick >= WELCOME_EVERY_TICKS) {
@@ -906,7 +918,7 @@ export class Room {
       return;
     }
     if (message.type === 'hello') {
-      if (connection.player) this.malformed(connection);
+      if (connection.player || connection.claiming) this.malformed(connection);
       else this.join(connection, message);
       return;
     }
@@ -938,27 +950,55 @@ export class Room {
     }
 
     // A known token takes its seat back, whether the old socket has been
-    // noticed as dead yet or not.
+    // noticed as dead yet or not, unless someone is still flying with it.
     if (hello.sessionToken) {
       for (const player of this.players.values()) {
         if (!sameToken(player.token, hello.sessionToken)) continue;
         const old = player.connection;
-        const inUse =
+        const maybeInUse =
           old !== null &&
           !old.closed &&
           !player.away &&
           this.tick - player.lastInputAtTick < TOKEN_IN_USE_TICKS;
-        // Someone is flying with this token right now: the newcomer gets a seat of its own.
-        if (inUse) break;
-        if (old && old !== connection) {
-          old.player = null;
-          this.close(old);
+        if (maybeInUse) {
+          // A second newcomer while one is already waiting is certainly not the holder.
+          if (player.claim) break;
+          player.claim = { connection, clientTimeMs: hello.clientTimeMs, atTick: this.tick };
+          connection.claiming = true;
+          return;
         }
-        this.welcomeBack(player, connection, hello.clientTimeMs);
+        player.claim = { connection, clientTimeMs: hello.clientTimeMs, atTick: this.tick };
+        this.takeSeat(player);
         return;
       }
     }
+    this.seatNewPlayer(connection, hello.clientTimeMs);
+  }
 
+  /** The newcomer waiting on this player's token is the player: the seat is theirs. */
+  private takeSeat(player: Player): void {
+    const claim = player.claim;
+    if (!claim) return;
+    player.claim = null;
+    claim.connection.claiming = false;
+    const old = player.connection;
+    if (old && old !== claim.connection) {
+      old.player = null;
+      this.close(old);
+    }
+    if (!claim.connection.closed) this.welcomeBack(player, claim.connection, claim.clientTimeMs);
+  }
+
+  /** The holder of the token is still flying: the newcomer is someone else. */
+  private refuseSeat(player: Player): void {
+    const claim = player.claim;
+    if (!claim) return;
+    player.claim = null;
+    claim.connection.claiming = false;
+    if (!claim.connection.closed) this.seatNewPlayer(claim.connection, claim.clientTimeMs);
+  }
+
+  private seatNewPlayer(connection: Connection, clientTimeMs: number): void {
     const id = this.freeId();
     if (id === null) {
       this.send(connection, encodeReject(REJECT_FULL), 'reliable');
@@ -984,6 +1024,7 @@ export class Room {
       idleSinceTick: 0,
       lastWelcomeTick: 0,
       lastInputAtTick: -TOKEN_IN_USE_TICKS,
+      claim: null,
       backDue: null,
       kills: 0,
       killsThisLife: 0,
@@ -1003,7 +1044,7 @@ export class Room {
     };
     this.players.set(id, player);
     this.listener.playerJoined?.(id, this.tick);
-    this.welcomeBack(player, connection, hello.clientTimeMs);
+    this.welcomeBack(player, connection, clientTimeMs);
   }
 
   /**
@@ -1083,6 +1124,9 @@ export class Room {
   private acceptInputs(player: Player, message: InputMessage): void {
     if (player.away) return;
     player.lastInputAtTick = this.tick;
+    // Whoever holds this seat is still here, so a newcomer with a copy of
+    // its token is a different player.
+    if (player.claim) this.refuseSeat(player);
     // How long before its tick is due the newest input arrived, in ticks.
     const sinceTickDue = this.tickDueAtMs === null ? 0 : this.now() - this.tickDueAtMs;
     const lead = message.tick - this.tick - sinceTickDue / TICK_MS;
@@ -1131,9 +1175,20 @@ export class Room {
   private drop(connection: Connection): void {
     connection.closed = true;
     this.connections.delete(connection);
+    if (connection.claiming) {
+      // A newcomer that left while waiting for a seat.
+      for (const waitedOn of this.players.values()) {
+        if (waitedOn.claim?.connection === connection) waitedOn.claim = null;
+      }
+    }
     const player = connection.player;
     if (!player || player.connection !== connection) return;
     player.connection = null;
+    // The old page has gone: a newcomer waiting with its token is that player.
+    if (player.claim) {
+      this.takeSeat(player);
+      return;
+    }
     this.markAway(player);
   }
 

@@ -204,7 +204,10 @@ function statusText(): string {
       return session.reconnects > 0 ? 'Reconnecting…' : 'Connecting…';
     case 'rejected':
       if (core.rejectReason === REJECT_VERSION) {
-        return 'This copy of the game is out of date. Reload to update.';
+        // The copy packed into the Mac app cannot be reloaded into a newer one.
+        return window.orbitApp?.serverUrl
+          ? 'This copy of the game is older than the server. Get the current app.'
+          : 'This copy of the game is out of date. Reload to update.';
       }
       return core.rejectReason === REJECT_IDLE
         ? 'You were away, and your seat was given to someone else. Reload to play again.'

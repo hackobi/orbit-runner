@@ -43,6 +43,8 @@ export interface TestSession extends ClientLog {
   session: Session;
   /** Every link the session has opened, newest last. */
   links: Transport[];
+  /** Stops this session's frames with its connection left open, as a page being unloaded does for a moment. */
+  pause(): void;
 }
 
 export interface ClientSetup {
@@ -173,15 +175,24 @@ export class TestWorld {
       onViewHit: (hit) => log.viewHits.push(hit),
       onGameEvent: (event) => log.events.push(event),
     });
+    let paused = false;
     this.clock.every(
       setup.frameMs ?? TICK_MS,
       () => {
+        if (paused) return;
         session.update();
         setup.onFrame?.(session.core);
       },
       this.clock.now() + 3.7,
     );
-    return { session, links, ...log };
+    return {
+      session,
+      links,
+      ...log,
+      pause: () => {
+        paused = true;
+      },
+    };
   }
 
   /** Moves a ship on the server, as the test-only endpoint does. */

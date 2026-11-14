@@ -367,6 +367,41 @@ describe('room rules', () => {
     expect(idle.links).toHaveLength(1);
   });
 
+  it('a reloaded page gets its seat back even if the old connection has not been seen to close', () => {
+    // The new page's hello can arrive while the old socket is still open and
+    // within a moment of the old page's last input. It must not be mistaken
+    // for a second tab.
+    for (const oldSocket of ['stays open and silent', 'closes just after'] as const) {
+      const world = new TestWorld(3, 0, false);
+      let kept: Uint8Array | null = null;
+      const old = world.addSession({
+        controls: () => ({ yaw: 0.2, pitch: 0, throttle: 0, fire: false }),
+        onSessionToken: (token) => {
+          kept ??= token;
+        },
+      });
+      world.run(1000);
+      const id = old.session.core.playerId;
+      world.place(id, PARKED);
+      world.room.addScore(id, 777);
+
+      old.pause(); // the old page stops, its socket still open
+      world.run(300);
+      const reloaded = world.addSession({ sessionToken: kept });
+      if (oldSocket === 'closes just after') {
+        world.run(50);
+        old.links[0]?.close();
+      }
+      world.run(1500);
+
+      expect(reloaded.session.core.status, oldSocket).toBe('playing');
+      expect(reloaded.session.core.playerId, oldSocket).toBe(id);
+      expect(world.room.playerCount, oldSocket).toBe(1);
+      expect(reloaded.session.core.score, oldSocket).toBeGreaterThanOrEqual(777);
+      expect(world.deaths, oldSocket).toHaveLength(0);
+    }
+  });
+
   it("a second tab with a copy of the token is a second player, and neither takes the other's seat", () => {
     // Duplicating a browser tab copies the token it keeps. Each tab must fly its own ship.
     const world = new TestWorld(3, 0, false);
