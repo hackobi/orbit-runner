@@ -16,6 +16,7 @@ import {
   NO_PLAYER,
   PROTOCOL_VERSION,
   REJECT_FULL,
+  REJECT_IDLE,
   REJECT_VERSION,
   SESSION_TOKEN_BYTES,
   decodeClientMessage,
@@ -110,6 +111,13 @@ export const SEAT_TICKS = 300 * 60;
 
 /** A client is given a fresh welcome at most once a second. */
 export const WELCOME_EVERY_TICKS = 60;
+
+/**
+ * A token whose connection sent an input this recently is in use. A second
+ * connection presenting it (a duplicated browser tab copies the token) is a
+ * second player, not the first one coming back.
+ */
+export const TOKEN_IN_USE_TICKS = 60;
 
 /** Inputs numbered further ahead than this are refused, which bounds the buffer. */
 export const MAX_INPUT_LEAD_TICKS = 120;
@@ -228,6 +236,8 @@ interface Player {
   idle: boolean;
   idleSinceTick: number;
   lastWelcomeTick: number;
+  /** The tick the newest input message arrived on. */
+  lastInputAtTick: number;
   /** A "back" that arrived too soon after the last welcome, to be answered when a second has passed. */
   backDue: { connection: Connection; clientTimeMs: number } | null;
   kills: number;
@@ -725,6 +735,8 @@ export class Room {
         const connection = player.connection;
         this.remove(player);
         if (connection) {
+          // Say why, so the client does not simply reconnect and take a seat again.
+          this.send(connection, encodeReject(REJECT_IDLE), 'reliable');
           connection.player = null;
           this.close(connection);
         }
@@ -931,6 +943,13 @@ export class Room {
       for (const player of this.players.values()) {
         if (!sameToken(player.token, hello.sessionToken)) continue;
         const old = player.connection;
+        const inUse =
+          old !== null &&
+          !old.closed &&
+          !player.away &&
+          this.tick - player.lastInputAtTick < TOKEN_IN_USE_TICKS;
+        // Someone is flying with this token right now: the newcomer gets a seat of its own.
+        if (inUse) break;
         if (old && old !== connection) {
           old.player = null;
           this.close(old);
@@ -964,6 +983,7 @@ export class Room {
       idle: false,
       idleSinceTick: 0,
       lastWelcomeTick: 0,
+      lastInputAtTick: -TOKEN_IN_USE_TICKS,
       backDue: null,
       kills: 0,
       killsThisLife: 0,
@@ -1062,6 +1082,7 @@ export class Room {
 
   private acceptInputs(player: Player, message: InputMessage): void {
     if (player.away) return;
+    player.lastInputAtTick = this.tick;
     // How long before its tick is due the newest input arrived, in ticks.
     const sinceTickDue = this.tickDueAtMs === null ? 0 : this.now() - this.tickDueAtMs;
     const lead = message.tick - this.tick - sinceTickDue / TICK_MS;

@@ -158,14 +158,24 @@ describe('determinism', () => {
     expect(Array.from(encodeShipState(a.final))).toEqual(Array.from(encodeShipState(b.final)));
   });
 
-  it('the trace exercises death, respawn, boost, crashes into the belt and orbs', () => {
-    const t = runTrace(20261113, 10_000);
-    expect(t.deaths).toBeGreaterThan(1);
-    expect(t.boostTicks).toBeGreaterThan(0);
-    expect(t.crashes).toBeGreaterThan(10);
-    expect(t.pickups).toBeGreaterThan(10);
-    expect(t.final.spawnSeq).toBeGreaterThan(0);
-  });
+  it.each([
+    ['the pinned 10,000-tick trace', 20261113, 10_000],
+    // The one the handshake compares: 2,000 ticks from the fingerprint's own seed.
+    ['the 2,000-tick handshake trace', 0x0b17, 2000],
+  ])(
+    '%s reaches every branch of the step: death, crash, orb, jump, boost, Fenix, edge',
+    (_n, seed, ticks) => {
+      const t = runTrace(seed, ticks);
+      expect(t.deaths).toBeGreaterThan(0);
+      expect(t.crashes).toBeGreaterThan(2);
+      expect(t.pickups).toBeGreaterThan(4);
+      expect(t.jumps).toBeGreaterThan(0);
+      expect(t.boostTicks).toBeGreaterThan(100);
+      expect(t.fenixTicks).toBeGreaterThan(100);
+      expect(t.edgeHits).toBeGreaterThan(2);
+      expect(t.final.spawnSeq).toBeGreaterThan(0);
+    },
+  );
 
   it('gives the pinned hash on this machine', () => {
     // Recorded on an ARM64 Mac (Node 22; Chromium, WebKit and Firefox are
@@ -173,7 +183,7 @@ describe('determinism', () => {
     // If this fails on another CPU with no change to the simulation, the
     // simulation is not portable and prediction will not match the server.
     // If the simulation or a constant changed on purpose, update the number.
-    expect(runTrace(20261113, 10_000).hash).toBe(2964748546);
+    expect(runTrace(20261113, 10_000).hash).toBe(1339382450);
   });
 
   it('never fuses a multiply and an add, even in optimised code', () => {

@@ -69,6 +69,13 @@ export default defineConfig(async () => ({
   server: { port: clientPort, strictPort: true, proxy, host: lan },
   // `vite preview` serves the production build the same way; the end-to-end
   // tests use it.
-  preview: { port: clientPort, strictPort: true, proxy },
+  // By hand it gets a port of its own: its service worker would otherwise
+  // go on answering for the dev server at the same address.
+  preview: {
+    port: process.env.ORBIT_CLIENT_PORT ? clientPort : 4173,
+    strictPort: true,
+    proxy,
+    host: lan,
+  },
   build: { target: 'es2022' },
 }));

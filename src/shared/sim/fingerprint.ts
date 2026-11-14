@@ -11,9 +11,10 @@ import { encodeShipState } from '../protocol.ts';
 import { Rng } from '../rng.ts';
 import { cos, sin } from '../math.ts';
 import { asteroidAngle } from './belt.ts';
+import { ORB_KINDS } from './orbs.ts';
 import { damageShip, quantiseControls, spawnShip } from './ship.ts';
 import type { Input, ShipState } from './ship.ts';
-import { WorldLedger, applyOrb, createWorld, stepPlayer } from './world.ts';
+import { WorldLedger, applyOrb, createWorld, outsideCombatZone, stepPlayer } from './world.ts';
 import type { WorldEffect } from './world.ts';
 
 export interface TraceResult {
@@ -22,6 +23,12 @@ export interface TraceResult {
   boostTicks: number;
   crashes: number;
   pickups: number;
+  /** Wormhole jumps: the spawn number rose without a death. */
+  jumps: number;
+  /** Ticks flown as a Fenix, and ticks flown faster than an ordinary ship can without a boost. */
+  fenixTicks: number;
+  /** Times the hull or shield dropped outside the combat zone. */
+  edgeHits: number;
   final: ShipState;
 }
 
@@ -51,9 +58,9 @@ function mix(hash: number, bytes: Uint8Array): number {
  */
 export function runTrace(seed: number, ticks: number): TraceResult {
   const rng = new Rng(seed);
-  // Start 400 units above the kill radius, flying at the planet, so the run
-  // reaches a death and a respawn early.
-  let ship: ShipState = { ...spawnShip(rng, 0), x: 0, y: 0, z: -1620 };
+  // Start just above the kill radius, flying at the planet, so the run
+  // begins with a death and a respawn.
+  let ship: ShipState = { ...spawnShip(rng, 0), x: 0, y: 0, z: -1235 };
   let input: Input = quantiseControls({ yaw: 0, pitch: 0, throttle: 1, fire: true });
   let hash = 0x811c9dc5;
   let deaths = 0;
@@ -63,7 +70,14 @@ export function runTrace(seed: number, ticks: number): TraceResult {
   // The clock starts weeks into a room's life, where the orbit angles are large.
   const world = createWorld(seed, SIM.asteroidCount, true);
   const ledger = new WorldLedger(world);
+  const orbsByKind = ORB_KINDS.map((kind) =>
+    [...world.orbs.orbs.keys()].filter((id) => world.orbs.orbs[id]?.kind === kind),
+  );
   let pickups = 0;
+  let visits = 0;
+  let jumps = 0;
+  let fenixTicks = 0;
+  let edgeHits = 0;
   const effects: WorldEffect[] = [];
 
   for (let step = 1; step <= ticks; step++) {
@@ -97,20 +111,35 @@ export function runTrace(seed: number, ticks: number): TraceResult {
         crashTicks: 0,
       };
     }
-    // And on an orb of each kind in turn, so that it takes it. Fenix orbs
-    // can only be shot, which the trace does by applying one directly.
-    const orbId = (step * 37) % world.orbs.orbs.length;
-    const orb = world.orbs.orbs[orbId];
-    if (ship.alive && orb && step % 250 === 125) {
-      ship = { ...ship, x: orb.x, y: orb.y, z: orb.z };
-      if (orb.kind === 'fenix') ship = applyOrb(ship, orbId, tick, world);
+    // And on an orb of each kind in turn, so that it takes it: every kind
+    // that changes a ship within the first 2,000 steps. Fenix orbs can only
+    // be shot, which the trace does by applying one directly.
+    if (ship.alive && step % 250 === 125) {
+      const visit = visits++;
+      const ofKind = orbsByKind[visit % ORB_KINDS.length] ?? [];
+      const orbId = ofKind[(visit * 7) % Math.max(1, ofKind.length)] ?? 0;
+      const orb = world.orbs.orbs[orbId];
+      if (orb) {
+        ship = { ...ship, x: orb.x, y: orb.y, z: orb.z };
+        if (orb.kind === 'fenix') ship = applyOrb(ship, orbId, tick, world);
+      }
     }
     // Out past the edge of the combat zone for a while.
-    if (ship.alive && step === 5200) ship = { ...ship, x: 9500, y: 0, z: 0, yaw: 1.5 };
+    if (ship.alive && step % 2500 === 1150) ship = { ...ship, x: 9500, y: 0, z: 0, yaw: 1.5 };
 
     const wasAlive = ship.alive;
+    const before = ship;
     effects.length = 0;
     ship = stepPlayer(ship, input, tick, world, ledger, effects);
+    if (before.alive && ship.alive && ship.spawnSeq !== before.spawnSeq) jumps++;
+    if (ship.alive && ship.fenix) fenixTicks++;
+    if (
+      effects.length === 0 &&
+      outsideCombatZone(ship) &&
+      ship.hp + ship.shield < before.hp + before.shield
+    ) {
+      edgeHits++;
+    }
     for (const effect of effects) {
       if (effect.kind === 'asteroid') {
         ledger.asteroids.remove(effect.id, tick);
@@ -130,7 +159,7 @@ export function runTrace(seed: number, ticks: number): TraceResult {
     const rock = world.belt.asteroids[(step * 7) % SIM.asteroidCount];
     if (rock) hash = mixNumber(hash, asteroidAngle(rock, tick));
   }
-  return { hash, deaths, boostTicks, crashes, pickups, final: ship };
+  return { hash, deaths, boostTicks, crashes, pickups, jumps, fenixTicks, edgeHits, final: ship };
 }
 
 /** Thirty days at 60 ticks a second. */

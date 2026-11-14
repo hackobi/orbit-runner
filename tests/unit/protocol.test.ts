@@ -8,6 +8,8 @@ import {
   NO_PLAYER,
   PROTOCOL_VERSION,
   REJECT_FULL,
+  REJECT_IDLE,
+  REJECT_VERSION,
   SNAPSHOT_HEADER_BYTES,
   decodeClientMessage,
   decodeServerMessage,
@@ -272,10 +274,10 @@ describe('server messages', () => {
     expect(decodeServerMessage(encodeEvents([]))).toEqual({ type: 'events', events: [] });
   });
 
-  it('reject round-trips', () => {
-    expect(decodeServerMessage(encodeReject(REJECT_FULL))).toEqual({
-      type: 'reject',
-      reason: REJECT_FULL,
-    });
+  it('reject round-trips for each reason, and an unknown reason is malformed', () => {
+    for (const reason of [REJECT_VERSION, REJECT_FULL, REJECT_IDLE] as const) {
+      expect(decodeServerMessage(encodeReject(reason))).toEqual({ type: 'reject', reason });
+    }
+    expect(decodeServerMessage(new Uint8Array([2, 9]))).toBeNull();
   });
 });

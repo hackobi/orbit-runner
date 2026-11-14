@@ -61,4 +61,4 @@ Hold the phone sideways. Fill in the result column; anything that fails is a bug
 | 17 | Fly through a Zaphire orb (red): the store appears along the top and its buttons can be tapped | | |
 | 18 | Two phones, or a phone and the Mac, in the same room: each sees the other move smoothly and can hit it | | |
 
-The service worker (offline opening and the update prompt) is part of the production build only. To try it on a phone, run `npm run build`, then `ORBIT_LAN=1 npx vite preview --host`. That command has not been run here either.
+The service worker (offline opening and the update prompt) is part of the production build only. To try it on a phone, run `npm run build`, then `ORBIT_LAN=1 npx vite preview`. It serves on port 4173, not the dev server's 5173, so that its service worker does not go on answering for the dev server afterwards. That command has not been run here either.

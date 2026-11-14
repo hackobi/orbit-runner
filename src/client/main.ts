@@ -1,6 +1,6 @@
 import { Session } from '../net/session.ts';
 import { WebSocketTransport } from '../net/wsTransport.ts';
-import { REJECT_VERSION } from '../shared/protocol.ts';
+import { REJECT_IDLE, REJECT_VERSION } from '../shared/protocol.ts';
 import type { GameEvent } from '../shared/protocol.ts';
 import { createDebugRecorder } from './debugHook.ts';
 import { InputDevices } from './input.ts';
@@ -199,8 +199,11 @@ function statusText(): string {
     case 'connecting':
       return session.reconnects > 0 ? 'Reconnecting…' : 'Connecting…';
     case 'rejected':
-      return core.rejectReason === REJECT_VERSION
-        ? 'This copy of the game is out of date. Reload to update.'
+      if (core.rejectReason === REJECT_VERSION) {
+        return 'This copy of the game is out of date. Reload to update.';
+      }
+      return core.rejectReason === REJECT_IDLE
+        ? 'You were away, and your seat was given to someone else. Reload to play again.'
         : 'The room is full. Try again in a moment.';
     case 'closed':
       return 'Connection lost. Reconnecting…';

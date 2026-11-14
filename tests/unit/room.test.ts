@@ -4,6 +4,7 @@ import {
   CAUSE_DISCONNECT,
   PROTOCOL_VERSION,
   REJECT_FULL,
+  REJECT_IDLE,
   REJECT_VERSION,
   encodeHello,
   encodeInput,
@@ -344,7 +345,52 @@ describe('room rules', () => {
     world.run(1200 * TICK_MS);
     expect(world.room.playerCount).toBe(0);
     expect(world.left).toEqual([id]);
-    expect(pilot.core.status).toBe('closed');
+    // It is told why, so it is "rejected" and not merely "closed".
+    expect(pilot.core.status).toBe('rejected');
+    expect(pilot.core.rejectReason).toBe(REJECT_IDLE);
+  });
+
+  it('a browser left idle does not reconnect and take a seat straight back', () => {
+    // The page runs a session, which reconnects by itself whenever its
+    // connection closes. Being told why stops it.
+    const world = new TestWorld(3, 0, false);
+    const idle = world.addSession({});
+    world.run(500);
+    world.place(idle.session.core.playerId, PARKED);
+    world.run((IDLE_TICKS + SEAT_TICKS + 600) * TICK_MS);
+    expect(world.room.playerCount).toBe(0);
+    // A minute later it has still not come back.
+    world.run(60_000);
+    expect(world.room.playerCount).toBe(0);
+    expect(idle.session.reconnects).toBe(0);
+    expect(idle.session.core.status).toBe('rejected');
+    expect(idle.links).toHaveLength(1);
+  });
+
+  it("a second tab with a copy of the token is a second player, and neither takes the other's seat", () => {
+    // Duplicating a browser tab copies the token it keeps. Each tab must fly its own ship.
+    const world = new TestWorld(3, 0, false);
+    let kept: Uint8Array | null = null;
+    const first = world.addSession({
+      controls: () => ({ yaw: 0.2, pitch: 0, throttle: 0, fire: false }),
+      onSessionToken: (token) => {
+        kept ??= token;
+      },
+    });
+    world.run(1000);
+    world.place(first.session.core.playerId, PARKED);
+    const second = world.addSession({
+      controls: () => ({ yaw: -0.2, pitch: 0, throttle: 0, fire: false }),
+      sessionToken: kept,
+    });
+    world.run(10_000);
+    expect(world.room.playerCount).toBe(2);
+    expect(second.session.core.playerId).not.toBe(first.session.core.playerId);
+    for (const tab of [first, second]) {
+      expect(tab.session.core.status).toBe('playing');
+      expect(tab.session.reconnects).toBe(0);
+      expect(tab.links).toHaveLength(1);
+    }
   });
 
   it('a hidden tab that stays hidden for five minutes loses its seat too', () => {

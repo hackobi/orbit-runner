@@ -21,7 +21,7 @@ import type { StoreItem } from './scoring.ts';
 import { inputFromWire } from './sim/ship.ts';
 import type { Input, ShipState } from './sim/ship.ts';
 
-export const PROTOCOL_VERSION = 5;
+export const PROTOCOL_VERSION = 6;
 
 /** Inputs carried per message: the tick's own plus the ones before it. */
 export const INPUT_REDUNDANCY = 3;
@@ -43,7 +43,13 @@ const SERVER_SCORES = 5;
 
 export const REJECT_VERSION = 1;
 export const REJECT_FULL = 2;
-export type RejectReason = typeof REJECT_VERSION | typeof REJECT_FULL;
+/**
+ * The player was away or idle for so long that the seat was given up. Sent
+ * before the server closes the connection, so the client knows not to come
+ * straight back.
+ */
+export const REJECT_IDLE = 3;
+export type RejectReason = typeof REJECT_VERSION | typeof REJECT_FULL | typeof REJECT_IDLE;
 
 /** No player: used for "killed by nobody". */
 export const NO_PLAYER = 255;
@@ -839,7 +845,12 @@ export function decodeServerMessage(data: Uint8Array): ServerMessage | null {
     }
     if (type === SERVER_REJECT) {
       const reason = r.u8();
-      if (!r.atEnd() || (reason !== REJECT_VERSION && reason !== REJECT_FULL)) return null;
+      if (
+        !r.atEnd() ||
+        (reason !== REJECT_VERSION && reason !== REJECT_FULL && reason !== REJECT_IDLE)
+      ) {
+        return null;
+      }
       return { type: 'reject', reason };
     }
     if (type === SERVER_SNAPSHOT) {

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import type { DebugHook } from '../../src/client/debugHook.ts';
+import { SERVER_PORT } from '../../playwright.config.ts';
 import { waitForEmptyRoom } from './support.ts';
 
 declare global {
@@ -8,8 +9,8 @@ declare global {
   }
 }
 
-// The installable app: Chrome's own verdict on whether the page can be
-// installed, the manifest's contents, and the page opening with no network.
+// The installable app: the conditions Chrome sets for installing a page,
+// checked one by one, and the page opening with no network.
 
 interface Manifest {
   name: string;
@@ -20,7 +21,7 @@ interface Manifest {
   icons: { src: string; sizes: string; purpose?: string }[];
 }
 
-test('Chrome finds nothing against installing it, and the manifest says what it should', async ({
+test('the page meets the conditions for installing: manifest, icons, secure page, service worker', async ({
   page,
   context,
 }) => {
@@ -30,9 +31,26 @@ test('Chrome finds nothing against installing it, and the manifest says what it 
   // The service worker takes over the page.
   await page.evaluate(() => navigator.serviceWorker.ready.then(() => undefined));
 
+  // The browser found the manifest and could read all of it. (Its verdict
+  // on installing is not asked here: a headless browser answers "no
+  // objections" for any page, even one with no manifest, as the second half
+  // shows. `npm run console-check` asks it in a real window.)
   const cdp = await context.newCDPSession(page);
-  const verdict = await cdp.send('Page.getInstallabilityErrors');
-  expect(verdict.installabilityErrors).toEqual([]);
+  const found = await cdp.send('Page.getAppManifest');
+  expect(found.url).toContain('manifest.webmanifest');
+  expect(found.errors).toEqual([]);
+  const bare = await context.newPage();
+  await bare.goto(`http://127.0.0.1:${SERVER_PORT}/health`);
+  const none = await (await context.newCDPSession(bare)).send('Page.getAppManifest');
+  expect(none.url).toBe('');
+  await bare.close();
+  // Chrome's documented conditions, one by one: a secure page, a working
+  // service worker, and (below) a name, a start address, a display mode and
+  // icons of 192 and 512.
+  expect(await page.evaluate(() => window.isSecureContext)).toBe(true);
+  expect(
+    await page.evaluate(async () => (await navigator.serviceWorker.ready).active !== null),
+  ).toBe(true);
 
   const href = await page.locator('link[rel="manifest"]').getAttribute('href');
   expect(href).toBeTruthy();

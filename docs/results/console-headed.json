@@ -1,15 +1,19 @@
 {
-  "measuredAt": "2026-11-14T00:38:28.871Z",
+  "measuredAt": "2026-11-14T01:05:44.733Z",
   "data": {
     "browser": "Chromium 158.0.8127.18, headed",
     "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Ultra, Unspecified Version)",
     "webgl": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
     "softwareRendering": false,
-    "loadMs": 850,
+    "loadMs": 195,
     "playedSeconds": 30,
     "framesPerSecond": 100,
-    "consoleMessages": 2,
+    "consoleMessages": 0,
     "warningsAndErrors": [],
-    "readPixelsMessages": []
+    "readPixelsMessages": [],
+    "installabilityErrors": [],
+    "installabilityErrorsForAPageWithNoManifest": [
+      "no-manifest"
+    ]
   }
 }

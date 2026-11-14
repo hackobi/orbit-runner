@@ -111,6 +111,8 @@ const headed = readResult('console-headed').data as {
   warningsAndErrors: unknown[];
   readPixelsMessages: unknown[];
   softwareRendering: boolean;
+  installabilityErrors: string[];
+  installabilityErrorsForAPageWithNoManifest: string[];
 };
 const engines = ['chromium', 'webkit', 'firefox'].map((name) => ({
   name,
@@ -292,6 +294,7 @@ const lines: string[] = [
       `| Same simulation bits as Node: ${engine.name} ${engine.browserVersion} | 10,000-tick hash ${engine.traceHash === engine.nodeTraceHash ? 'equal' : '**DIFFERENT**'}, ${engine.fusedMultiplyAdds} fused multiply-adds in 2,000,000 tries, handshake fingerprint ${engine.fingerprintMatchesNode ? 'equal' : '**DIFFERENT**'} |`,
   ),
   `| Headed browser on this Mac's GPU, ${headed.playedSeconds} s of play | ${headed.browser}; ${headed.renderer}; ${headed.framesPerSecond} frames a second; ${headed.warningsAndErrors.length} console warnings or errors; ${headed.readPixelsMessages.length} "ReadPixels" messages; software rendering ${headed.softwareRendering ? '**yes**' : 'no'} |`,
+  `| Can it be installed? The browser's own verdict, same headed run, production build | objections to the game: ${headed.installabilityErrors.length === 0 ? 'none' : `**${headed.installabilityErrors.join(', ')}**`}; to a control page with no manifest: ${headed.installabilityErrorsForAPageWithNoManifest.join(', ') || '**none, so the check proves nothing**'} |`,
   '',
   `Load test detail: ${load.data.bots} bots in one place firing without pause for ${load.data.seconds} s, about ${load.data.bulletsPerSecond.toFixed(0)} bullets a second, each tested against ${load.data.bots - 1} targets every tick. ` +
     `The server held ${load.data.ticksPerSecond.toFixed(2)} ticks a second with ${load.data.catchUps} catch-ups and ${load.data.droppedTicks} dropped ticks; ${percent(load.data.lateInputShare, 2)} of inputs were late. ` +
