@@ -1,9 +1,10 @@
-// Writes the Phase 2 results section of docs/PLAN.md from the numbers the
+// Writes the latest-results section of docs/PLAN.md from the numbers the
 // tests recorded in docs/results/, judging each gate against
-// tests/thresholds.ts. Exits with an error if any gate fails, after writing
+// tests/thresholds.ts. The gates are Phase 2's; from Phase 3 on they are
+// measured with the full belt, every orb and scoring switched on. Exits with an error if any gate fails, after writing
 // the section, so the plan shows the failure.
 //
-// Run: npm run results   (after test:integration, test:e2e and test:load)
+// Run: npm run results   (after test:integration, test:e2e, test:load and console-check)
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -15,8 +16,8 @@ import { readResult } from '../tests/support/results.ts';
 import { THRESHOLDS } from '../tests/thresholds.ts';
 
 const PLAN = join(dirname(fileURLToPath(import.meta.url)), '../docs/PLAN.md');
-const START = '<!-- PHASE2-RESULTS:START (written by scripts/results.ts; do not edit by hand) -->';
-const END = '<!-- PHASE2-RESULTS:END -->';
+const START = '<!-- RESULTS:START (written by scripts/results.ts; do not edit by hand) -->';
+const END = '<!-- RESULTS:END -->';
 
 interface Load {
   bots: number;
@@ -102,6 +103,15 @@ const freeForAll = readResult('bots-free-for-all-100ms').data as BotsFreeForAll;
 const hiddenTab = readResult('resilience-hidden-tab').data as Measured;
 const lateJoiner = readResult('resilience-late-joiner').data as Measured;
 const firefox = readResult('firefox-smoke').data as Firefox;
+const headed = readResult('console-headed').data as {
+  browser: string;
+  renderer: string;
+  playedSeconds: number;
+  framesPerSecond: number;
+  warningsAndErrors: unknown[];
+  readPixelsMessages: unknown[];
+  softwareRendering: boolean;
+};
 const engines = ['chromium', 'webkit', 'firefox'].map((name) => ({
   name,
   ...(readResult(`determinism-${name}`).data as Determinism),
@@ -206,9 +216,10 @@ const yesNo = (value: boolean): string => (value ? 'Pass' : '**FAIL**');
 const lines: string[] = [
   START,
   '',
-  '### Phase 2 results',
+  '### Latest results, with all content switched on',
   '',
-  `Measured on this Mac (M3 Ultra) with headless browsers. Browser suite: ${browserSuiteAt.slice(0, 16)}Z. Load test: ${load.measuredAt.slice(0, 10)}. ` +
+  'The Phase 2 suite run again on the current build: 2,000 rocks, 1,360 orbs, Fenix ships, scoring and the store all in play. ' +
+    `Measured on this Mac (M3 Ultra) with headless browsers. Browser suite: ${browserSuiteAt.slice(0, 16)}Z. Load test: ${load.measuredAt.slice(0, 10)}. ` +
     'Thresholds are in `tests/thresholds.ts`; raw numbers are in `docs/results/`. Distances are world units; a ship is 4.0 long. ' +
     'This section is generated from those files by `npm run results`.',
   '',
@@ -253,7 +264,8 @@ const lines: string[] = [
   )}), and the server counted ${sum(lossy, (m) => m.serverHitsNotSeen)} hits that were not shown (${percent(
     sum(lossy, (m) => m.serverHitsNotSeen) /
       Math.max(1, sum(lossy, (m) => m.hitsConfirmed) + sum(lossy, (m) => m.serverHitsNotSeen)),
-  )} of the server's hits; worst client ${worst(lossy, (m) => m.serverHitsNotSeen)}). Neither figure is gated on this profile, where the view delay is pinned at the 350 ms cap. Before the fix of 2026-11-14 (a shot is tested again over past ticks when a correction changes it) the server counted 48 unshown hits here, 14.5% of its hits.`,
+  )} of the server's hits; worst client ${worst(lossy, (m) => m.serverHitsNotSeen)}). Neither figure is gated on this profile, where the view delay is pinned at the 350 ms cap.`,
+  "- A correction of size 0.000 moved nothing; a field other than position differed. Here it is the hull: the fights run among the rocks, a client rightly predicts the hull lost in a crash, and the test's keep-alive hook then gives it back on the server. One crash under the hook is one such correction (checked in virtual time: none without the hook).",
   '- Frame rates are headless browsers on a desktop GPU. They say nothing about phones.',
   '',
   '**Hit agreement in real play (reported, not gated)**',
@@ -279,6 +291,7 @@ const lines: string[] = [
     (engine) =>
       `| Same simulation bits as Node: ${engine.name} ${engine.browserVersion} | 10,000-tick hash ${engine.traceHash === engine.nodeTraceHash ? 'equal' : '**DIFFERENT**'}, ${engine.fusedMultiplyAdds} fused multiply-adds in 2,000,000 tries, handshake fingerprint ${engine.fingerprintMatchesNode ? 'equal' : '**DIFFERENT**'} |`,
   ),
+  `| Headed browser on this Mac's GPU, ${headed.playedSeconds} s of play | ${headed.browser}; ${headed.renderer}; ${headed.framesPerSecond} frames a second; ${headed.warningsAndErrors.length} console warnings or errors; ${headed.readPixelsMessages.length} "ReadPixels" messages; software rendering ${headed.softwareRendering ? '**yes**' : 'no'} |`,
   '',
   `Load test detail: ${load.data.bots} bots in one place firing without pause for ${load.data.seconds} s, about ${load.data.bulletsPerSecond.toFixed(0)} bullets a second, each tested against ${load.data.bots - 1} targets every tick. ` +
     `The server held ${load.data.ticksPerSecond.toFixed(2)} ticks a second with ${load.data.catchUps} catch-ups and ${load.data.droppedTicks} dropped ticks; ${percent(load.data.lateInputShare, 2)} of inputs were late. ` +

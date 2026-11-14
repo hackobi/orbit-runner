@@ -9,23 +9,28 @@ This file is the running checkpoint. A new session should read it first, then `d
 | 0. Research and plan | Done 2026-11-13. Approved the same day with defaults D1–D7 | STOP |
 | 1. Core loop | **Done 2026-11-13.** Every acceptance check passes; numbers below | Node tests pass |
 | 2. Multiplayer | **Done 2026-11-13, approved 2026-11-14.** Every acceptance check passes; numbers below | STOP, with measured numbers |
-| 3. Content and mobile | In progress since 2026-11-14 | |
+| 3. Content and mobile | **Built and tested 2026-11-14, except what needs a real phone.** The device checklist (`docs/DEVICE-TESTING.md`) and the LAN HTTPS server are waiting for the user | |
 | 4. Mac app | Not started | |
 | 5. Demos integration | Not started | Separate approval, and a payment proposal first |
 
-**Next action:** Phase 3, task 1 (asteroid belt). The user approved Phase 2 on 2026-11-14, asked for the unshown-hits fix first (done), and accepted the defaults for D8–D12.
+**Next action:** Phase 4 (Mac app). Phase 3's open items are the user's: run `npm run dev:lan` (it changes the Mac's keychain, so it was not run) and the device checklist.
 
 ## How to run it
 
 | Command | What it does |
 |---|---|
 | `npm run server` | Game server on `127.0.0.1:8787` (Node runs the TypeScript directly; no build) |
-| `npm run dev` | Vite on `localhost:5173`, proxying `/ws` to the game server. Open it in two windows and fly: arrows or A/D/I/K steer, W/S throttle, Space fires, or hold the pointer down to steer. Other players show as a red dot until they are close |
-| `npm test` | Unit and virtual-time netcode tests (under 1 s) |
+| `npm run dev` | Vite on `localhost:5173`, proxying `/ws` to the game server. Open it in two windows and fly: A/D or the arrows turn, I/K or the arrows pitch, W/S change speed, Space fires, hold the mouse button to steer, 1 2 3 buy from the store, P shows the players. On a touch screen: stick on the left, buttons on the right |
+| `npm run dev:lan` | The same over HTTPS to the local network, for a phone. **Its first run changes the Mac's keychain.** Read `docs/DEVICE-TESTING.md` first. Not run yet |
+| `npm test` | Unit and virtual-time tests of the simulation, the netcode, the content and the client's logic (about 1 s) |
 | `npm run test:integration` | Bots over real sockets (one for 60 s, four hunters for 60 s, four through the proxy with 2% real loss), server boot, production-bundle check. About 65 s |
-| `npm run test:e2e` | Playwright against the minified production build with the debug hook on: single-client checks in Chromium and WebKit, the four-browser suite on three network profiles, resilience, and a Firefox smoke run. Starts its own server, `vite preview` and network proxy on ports 8797, 5273 and 8798. About 5 minutes |
+| `npm run test:e2e` | Playwright against the minified production build with the debug hook on: single-client checks in Chromium and WebKit (determinism, flight, HUD and store), the installable app and touch controls in Chromium, the four-browser suite on three network profiles, resilience, and a Firefox smoke run. Starts its own server, `vite preview` and network proxy on ports 8797, 5273 and 8798. About 6 minutes |
 | `npm run test:load` | 16 bots firing without pause for 5 minutes; reports tick time, heap and bandwidth. `npm run test:load -- 60` for a shorter look |
 | `npm run typecheck`, `npm run lint` | Must pass before a task is marked done |
+| `npm run console-check` | Opens a real browser window for 40 s and records its console and renderer (the ReadPixels check) |
+| `npm run results` | Rewrites the latest-results section of this file from `docs/results/` and fails if a gate fails |
+| `npm run screenshot -- <dir> [phone]` | Stages a few moments and takes pictures of them |
+| `npm run icons` | Redraws the app icons into `public/icons/` |
 | `npm run spike:webgl` | Re-runs the headless WebGL measurement |
 
 ## Where things are
@@ -154,7 +159,7 @@ Acceptance:
 
 **STOP.** Report: each threshold with its measured number per browser and profile, failures as failures, and the UNVERIFIED list.
 
-<!-- PHASE2-RESULTS:START (written by scripts/results.ts; do not edit by hand) -->
+<!-- Recorded at the end of Phase 2 (commit ff11047), before any content existed. Not regenerated since: the latest run is under Phase 3. -->
 
 ### Phase 2 results
 
@@ -234,7 +239,6 @@ Four hunter bots over real sockets through the proxy on the 100 ms profile, with
 
 Load test detail: 16 bots in one place firing without pause for 300 s, about 137 bullets a second, each tested against 15 targets every tick. The server held 60.00 ticks a second with 0 catch-ups and 0 dropped ticks; 0.00% of inputs were late. Bandwidth is payload bytes handed to the sockets; WebSocket and TCP framing are extra.
 
-<!-- PHASE2-RESULTS:END -->
 
 What changed from the plan during Phase 2:
 
@@ -263,32 +267,140 @@ Goal: v1's gameplay content and look, and proper phone support.
 
 Tasks:
 
-0. D8–D12: the user accepted the defaults on 2026-11-14 (shield absorbs first; wormhole exits at another wormhole; v1 pitch with an invert option; 9,000-unit combat zone; v1 pointer steering).
-1. Asteroid belt in the shared sim (closed-form ring orbits, spatial index), ship and bullet collisions, near-miss sparks.
-2. Orbs, server-owned: Shield, Pink, Fenix, Zaphire, Wormhole, Boost, and the two multiplier orbs.
-3. Fenix transform; wormhole teleport (D9); shield behaviour (D8); world edge (D11).
-4. Server-computed scoring, points store, leaderboards.
-5. HUD, minimap, labels, death and respawn screens. The minimap replaces the red dots on remote ships.
-6. Visuals to match v1: ship models, exhaust, impacts, tone mapping; wormhole shader.
-7. Touch controls, tilt option, landscape overlay, safe areas.
-8. Adaptive quality controller.
-8a. Room rules left open by Phase 2 (`DECISIONS.md` section 6): an idle timeout for players who send nothing, and a limit on "back" presence messages.
-9. PWA: manifest, icons, service worker, update prompt.
-10. LAN HTTPS dev server with instructions for trusting the certificate on the iPhone.
-11. Record the console of a headed, GPU-backed Chrome run for the ReadPixels warning.
+| # | Task | State |
+|---|---|---|
+| 0 | D8–D12 | Accepted at their defaults by the user, 2026-11-14 |
+| 1 | Asteroid belt in the shared sim, ship and bullet collisions, near-miss sparks | Done |
+| 2 | Orbs, server-owned: shield, pink, Fenix, Zaphire, wormhole, boost, miner, hunter | Done |
+| 3 | Fenix; wormhole jump (D9); shield (D8); world edge (D11) | Done |
+| 4 | Server-kept score, the store, scoreboard | Done. A shared all-time leaderboard needs accounts and is Phase 5 |
+| 5 | HUD, map, name labels, death screen, kill feed | Done |
+| 6 | Exhaust, bursts, camera shake, lighting, wormhole shader, Fenix model | Done |
+| 7 | Touch stick and buttons, tilt option, rotate overlay, safe areas, settings | Done in code. Tilt and everything on a real phone: UNVERIFIED |
+| 8 | Adaptive quality | Done in code. Never run on a slow device: UNVERIFIED |
+| 8a | Idle rule, seat limit, welcome rate limit | Done |
+| 9 | Installable app, opens offline, updates between lives | Done. The update path with two real builds: UNVERIFIED |
+| 10 | LAN HTTPS dev server and iPhone instructions | Written, **not run** (it changes the Mac's keychain) |
+| 11 | Console of a headed, GPU-backed browser | Done: no ReadPixels message |
 
 Acceptance:
 
-| Check | Pass |
+| Check | Pass condition | Result |
+|---|---|---|
+| Phase 2 suite | Still passes with content enabled | **Pass.** Numbers below, measured with 2,000 rocks and 1,360 orbs in the room |
+| Content, unit | Each orb's effect, scoring rule and store purchase is decided by the server and covered by a test | **Pass.** `tests/unit/orbs.test.ts`, `scoring.test.ts`, `belt.test.ts` |
+| Collisions | Asteroid and planet deaths are server-decided; a client cannot skip them | **Pass.** A client that sends nothing is still flown into the rock (`belt.test.ts`); the planet since Phase 1 |
+| Touch | Stick and fire button drive the same input axes as the keyboard; two simultaneous pointers work | **Pass in Chromium** at a phone's screen size, with real touch events and three fingers at once (`tests/e2e/touch.spec.ts`). WebKit and real phones: UNVERIFIED |
+| PWA | Manifest and service worker pass Chrome's install criteria; update is offered between lives | **Pass** for installing (Chrome reports no installability errors) and opening offline (`tests/e2e/pwa.spec.ts`). The between-lives rule is unit-tested; a real update from one build to the next has not been run |
+| LAN | The dev build loads over HTTPS from a second device on the LAN, including the game socket | **Not run.** Needs the user: `docs/DEVICE-TESTING.md` |
+| ReadPixels | Absent from the headed Chrome console, or root-caused and fixed | **Pass.** Absent, in headed Chromium 158 on this Mac's GPU at 100 frames a second |
+| Devices | Manual checklist run by the user; results recorded | **Not run.** `docs/DEVICE-TESTING.md` has the 18 checks. Until then: UNVERIFIED |
+
+<!-- RESULTS:START (written by scripts/results.ts; do not edit by hand) -->
+
+### Latest results, with all content switched on
+
+The Phase 2 suite run again on the current build: 2,000 rocks, 1,360 orbs, Fenix ships, scoring and the store all in play. Measured on this Mac (M3 Ultra) with headless browsers. Browser suite: 2026-11-14T00:48Z. Load test: 2026-11-14. Thresholds are in `tests/thresholds.ts`; raw numbers are in `docs/results/`. Distances are world units; a ship is 4.0 long. This section is generated from those files by `npm run results`.
+
+**Thresholds from the brief**
+
+| Threshold | Limit | Measured | Result |
+|---|---|---|---|
+| Remote position error p95, 100 ms profile | < 2.0 | 0.007 (worst of four clients) | Pass |
+| Remote position error max, 100 ms profile | < 8.0 | 0.017 (worst of four) | Pass |
+| No visible snaps, every profile | 0 frames over 3 × speed limit × frame time | 0 (worst of four clients on three profiles) | Pass |
+| Own-ship corrections, 200 ms lossy profile | p95 < 4.0 | 0.827 (worst of four) | Pass |
+| Own-ship corrections, clean network | none over 0.01 | largest 0.000; 1 corrections of any size | Pass |
+| Hit agreement, 100 ms profile (ships kept alive) | ≥ 95% | 100.0% (lowest of four; fewest hits seen by one client: 58; server hits not shown: 0) | Pass |
+| Load: tick time p99, 16 bots, 300 s | ≤ 8.33 ms | 2.23 ms (p50 1.22, worst single tick 8.33) | Pass |
+| Load: heap after garbage collection, end against 1 minute | growth ≤ 10% | 14.5 MB → 10.0 MB (-31.0%) | Pass |
+| Load: bandwidth per client | reported | 16.3 kB/s down in 40 messages/s | Reported |
+
+No threshold failed.
+
+**Clean profile (no added latency)**
+
+| Client | Frames/s | Remote error p95 | Remote error max | Drawn past newest sample | Snaps | Own corrections | Correction p95 | Correction max | Hits confirmed of seen | Server hits not shown | Late inputs | View delay | Interp. delay |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Chromium desktop | 60 | 0.007 | 0.014 | 0.0% | 0 | 0 | 0.000 | 0.000 | 77 of 77 (100.0%) | 0 | 0.0% | 125 ms | 67 ms |
+| WebKit desktop | 100 | 0.007 | 0.017 | 0.0% | 0 | 1 | 0.000 | 0.000 | 78 of 78 (100.0%) | 0 | 0.0% | 128 ms | 67 ms |
+| iPhone 15 (WebKit) | 100 | 0.007 | 0.016 | 0.0% | 0 | 0 | 0.000 | 0.000 | 102 of 102 (100.0%) | 0 | 0.0% | 129 ms | 67 ms |
+| Pixel 7 (Chromium) | 60 | 0.007 | 0.011 | 0.0% | 0 | 0 | 0.000 | 0.000 | 105 of 105 (100.0%) | 0 | 0.0% | 118 ms | 67 ms |
+
+**100ms profile (100 ms round trip ± 20 ms)**
+
+| Client | Frames/s | Remote error p95 | Remote error max | Drawn past newest sample | Snaps | Own corrections | Correction p95 | Correction max | Hits confirmed of seen | Server hits not shown | Late inputs | View delay | Interp. delay |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Chromium desktop | 60 | 0.007 | 0.014 | 0.0% | 0 | 0 | 0.000 | 0.000 | 116 of 116 (100.0%) | 0 | 0.0% | 230 ms | 71 ms |
+| WebKit desktop | 100 | 0.007 | 0.017 | 0.0% | 0 | 0 | 0.000 | 0.000 | 58 of 58 (100.0%) | 0 | 0.0% | 228 ms | 71 ms |
+| iPhone 15 (WebKit) | 100 | 0.007 | 0.017 | 0.0% | 0 | 0 | 0.000 | 0.000 | 132 of 132 (100.0%) | 0 | 0.0% | 228 ms | 71 ms |
+| Pixel 7 (Chromium) | 60 | 0.007 | 0.011 | 0.0% | 0 | 0 | 0.000 | 0.000 | 102 of 102 (100.0%) | 0 | 0.0% | 234 ms | 71 ms |
+
+**200ms-lossy profile (200 ms round trip ± 50 ms, 2% loss as an in-order 260 ms stall).** Only the snap and correction columns are gated on this profile; the rest is reported.
+
+| Client | Frames/s | Remote error p95 | Remote error max | Drawn past newest sample | Snaps | Own corrections | Correction p95 | Correction max | Hits confirmed of seen | Server hits not shown | Late inputs | View delay | Interp. delay |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Chromium desktop | 60 | 0.050 | 2.512 | 7.1% | 0 | 129 | 0.591 | 0.769 | 96 of 96 (100.0%) | 0 | 18.6% | 350 ms | 250 ms |
+| WebKit desktop | 100 | 0.024 | 0.587 | 4.8% | 0 | 112 | 0.230 | 0.459 | 48 of 48 (100.0%) | 0 | 14.8% | 350 ms | 250 ms |
+| iPhone 15 (WebKit) | 100 | 0.039 | 0.660 | 7.2% | 0 | 121 | 0.299 | 0.731 | 121 of 121 (100.0%) | 0 | 15.4% | 350 ms | 250 ms |
+| Pixel 7 (Chromium) | 60 | 0.021 | 0.188 | 4.1% | 0 | 102 | 0.827 | 1.618 | 51 of 53 (96.2%) | 1 | 15.4% | 350 ms | 250 ms |
+
+How to read the tables:
+
+- Each test takes two 20-second measurements. In each, two clients hunt and shoot while two fly erratically; then they swap. Ships are kept alive by a test hook, so the hit column measures lag compensation and not who died first.
+- "Remote error" is the distance between where a client drew another ship and where the server had that ship at the moment being drawn.
+- "Late inputs" is the share of the client's inputs that reached the server after their tick had been simulated.
+- "View delay" is how far behind its own ship a client sees the others. The server honours up to 350 ms of it. "Interp. delay" is the part of that spent waiting so there are two samples to draw between.
+- "Hits confirmed of seen" counts the hits a shooter's screen showed and whether the server agreed. "Server hits not shown" is the other direction: hits the server counted that the shooter's own test did not find, so the bullet vanishes and the damage lands without a hit flash.
+- On the lossy profile the shooters' screens showed 318 hits and the server confirmed 316 of them (99.4%), and the server counted 1 hits that were not shown (0.3% of the server's hits; worst client 1). Neither figure is gated on this profile, where the view delay is pinned at the 350 ms cap.
+- A correction of size 0.000 moved nothing; a field other than position differed. Here it is the hull: the fights run among the rocks, a client rightly predicts the hull lost in a crash, and the test's keep-alive hook then gives it back on the server. One crash under the hook is one such correction (checked in virtual time: none without the hook).
+- Frame rates are headless browsers on a desktop GPU. They say nothing about phones.
+
+**Hit agreement in real play (reported, not gated)**
+
+Four hunter bots over real sockets through the proxy on the 100 ms profile, with real kills, regrouped every 12 s, 60 s: **146 of 151 hits seen by shooters were confirmed (96.7%)**, with 20 kills. Of the 5 not confirmed, 5 were on a ship another player had already destroyed on the server. The server decided 0 hits that the shooter's screen did not show. The gated figure above is higher because its ships cannot die; this run also clears 95%.
+
+**Other acceptance checks**
+
+| Check | Measured |
 |---|---|
-| Phase 2 suite | Still passes with content enabled |
-| Content, unit | Each orb's effect, scoring rule and store purchase is decided by the server and covered by a test |
-| Collisions | Asteroid and planet deaths are server-decided; a client cannot skip them |
-| Touch | Playwright touch emulation: stick and fire button drive the same input axes as the keyboard; two simultaneous pointers work |
-| PWA | Manifest and service worker pass Chrome's install criteria; update is offered between lives |
-| LAN | The dev build loads over HTTPS from a second device on the LAN, including the game socket |
-| ReadPixels | Absent from the headed Chrome console, or root-caused and fixed |
-| Devices | Manual checklist below run by the user; results recorded here. Until then: UNVERIFIED |
+| One bot, real socket, 60 s | 3599 inputs, 1800 snapshots, 0 corrections, 0 late inputs, round trip 2.3 ms |
+| Four hunters, real sockets, no added latency, 60 s | all joined and saw each other; 111 bullets, 35 server hits, 35 of 36 seen hits confirmed (97.2%), 5 kills |
+| Loss mode `drop`: four hunters, 200 ms, 2% of inputs and snapshots discarded, 40 s | 324 messages dropped of 15735; 42 hits, 6 deaths; the server ran 0 ticks without an input; every bot ended in the right life of its ship and had heard of every death |
+| Tab hidden for 3 s, 100 ms profile | the other player saw 0 snaps and at most 0.010 units of error over 480 frames; the hidden client resumed in its seat without reconnecting |
+| Connections cut, 100 ms profile | both clients reconnected once and kept their player ids; nobody died (asserted by the test; no numbers) |
+| Late joiner, 100 ms profile | drew both other ships within 0.002 units (p95) of the server, 0 snaps, and drew their bullets |
+| Firefox 159.0 smoke run | WebGL2 yes, 59 frames a second, saw 1 other player, 0 corrections |
+| Same simulation bits as Node: chromium 158.0.8127.18 | 10,000-tick hash equal, 0 fused multiply-adds in 2,000,000 tries, handshake fingerprint equal |
+| Same simulation bits as Node: webkit 27.2 | 10,000-tick hash equal, 0 fused multiply-adds in 2,000,000 tries, handshake fingerprint equal |
+| Same simulation bits as Node: firefox 159.0 | 10,000-tick hash equal, 0 fused multiply-adds in 2,000,000 tries, handshake fingerprint equal |
+| Headed browser on this Mac's GPU, 30 s of play | Chromium 158.0.8127.18, headed; ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Ultra, Unspecified Version); 100 frames a second; 0 console warnings or errors; 0 "ReadPixels" messages; software rendering no |
+
+Load test detail: 16 bots in one place firing without pause for 300 s, about 137 bullets a second, each tested against 15 targets every tick. The server held 60.00 ticks a second with 0 catch-ups and 0 dropped ticks; 0.00% of inputs were late. Bandwidth is payload bytes handed to the sockets; WebSocket and TCP framing are extra.
+
+<!-- RESULTS:END -->
+
+UNVERIFIED after Phase 3:
+
+- Everything on a real phone: frame rate, heat, touch in Safari, tilt steering, safe areas, backgrounding, Add to Home Screen. The "iPhone 15" and "Pixel 7" rows above are those screen sizes inside desktop browser engines.
+- Tilt steering has never run on a device. Its sign convention is written down and unit-tested, which shows it is consistent, not that it is right.
+- The quality controller has only seen made-up frame times.
+- The LAN HTTPS server and the certificate steps.
+- A real service-worker update from one build to the next.
+- x86: determinism is measured on ARM64 only (as in Phase 1).
+
+What changed from the plan during Phase 3 (`DECISIONS.md` 5.10 and Appendix A.2 have the reasons):
+
+- **Rocks are drawn at the own ship's moment in time.** Other ships are drawn a view delay earlier, so another ship can appear to clip a rock.
+- **No drifting rocks outside the ring**, and a destroyed rock is back after 30 s.
+- **Orbs sit still on the ring** and come back 30 s after being taken.
+- **A shot orb acts on the shooter half a second later**, on a tick the server names, so the shooter's client is not corrected. v1 applied it at once.
+- **A kill pays 330** (doubled over the belt and by the hunter orb). v1 paid that only for bots.
+- **The store sells one thing per Zaphire orb, within 20 s**, and refuses what would change nothing.
+- **Points are kept across lives.**
+- **Two minutes without a control moving destroys the ship** until one moves.
+- **A page reload keeps the seat** (the session token is kept for the life of the tab).
+- **The mechanism tests run in emptier space.** Tests of one rock, one orb or a duel use a thin belt or no orbs so that one thing decides the result; they say so where they do. The browser suite, the real-socket tests and the load test run with everything on.
 
 ## Phase 4: Mac app
 
@@ -302,25 +414,12 @@ Before any code: a written proposal for how phone and Mac-app players pay or pla
 
 Design points already fixed so this fits without rework: server-decided kills and survival time, a unique ID per death, admission and economy behind interfaces.
 
-## Manual device checklist (draft; final version ships with Phases 3 and 4)
+## Manual device checklist
 
-**iPhone (Safari, then installed to Home Screen)**
-1. Trust the mkcert root certificate; open the LAN HTTPS address. Page and game connect.
-2. Rotate to landscape. Controls clear the notch and the home indicator.
-3. Stick steers, fire button fires, both at once.
-4. Enable tilt: the permission prompt appears on tap, and tilt steers.
-5. Fly for 5 minutes with a second player on desktop. Note stutter, heat, and the on-screen frame counter.
-6. Lock the phone for 5 s and unlock: the game resumes without a jump on the other player's screen.
-7. Turn on Low Power Mode: the game still plays at the lower frame rate.
-8. Add to Home Screen, relaunch: no browser chrome, and it reconnects.
+Phones: `docs/DEVICE-TESTING.md` (18 checks, with the LAN HTTPS steps). Not run yet.
 
-**Android phone (Chrome)**
-1. Open the LAN address; install the app from Chrome's prompt.
-2. Fullscreen and landscape lock engage.
-3. Steps 3, 5 and 6 from the iPhone list.
-4. Switch to another app for 10 s and return.
+**Mac app** (Phase 4)
 
-**Mac app**
 1. Open the `.app`. It connects and flies.
 2. Note the frame counter on your display (60 or 120 Hz).
 3. Fullscreen and back.
@@ -371,38 +470,13 @@ Blockers: none.
 
 ### 2026-11-14: Phase 3
 
-Task status (update as each lands):
+- The user approved Phase 2, asked for the unshown-hits fix before Phase 3 (done first; see the Phase 2 log) and accepted D8–D12 at their defaults.
+- Built in this order, committing after each: asteroid belt; orbs, Fenix, wormholes and the world edge; scoring, store and scoreboard; HUD; visuals; touch, tilt and settings; adaptive quality; room rules; installable app; LAN HTTPS setup; the headed console check.
+- Wire format went from version 2 to 5 (belt, orbs, scoring). The pinned trace hash is 2964748546; Chromium, WebKit and Firefox agree with Node on it.
+- Re-read from v1 while porting: the ring's creation and orbit update, the crash, bullets against rocks, lights, exhaust, bursts and camera shake, by line. The orb, Fenix, wormhole, store, scoring and HUD rules were extracted by a helper reading `main.js` (read-only) and spot-checked by line for the constants that went into `src/shared` (pickup radius, wormhole distance, store prices, boost length, belt income, Fenix speed).
+- Found by tests and fixed while building: a wormhole jump in a duel fixture (fixtures that test one mechanism now leave orbs out); the store panel covering the ship and the thumbs on a phone-sized screen (moved to the top).
+- Raised in review before building and designed for: effects delivered a round trip late would have broken the clean-network gate (hence the shared step and the named tick); world state must not go through the 2,800-unit event filter; the shooter's hit-point tracking had to learn about shields and 30-damage beams.
+- Dev-tool advisories: `npm audit` lists 14 (2 low, 12 moderate), all in ESLint's dependency tree. Nothing in what ships. Not acted on.
+- Not done, by design: bombs (paid in DEM), accounts, names and a shared leaderboard (Phase 5); sound (v1 has none).
 
-| Task | Status |
-|---|---|
-| 1. Asteroid belt | **Done.** Code, 17 tests, browser suite green with rocks on |
-| 2–3. Orbs, Fenix, wormhole, shield, world edge | In progress. Design below |
-| 4. Scoring, store, scoreboard | Not started |
-| 5–11 | Not started |
-
-Asteroids, as built:
-
-- 2,000 rocks on v1's ring. Each rock's place is a closed-form function of the room seed and the tick (`src/shared/sim/belt.ts`), so rocks are never sent. The welcome carries the seed and the count.
-- The ship step that server and client share (`src/shared/sim/world.ts`) includes the crash, so a client predicts its own crashes exactly: 0 corrections on the clean and 100 ms profiles in `tests/unit/belt.test.ts`.
-- Which rocks are destroyed is server state. It goes to every player, not only those nearby, and a late joiner gets the list. A client predicts the rocks its own ship and bullets destroy and drops a prediction the server does not confirm by that tick's snapshot.
-- A bullet stops at the first thing on its path, ship or rock, on the server and in the shooter's own test alike.
-- Wire format is version 3: shield and crash pause in the ship, shield in the remote sample, seed and rock count in the welcome, rock events.
-- The trace behind the fingerprint now covers orbits a month into a room's life, crashes and the shield. Pinned hash re-recorded: 766322025.
-
-Decided while building (also in `DECISIONS.md` A.2):
-
-- **Rocks are drawn at the own ship's moment in time**, so the ship crashes into rocks where the player sees them. Other ships are drawn a view delay earlier (about 230 ms at 100 ms of latency), so another ship can appear to clip a rock, or break up a little way from one. The other choice would have had the own ship crash into empty space.
-- **No drifting rocks outside the ring.** v1 scattered 250 around the solo player's spawn point; a shared room has no single spawn point.
-- **A destroyed rock comes back after 30 s** in its orbit.
-- **A crash costs 45 to 75, taken from the shield first** (D8). v1 took a second, smaller amount from the shield and all of the first from the hull.
-- **Spawn protection also covers crashes.** A ship can spawn inside a rock.
-
-Design for orbs, Fenix and scoring (not built yet):
-
-- Orbs are fixed in place on the ring at v1's caps (shield 160, pink 120, Fenix 120, Zaphire 120, wormhole 120, boost 120, miner 300, hunter 300), from the room seed. A taken orb comes back after a delay.
-- Flying through an orb is part of the shared ship step, so the pilot's client predicts it exactly, as with crashes.
-- Shooting an orb is decided by the server in the same contest as ships and rocks. Its effect on the shooter's ship is announced at once and applied half a second later on a tick the announcement names, so the client applies it on the same tick and is not corrected. v1 applied it at once.
-- A wormhole jump raises the ship's spawn counter, which is already the marker every part of the netcode treats as an intended jump.
-- Score, the two multiplier timers and store purchases are server state. A purchase is a fourth client message; the server checks the points.
-
-Blockers: none.
+Blockers: none for Phase 4. For closing Phase 3's last two rows: the user's phones, and their say-so for `npm run dev:lan`.

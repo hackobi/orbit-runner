@@ -1,28 +1,28 @@
 {
-  "measuredAt": "2026-11-13T00:00:00.000Z",
+  "measuredAt": "2026-11-14T00:44:46.111Z",
   "data": {
     "bots": 16,
     "seconds": 300,
-    "ticksPerSecond": 59.99921278532859,
+    "ticksPerSecond": 59.999057514804875,
     "tickWorkMs": {
-      "p50": 0.7172499999869615,
-      "p99": 1.7593329999999696,
-      "max": 8.804375000006985
+      "p50": 1.2180419999931473,
+      "p99": 2.2255000000004657,
+      "max": 8.326666999986628
     },
     "catchUps": 0,
     "droppedTicks": 0,
     "heapMB": {
-      "atBaseline": 13.032256,
-      "atEnd": 8.551984
+      "atBaseline": 14.474264,
+      "atEnd": 9.994136
     },
-    "heapGrowth": -0.3437833019854736,
-    "bytesPerClientPerSecond": 15162.147732970849,
-    "messagesPerClientPerSecond": 38.57282724176791,
-    "bulletsPerSecond": 137.11820095207094,
-    "hitsPerSecond": 0.006666579198369843,
+    "heapGrowth": -0.3095237174062875,
+    "bytesPerClientPerSecond": 16258.387732826031,
+    "messagesPerClientPerSecond": 39.892706685399155,
+    "bulletsPerSecond": 137.1178461071674,
+    "hitsPerSecond": 0.009999842919134146,
     "bulletsPerSecondInLastMinute": 137.06666666666666,
     "lateInputShare": 0,
     "malformedMessages": 0,
-    "botsAtEnd": "{\"playing\":16,\"corrections\":49,\"reconnects\":0,\"missed\":0,\"sent\":278400}"
+    "botsAtEnd": "{\"playing\":16,\"corrections\":55,\"reconnects\":0,\"missed\":0,\"sent\":278400}"
   }
 }

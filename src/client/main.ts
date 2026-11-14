@@ -15,6 +15,16 @@ import { GameScene, NEAR_MISS_SPARK } from './scene.ts';
 /** Set by the build. True only when VITE_TEST_HOOKS=1. */
 declare const __ORBIT_TEST_HOOKS__: boolean;
 
+declare global {
+  interface Window {
+    /**
+     * Present only inside the Mac app when it shows the copy of the client
+     * packed into it (app/preload.cjs): the game socket to use.
+     */
+    orbitApp?: { serverUrl: string };
+  }
+}
+
 function element<T extends HTMLElement>(id: string, type: new () => T): T {
   const found = document.getElementById(id);
   if (!(found instanceof type)) throw new Error(`#${id} is missing from the page`);
@@ -32,8 +42,11 @@ const devices = new InputDevices(canvas, settings);
 const recorder = __ORBIT_TEST_HOOKS__ ? createDebugRecorder() : null;
 
 // The page and the game socket share one origin. Test builds can point the
-// socket at the network-conditions proxy instead.
+// socket at the network-conditions proxy instead, and the Mac app's packed
+// copy, which has no server of its own behind it, is told where to go.
 function socketUrl(): string {
+  const packed = window.orbitApp?.serverUrl;
+  if (packed) return packed;
   if (__ORBIT_TEST_HOOKS__) {
     const override = new URLSearchParams(location.search).get('server');
     if (override) return override;
@@ -112,7 +125,10 @@ function keepToken(token: Uint8Array): void {
   }
 }
 
-const updates = watchForUpdates();
+// The Mac app's packed copy is replaced with the app; it has no service worker.
+const updates = window.orbitApp
+  ? { ready: false, apply: (): void => undefined }
+  : watchForUpdates();
 
 const session: Session = new Session({
   connect: () => new WebSocketTransport(new WebSocket(socketUrl())),

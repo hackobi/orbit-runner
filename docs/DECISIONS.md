@@ -1,6 +1,6 @@
 # Orbit Runner v2: decisions
 
-Phase 0 output. Written 2026-11-13 and approved the same day with defaults D1–D7. Phases 1 and 2 are built; where building changed or confirmed something, the text says so ("As built"). `PLAN.md` has the status and the measured numbers.
+Phase 0 output. Written 2026-11-13 and approved the same day with defaults D1–D7. Phases 1, 2 and 3 are built; where building changed or confirmed something, the text says so ("As built"). `PLAN.md` has the status and the measured numbers.
 
 How to read the evidence labels:
 
@@ -89,6 +89,8 @@ What is checked:
 What I conclude (**derived, not measured**): the warning is most likely an artifact of software GL in the audit, made worse by the per-wormhole cube targets. I did not reproduce it.
 
 What v2 does: no per-orb render targets (wormholes use a fresnel shader), no synchronous readback anywhere, and Phase 3 records the console of a headed, GPU-backed Chrome run. If the warning appears there, it is a real bug and gets fixed before Phase 3 closes.
+
+**Measured in Phase 3** (`npm run console-check`, result in `docs/results/console-headed.json`): Chromium 158 in a window on this Mac, renderer "ANGLE Metal Renderer: Apple M3 Ultra", 30 s of flying and shooting through rocks, orbs and wormholes at 100 frames a second. No console warnings or errors, and no ReadPixels message. The wormhole is a small spiral shader on a flat shape, one draw call for all 120. v1's own page was not run, so this shows v2 is clean, not what caused v1's warning.
 
 ## 4. Netcode library: write it or use Colyseus
 
@@ -244,12 +246,30 @@ The room talks to the outside through two interfaces. Phases 1 to 4 ship free-pl
 
 Survival time, kills and cause of death are already server-decided from Phase 2 on, so Phase 5 adds accounting, not game logic. [Appendix B](#appendix-b-v1-trust-boundary) lists what v1's economy trusts today.
 
+### 5.10 Content in the shared simulation (as built in Phase 3)
+
+Phase 2's gates include "no own-ship correction over 0.01 on a clean network", and the fights run inside the belt. Anything that changes a ship and reached its client a round trip late would break that gate. So content follows three rules.
+
+- **What a ship flies into is part of the shared step.** `stepPlayer` in `src/shared/sim/world.ts` is the flight step, then the crash, then the orb, then the edge of the combat zone. Server and client run it, so the client predicts its own crashes, pickups, boosts and wormhole jumps to the bit. Random amounts (crash damage, boost length, wormhole exit) are a hash of the room seed, the thing's id and the tick.
+- **The world is built from a seed, and only its changes are sent.** The welcome carries the seed; server and client build the same 2,000 rocks and 1,360 orbs. A rock's place is a closed-form function of the tick. Which rocks are destroyed and which orbs are taken is server state, announced to every player wherever they are, and listed for anyone who joins or comes back. A client predicts the changes it causes and drops a prediction the server has not confirmed by that tick's snapshot.
+- **What the server decides later reaches the ship on a named tick.** A bullet taking an orb, and a store purchase, are decided by the server alone. Their effect on the ship is announced at once and applied 30 ticks (half a second) later, so the news arrives first and the client applies it on the same tick. On a link slower than that it becomes an ordinary correction.
+
+A wormhole jump raises the ship's spawn counter. Every part of the netcode already treats a change in that counter as an intended jump: no smoothing, no line drawn across it for watchers, and no hit for anyone who was aiming at the ship where it was.
+
+A bullet stops at the first thing on its path in a tick: ship, rock or orb, in that order on a tie. The shooter's own client runs the same contest, so a rock in the way is not shown as a hit on the ship behind it.
+
+The shooter's hit-point tracking (5.6) now adds up amounts (15 for a bullet, 30 for a beam) against hull plus shield.
+
+Measured: crashes, shield orbs, boosts, wormhole jumps, shot orbs, store purchases and the zone's edge are each predicted with zero corrections on the clean and 100 ms profiles (`tests/unit/belt.test.ts`, `orbs.test.ts`, `scoring.test.ts`).
+
 ## 6. What cheating is still possible
 
 - **Aim assistance and radar.** The client knows the position of every ship within 2,000 units and the coarse position of the rest. No browser game can hide what it must draw.
 - **View-delay choice.** The server believes the view delay a client sends, up to 350 ms. A modified client can send any value from 0 to the cap on each tick, and so pick, per shot, whichever moment of a target's last 350 ms puts it in the bullet's path. At 60 u/s that is a choice among positions up to 21 units apart. The cap is the limit; a tighter defence would have the server estimate each client's delay itself.
-- **Holding a seat.** A connected player who sends nothing keeps flying straight and keeps one of the 16 seats for as long as the socket stays open. A hidden tab with a live socket does the same after its ship has died. There is no idle timeout yet; one belongs with the room rules in Phase 3.
-- **Asking for welcomes.** Each "back" presence message gets a full welcome and every live bullet's announcement, with no rate limit. It is cheap for the server but is free amplification; a limit of one per second belongs with the idle timeout.
+- **Holding a seat.** Closed in Phase 3. A ship whose controls have not changed for two minutes is destroyed and stays out until one moves; five minutes away or idle gives the seat up. What is left: a script that wiggles a control keeps a seat, and keeps its ship as a target worth 500 points a hit to an accomplice. Phase 5 has to treat points earned from the same account's other seats as worthless before points are worth money.
+- **Asking for welcomes.** Closed in Phase 3: one fresh welcome a second per player; a request that comes sooner is answered when the second is up.
+- **Knowing the whole map.** Every client holds every orb's position and whether it is taken, and every rock's orbit. A modified client can plot the nearest Fenix orb or wormhole. Sending only nearby orbs would break the pilot's own prediction of pickups.
+- **The store.** A purchase is a request. The server checks that the store is open for that player, the points, and that the item would change the ship. There is nothing to forge.
 - **Flying on while "away".** An away ship cannot steer or shoot but can still be hit, so there is nothing to gain.
 - **Input automation.** Perfect dodging bots are indistinguishable from good players at the protocol level.
 
@@ -306,6 +326,7 @@ Hit agreement and remote error are also reported for the 200 ms lossy profile, w
 
 ### 8.1 Phone controls
 
+- **As built.** The stick appears under the first finger put down on the left 60% of the screen; FIRE, ▲ and ▼ are on the right. Radius 56 px, dead zone 12%. Each control follows one finger by pointer id. Tested with real three-finger touch events in Chromium at a phone's screen size (`tests/e2e/touch.spec.ts`). WebKit's touch handling and every real phone are untested. Tilt is written to a stated sign convention (`tiltAxes` in `src/client/input.ts`) and has never been on a phone.
 - A hand-written virtual stick and fire button on Pointer Events, with `setPointerCapture` and `touch-action: none`, one tracked `pointerId` per control. `nipplejs` 1.0.4 is maintained again, but a floating stick tied to our HUD with our dead zones is small to write.
 - All devices produce the same two axes, clamped to ±1, so no device turns faster than another. In v1, keys plus mouse could stack to 1.6× (main.js:8767).
 - Optional tilt steering. On iOS, `DeviceOrientationEvent.requestPermission()` must be called from a tap and needs HTTPS.
@@ -315,15 +336,21 @@ Hit agreement and remote error are also reported for the 200 ms lossy profile, w
 
 ### 8.2 Adaptive quality
 
-A controller watches frame time and moves between quality tiers with hysteresis. Each tier sets a pixel-count cap (sizing the canvas, as the three.js manual recommends), particle budgets, the number of asteroid instances drawn, and effects. Low Power Mode on iOS halves `requestAnimationFrame` to 30 fps; the fixed-step sim is unaffected. Target frame rate on real phones is UNVERIFIED until Phase 3 device tests.
+A controller watches frame time and moves between quality tiers with hysteresis. Each tier sets a pixel-count cap (sizing the canvas, as the three.js manual recommends), particle budgets, the number of asteroid instances drawn, and effects. Low Power Mode on iOS halves `requestAnimationFrame` to 30 fps; the fixed-step sim is unaffected. Target frame rate on real phones is UNVERIFIED until the device tests are run.
+
+**As built.** Three tiers (`src/client/quality.ts`): pixel ratio capped at 1.75, 1.25 or 1.0; 8.3, 2.6 or 1.3 million pixels at most; 1,400, 500 or 150 particles; rocks drawn at any distance, or only those whose orbit is within 900 or 450 units of the ship's. Two seconds under 50 frames a second drop a tier. Ten seconds at 57 or better try the tier above, and each time that rise has to be undone the wait doubles, up to 160 s. A phone starts on the middle tier. The logic is unit-tested with made-up frame times; no real device has exercised it.
 
 ### 8.3 PWA
 
 `vite-plugin-pwa` precaches the app shell. Updates use `registerType: 'prompt'` and are applied between lives, never mid-match. Install on iOS is through the Share menu only. Android Chrome installs from the manifest.
 
+**As built.** `display` is `fullscreen` with `standalone` as the fallback, `orientation` is `landscape`. Chrome's own installability check returns no errors, and the page opens with the network off (`tests/e2e/pwa.spec.ts`). A waiting update is loaded when the ship is not flying. The reload that causes would have cost the player their seat, so the server's session token is now kept in the tab's `sessionStorage`: a reload inside the ten seconds a seat is held comes back to the same ship and points. The real update path (two builds, one after the other) has not been run end to end; the rule that decides when is unit-tested.
+
 ### 8.4 Device testing over the LAN
 
 `vite-plugin-mkcert` makes a locally trusted certificate that includes the Mac's LAN address. The game socket goes through Vite's proxy, so page and socket share one HTTPS origin. On the iPhone you install the mkcert root certificate once and switch on full trust for it. An untrusted self-signed certificate is not enough: reports say iOS rejects `wss://` to it even after the page warning is accepted.
+
+**As built, and not run.** `npm run dev:lan` loads the plugin only when asked. Its first run downloads `mkcert`, makes a certificate authority in `.cert/` and adds it to the Mac's keychain, which is a change to the machine that needs the owner's say-so. `docs/DEVICE-TESTING.md` has the steps, how to undo them, and the checklist.
 
 ## 9. Mac app
 
@@ -364,10 +391,11 @@ SDK notes for Phase 5: `@kynesyslabs/demosdk` is at 4.0.21, ESM. Its `D402Server
 | ~~WebGL and `requestAnimationFrame` in four headless contexts~~ | **Resolved in Phase 1.** Both work. Chromium needs `--use-angle=metal` (60 frames a second; 6 in software without it). WebKit runs at 100. Numbers in `PLAN.md` |
 | Bit-identical simulation across engines and CPUs | **Half resolved in Phase 1.** V8 and JavaScriptCore agree on this ARM64 Mac. x86 is not measured: run `npm test` on the server's architecture before deploying; the pinned hash test fails if it differs |
 | ~~Desktop Firefox: headless WebGL, and the game itself~~ | **Resolved in Phase 2.** Firefox 159 headless: WebGL2 works, 60 frames a second, connects, flies, sees a second player, zero corrections. One smoke run, not the full suite |
-| Whether the ReadPixels warning appears in a GPU-backed browser | Phase 3 |
+| ~~Whether the ReadPixels warning appears in a GPU-backed browser~~ | **Resolved in Phase 3.** It does not, in headed Chromium 158 on this Mac's GPU ([3.2](#32-the-readpixels-startup-stall)) |
 | Electron `requestAnimationFrame` rate on a 120 Hz display | Phase 4, on your Mac |
-| iOS suspension timing; iOS WebGL context loss on backgrounding | Phase 3, on your iPhone |
-| Service worker behaviour with the mkcert certificate on iOS | Phase 3, on your iPhone |
+| iOS suspension timing; iOS WebGL context loss on backgrounding | On your iPhone, with `DEVICE-TESTING.md`. Not done |
+| Service worker behaviour with the mkcert certificate on iOS | On your iPhone. Not done |
+| Touch controls in WebKit, tilt steering, and frame rate on any phone | On your phones, with `DEVICE-TESTING.md`. Not done |
 | Colyseus: per-correction events, headless `Predict`, projectile rewind | Only if D1 goes the other way |
 | JavaScriptCore's `Math.sin` implementation | Not needed: the sim does not call it |
 | The content of the Valve networking pages and the two GDC talks | Titles and URLs verified; content not re-read this session, so they are not cited as evidence |
@@ -497,8 +525,8 @@ Values are read from `main.js`. A ✓ follows each individual value I re-checked
 | Bank from mouse | Extra `mouseX × 0.5` term | Derived from the yaw axis only | One axis for every device |
 | Remote ship smoothing | 2% per frame toward latest sample | Snapshot interpolation | The brief |
 | Dev turbo, teleport | Accepted from any client | Dev and test builds only | Cheats |
-| Per-wormhole cube cameras | 120 to 220 render targets | Shader | Startup cost |
-| Renderer `logarithmicDepthBuffer` | On | Decided in Phase 3 after measuring | It costs a depth write per fragment; the PvP map may not need it |
+| Per-wormhole cube cameras | 120 to 220 render targets | One spiral shader on a flat shape, drawn for every wormhole at once | Startup cost, and the ReadPixels warning |
+| Renderer `logarithmicDepthBuffer` | On | Off. The camera sees from 0.5 to 60,000 units and nothing in the scene shows depth fighting | It costs a depth write per fragment, which phones pay for |
 | Asteroid field outside the ring | 200 "far" + 50 "near" rocks drifting around the solo player's spawn point (main.js:4827-4832) | None. The belt's 2,000 ring rocks are the only rocks | A shared room has no single spawn point to scatter them around, and a rock that drifts in a straight line leaves the map in a room that runs for days |
 | Destroyed asteroids | Never respawn | Back in their orbit after 30 s | Rooms run indefinitely |
 | Orb counts | Seeded above the caps by a double loop, then topped up around the ship, off the ring | Fixed counts at v1's caps (shield 160, pink 120, Fenix 120, Zaphire 120, wormhole 120, boost 120, miner 300, hunter 300), server-owned, on the ring | v1's counts are accidents of two bugs |
@@ -508,15 +536,32 @@ Values are read from `main.js`. A ✓ follows each individual value I re-checked
 | Heading angle | Grows without limit | Kept in (−π, π] | Keeps the deterministic `sin`/`cos` in their accurate range; invisible in play |
 | FOV follow | 6·dt of the gap per frame | `1 − e^(−6·dt)` of the gap | Same response at 60 fps, and the same at any other frame rate |
 | Saucer orientation | `group.rotation.x = π/2` is set at build (main.js:4278) and then overwritten every frame by the flight code (main.js:8835), so it has no effect | Not set | Ported the effective behaviour: disc flat, dome up |
-| Lights | A point light on the camera and one on the planet | Ambient and sun only, for now | Light units changed between v1's three.js and r187; Phase 3 matches the look |
+| Lights | Ambient, a sun, a pale point light on the camera reaching 800 units, and one on the planet | Ambient, the sun, and the camera light at 1.6 with no falloff inside 800 units | Light units changed between v1's three.js and r187; the strength is set by eye against v1's look |
 | Spawn protection | 1.3 s after a respawn only (server:3102) | 1.3 s after every spawn, the first included | One rule; a new arrival is as exposed as a respawned one |
 | Bullet on the tick it is fired | Starts at the muzzle, 1.8 units ahead | Also tested along the 1.8 units from the ship's centre to the muzzle | A target touching the shooter's nose would otherwise be skipped |
 | Bullets and the dead | A bullet keeps flying after its owner dies | Same, but removed when its owner leaves the room | The server needs the owner's view delay to place it |
 | Hits on a ship you cannot be seeing | n/a (client decided) | No hit unless the shooter was looking at the same life of the target, alive and past its spawn protection | Follows from lag compensation |
-| Remote ship size | 1.5× (main.js:6836) | 1.5×, plus a red dot at any distance | Kept; the dot stands in for the minimap until Phase 3 |
+| Remote ship size | 1.5× (main.js:6836) | 1.5×, with a name and distance over each ship and a dot on the map | Kept. The label and the map replace Phase 2's red dot |
 | Asteroid crash | 45 to 75 off the hull and, separately, 22 to 44 off the shield; `Math.random` | 45 to 75, off the shield first and the rest off the hull (D8); the amount is fixed by the room seed, the rock and the tick | The server and the predicting client must get the same number |
 | Crash during spawn protection | n/a (v1 had no protection on first spawn) | No crash, and the rock survives | Spawn points are random, so a ship can appear inside a rock |
 | When rocks are drawn | One clock for everything | At the own ship's predicted tick. Other ships are drawn a view delay earlier and can appear to clip a rock | The own ship must crash into rocks where the player sees them |
+| Orbs taken | Removed; the field is topped up around the ship | Back in the same place after 30 s | Follows from fixed positions |
+| Orb sizes | Boost, miner and hunter orbs pulse, and their collision radius with them (5.94–6.46, 4.01–4.59) | Fixed at 6.2 and 4.3 | A radius that depends on a drawing timer cannot be shared |
+| Shooting an orb | Any bullet in the scene, anyone's, gives the pickup to the local player, at once | The bullet's owner gets it, half a second later, on a tick the server names | v1's rule is an accident of one list of bullets. The delay lets the shooter's client apply it on the same tick as the server ([5.10](#510-content-in-the-shared-simulation-as-built-in-phase-3)) |
+| Fenix | Lasts through death; only "Restart" ends it | Lasts until the ship is destroyed | A room has no restart |
+| Fenix beam | Starts 7.8 ahead of the ship; hits by its centre point each frame | Starts at the muzzle, 1.8 ahead, and its whole path is swept | One rule for bullets and beams |
+| Fenix crash damage | Half of 45–75, a fraction | Half, rounded up | Hull and shield are whole numbers on the wire |
+| Wormhole exit (D9) | 12,000 to 20,000 units away in a random 3D direction, then ±500 clamp | Near another wormhole at least 5,000 away, 150 to 400 units from it, at its height | Decision D9; and the exit has to be the same on server and client |
+| World edge (D11) | None | Outside 9,000 units from the planet's axis the ship loses 5 points every half second | Decision D11 |
+| Store | Stays open until closed; sells a full hull to a full hull and a Fenix to a Fenix | Open for 20 s after a Zaphire orb or until one purchase; refuses what would change nothing | A purchase is a server decision now, and a server should not take points for nothing |
+| Bombs (3 DEM each) | In the store | Not built | Paid in DEM: Phase 5 |
+| Kill score | Paid for server bots only (330, main.js:7274); the hunter orb doubles it | 330 for destroying a player, doubled over the belt and by the hunter orb, on top of the 500 for the hit | Without it the hunter orb does nothing in a PvP room |
+| Score and death | Death ends the round | Points are kept across lives for as long as the seat is held | Decision D5: death is a respawn in free play |
+| Leaderboards | Best sessions in the browser's storage; a players list | A scoreboard of the room sent once a second; best score and longest life kept in the browser | A shared all-time board needs accounts: Phase 5 |
+| Minimap and name labels | None | A map of the combat zone and a name with distance over each ship | Players could not find each other across the belt |
+| Names | From the wallet | "Player N" | Accounts are Phase 5 |
+| Idle players | Fly on | Destroyed after two minutes without a control moving; seat given up after five | An idle ship is 500 points a hit |
+| Sound | None: `main.js` has no audio code | None | Not in the brief |
 | Decisions D8–D12 | See [section 1](#1-decisions-that-need-your-answer) | | |
 
 ### A.3 v1 behaviours that look accidental
