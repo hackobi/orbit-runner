@@ -95,6 +95,12 @@ const boost = orbOf('boost');
 place(me, { x: boost.x, y: boost.y + 4, z: boost.z - 60, speed: 20, targetSpeed: 20 });
 await shot('boost-orb');
 
+// At a wormhole, with the engine running flat out.
+const wormhole = orbOf('wormhole');
+place(me, { x: wormhole.x + 3, y: wormhole.y + 2, z: wormhole.z - 40, speed: 60, targetSpeed: 60 });
+await page.waitForTimeout(250);
+await page.screenshot({ path: `${out}/wormhole${phone ? '-phone' : ''}.png` });
+
 // The store, opened by a Zaphire orb.
 const zaphire = orbOf('zaphire');
 place(me, { x: zaphire.x, y: zaphire.y, z: zaphire.z - 12, speed: 30, targetSpeed: 30, hp: 40 });

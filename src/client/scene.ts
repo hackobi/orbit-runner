@@ -22,12 +22,15 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   PerspectiveCamera,
+  PlaneGeometry,
+  PointLight,
   Points,
   PointsMaterial,
   Quaternion,
   RingGeometry,
   SRGBColorSpace,
   Scene,
+  ShaderMaterial,
   SphereGeometry,
   TorusGeometry,
   Vector3,
@@ -37,6 +40,7 @@ import type { BulletView, ShipView } from '../net/client.ts';
 import type { RemoteView } from '../net/remotes.ts';
 import { SHIP_HULL_RADIUS, SIM } from '../shared/constants.ts';
 import { Rng } from '../shared/rng.ts';
+import { Particles } from './particles.ts';
 import type { OrbKind } from '../shared/sim/orbs.ts';
 import type { World, WorldState } from '../shared/sim/world.ts';
 
@@ -63,6 +67,14 @@ const REMOTE_SHIP_SCALE = 1.5;
 
 const MAX_BULLETS = 512;
 const MAX_SPARKS = 24;
+const MAX_PARTICLES = 1400;
+/** v1's exhaust (main.js:5947-5976, 9685): a pale blue trail, denser the faster the ship goes. */
+const EXHAUST_COLOR = 0x66ccff;
+const EXHAUST_BASE_RATE = 50;
+const EXHAUST_RATE_PER_SPEED = 4;
+/** Camera shake dies away at 6 units a second (main.js:8865). */
+const SHAKE_DECAY = 6;
+const SHAKE_MAX = 2.5;
 const SPARK_SECONDS = 0.3;
 
 const HIT_SPARK = 0xff6644;
@@ -100,7 +112,6 @@ const ORB_CORE: Record<OrbKind, number> = {
 };
 /** The flat rings v1 draws around some orbs: outer radius and colour. */
 const ORB_RINGS: Partial<Record<OrbKind, readonly (readonly [number, number])[]>> = {
-  wormhole: [[4.0, 0xffffff]],
   boost: [
     [2.6, 0x33ff77],
     [3.8, 0xaa55ff],
@@ -170,6 +181,45 @@ function buildSaucer(hullColor: number): Group {
   group.add(new Mesh(top, hull), new Mesh(bottom, hull), dome, ring);
   return group;
 }
+
+/**
+ * A wormhole's mouth: a dark centre inside a bright ring whose arms turn.
+ * v1 gave every wormhole its own cube camera to bend the stars around it
+ * (main.js:5560-5600), 120 extra renders of the scene. This is one small
+ * program on one flat shape, drawn for all of them at once.
+ */
+function buildWormholeMaterial(time: { value: number }): ShaderMaterial {
+  return new ShaderMaterial({
+    uniforms: { time },
+    transparent: true,
+    depthWrite: false,
+    side: DoubleSide,
+    vertexShader: /* glsl */ `
+      varying vec2 across;
+      void main() {
+        across = uv * 2.0 - 1.0;
+        gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float time;
+      varying vec2 across;
+      void main() {
+        float r = length(across);
+        float angle = atan(across.y, across.x);
+        float arms = 0.5 + 0.5 * sin(angle * 3.0 + r * 9.0 - time * 2.5);
+        float ring = smoothstep(0.38, 0.52, r) * (1.0 - smoothstep(0.82, 1.0, r));
+        float centre = 1.0 - smoothstep(0.36, 0.44, r);
+        vec3 glow = mix(vec3(0.45, 0.65, 1.0), vec3(1.0), arms);
+        float alpha = max(centre * 0.96, ring * (0.35 + 0.65 * arms));
+        gl_FragColor = vec4(glow * ring, alpha);
+      }
+    `,
+  });
+}
+
+/** How wide a wormhole's mouth is drawn: v1's ring reached 4 units out (main.js:5565). */
+const WORMHOLE_SIZE = 8;
 
 /** v1's Fenix (main.js:5038-5094): a black dart with wings and pale edges, nose along +Z. */
 function buildFenix(): Group {
@@ -272,6 +322,14 @@ export class GameScene {
   private readonly identity = new Quaternion();
   private readonly sparks: Spark[] = [];
   private nextSpark = 0;
+  readonly particles = new Particles(MAX_PARTICLES);
+  private exhaustOwed = 0;
+  private shakeAmount = 0;
+  private wormholes: InstancedMesh | null = null;
+  private wormholeIds: number[] = [];
+  /** Seconds since the scene was made. Turns the wormholes' arms. */
+  private readonly seconds = { value: 0 };
+  private readonly wormholeMaterial = buildWormholeMaterial(this.seconds);
 
   // Scratch objects, reused every frame.
   private readonly euler = new Euler(0, 0, 0, 'YXZ');
@@ -295,6 +353,12 @@ export class GameScene {
     this.renderer.setClearColor(0x030a1a, 1); // main.js:288
 
     this.camera = new PerspectiveCamera(BASE_FOV, 1, 0.5, 60000);
+
+    // A pale light that travels with the camera, so whatever is near is lit
+    // from the player's side (main.js:340). v1's reached 800 units.
+    const lamp = new PointLight(0x88bbff, 1.6, 800, 0);
+    this.camera.add(lamp);
+    this.scene.add(this.camera);
 
     this.scene.add(new AmbientLight(0x708090, 0.6));
     const sun = new DirectionalLight(0xffffff, 1.1);
@@ -338,7 +402,7 @@ export class GameScene {
       this.scene.add(mesh);
     }
 
-    this.scene.add(planet, buildStars(), this.ship.group, this.bullets);
+    this.scene.add(planet, buildStars(), this.ship.group, this.bullets, this.particles.mesh);
 
     this.resize();
     window.addEventListener('resize', () => {
@@ -369,6 +433,13 @@ export class GameScene {
     spark.material.color.setHex(color);
     spark.mesh.position.set(x, y, z);
     spark.mesh.visible = true;
+    // And v1's burst of specks (main.js:5979): 26 for a rock, fewer for small things.
+    this.particles.burst(x, y, z, color, Math.round(10 + 4 * Math.min(4, size)), 20);
+  }
+
+  /** Jolts the camera (main.js:8865-8869). Amounts are v1's, 0.08 to 1.2. */
+  shake(amount: number): void {
+    this.shakeAmount = Math.min(SHAKE_MAX, this.shakeAmount + amount);
   }
 
   /** Draws one frame. `elapsedSeconds` is real time since the previous frame. */
@@ -395,7 +466,18 @@ export class GameScene {
     this.camera.position.copy(ship.position).add(this.offset);
     this.forward.set(0, 0, 1).applyQuaternion(this.orientation);
     this.lookAt.copy(ship.position).addScaledVector(this.forward, LOOK_AHEAD);
+    if (this.shakeAmount > 0) {
+      const shake = this.shakeAmount;
+      this.camera.position.x += (Math.random() * 2 - 1) * shake;
+      this.camera.position.y += (Math.random() * 2 - 1) * shake * 0.6;
+      this.camera.position.z += (Math.random() * 2 - 1) * shake;
+      this.shakeAmount = Math.max(0, shake - SHAKE_DECAY * elapsedSeconds);
+    }
     this.camera.lookAt(this.lookAt);
+    this.seconds.value += elapsedSeconds;
+
+    if (view.alive) this.emitExhaust(view, elapsedSeconds);
+    this.particles.update(elapsedSeconds);
 
     if (world) {
       this.drawRocks(world);
@@ -414,6 +496,35 @@ export class GameScene {
     this.camera.updateProjectionMatrix();
 
     this.renderer.render(this.scene, this.camera);
+  }
+
+  /**
+   * The trail behind the own ship (main.js:5947-5976): specks thrown out of
+   * the back, faster and from further back as the ship speeds up.
+   */
+  private emitExhaust(view: ShipView, elapsedSeconds: number): void {
+    this.exhaustOwed += (EXHAUST_BASE_RATE + view.speed * EXHAUST_RATE_PER_SPEED) * elapsedSeconds;
+    const count = Math.min(40, Math.floor(this.exhaustOwed));
+    this.exhaustOwed -= Math.floor(this.exhaustOwed);
+    if (count === 0) return;
+    const back = this.forward; // set by render: the nose direction
+    const up = this.offset.set(0, 0.25, 0).applyQuaternion(this.orientation);
+    const behind = 1.6 + Math.min(8, view.speed * 0.04);
+    const thrown = 14 + view.speed * 0.55;
+    for (let i = 0; i < count; i++) {
+      const jitter = (): number => (Math.random() * 2 - 1) * 0.4;
+      this.particles.emit(
+        view.x - back.x * behind + up.x + jitter(),
+        view.y - back.y * behind + up.y + jitter(),
+        view.z - back.z * behind + up.z + jitter(),
+        back.x * (view.speed - thrown) + jitter() * 2,
+        back.y * (view.speed - thrown) + jitter() * 2,
+        back.z * (view.speed - thrown) + jitter() * 2,
+        0.5 + Math.random() * 0.25,
+        0.18 * (0.6 + Math.random() * 0.5),
+        EXHAUST_COLOR,
+      );
+    }
   }
 
   /**
@@ -488,7 +599,7 @@ export class GameScene {
   private drawOrbs(view: WorldView): void {
     const orbs = view.world.orbs.orbs;
     if (this.orbsOf !== view.world) {
-      for (const old of [this.orbCores, this.orbRings]) {
+      for (const old of [this.orbCores, this.orbRings, this.wormholes]) {
         if (!old) continue;
         this.scene.remove(old);
         old.geometry.dispose();
@@ -531,7 +642,17 @@ export class GameScene {
       for (const [i, hex] of ringColors.entries()) rings.setColorAt(i, color.setHex(hex));
       this.orbCores = cores;
       this.orbRings = rings;
-      this.scene.add(cores, rings);
+      this.wormholeIds = [...orbs.keys()].filter((id) => orbs[id]?.kind === 'wormhole');
+      const wormholes = new InstancedMesh(
+        new PlaneGeometry(1, 1),
+        this.wormholeMaterial,
+        Math.max(1, this.wormholeIds.length),
+      );
+      wormholes.count = this.wormholeIds.length;
+      wormholes.frustumCulled = false;
+      wormholes.instanceMatrix.setUsage(DynamicDrawUsage);
+      this.wormholes = wormholes;
+      this.scene.add(cores, rings, wormholes);
       // Start as if every orb had been gone, so that each is placed once below.
       this.orbWasGone = orbs.map(() => true);
       for (let id = 0; id < orbs.length; id++)
@@ -552,7 +673,8 @@ export class GameScene {
       if (gone) this.spark(orb.x, orb.y, orb.z, ORB_COLORS[orb.kind], orb.radius);
       this.orbWasGone[id] = gone;
       this.position.set(orb.x, orb.y, orb.z);
-      this.rockScale.setScalar(gone ? 0 : ORB_CORE[orb.kind]);
+      // A wormhole has no core of its own: its mouth is drawn below.
+      this.rockScale.setScalar(gone || orb.kind === 'wormhole' ? 0 : ORB_CORE[orb.kind]);
       cores.setMatrixAt(id, this.matrix.compose(this.position, this.identity, this.rockScale));
       coresChanged = true;
     }
@@ -569,6 +691,20 @@ export class GameScene {
       );
     }
     rings.instanceMatrix.needsUpdate = true;
+
+    const wormholes = this.wormholes;
+    if (!wormholes) return;
+    for (const [i, orbId] of this.wormholeIds.entries()) {
+      const orb = orbs[orbId];
+      if (!orb) continue;
+      this.position.set(orb.x, orb.y, orb.z);
+      this.rockScale.setScalar(this.orbWasGone[orbId] ? 0 : WORMHOLE_SIZE);
+      wormholes.setMatrixAt(
+        i,
+        this.matrix.compose(this.position, this.camera.quaternion, this.rockScale),
+      );
+    }
+    wormholes.instanceMatrix.needsUpdate = true;
   }
 
   private drawRemotes(remotes: readonly RemoteView[]): void {

@@ -36,9 +36,41 @@ function socketUrl(): string {
   return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
 }
 
+/** v1 jolts the camera when things happen to the player's own ship. Amounts are v1's. */
+function shakeFor(event: GameEvent): void {
+  const me = session.core.playerId;
+  switch (event.kind) {
+    case 'asteroid':
+      // A crash (main.js:8503), or a rock this player shot (main.js:8992).
+      if (event.playerId === me) scene.shake(event.byBullet ? 0.25 : 0.4);
+      break;
+    case 'hit':
+      if (event.targetId === me) scene.shake(0.6); // main.js:9829
+      break;
+    case 'death':
+      if (event.victimId === me) scene.shake(0.8); // main.js:8525
+      break;
+    case 'orb': {
+      if (event.playerId !== me) break;
+      const kind = session.core.world?.orbs.orbs[event.orbId]?.kind;
+      if (kind === 'wormhole')
+        scene.shake(1.0); // main.js:9540
+      else if (kind === 'boost')
+        scene.shake(0.3); // main.js:9336
+      else if (kind === 'fenix')
+        scene.shake(0.5); // main.js:5105
+      else if (kind === 'shield') scene.shake(0.15); // main.js:6011
+      break;
+    }
+    default:
+      break;
+  }
+}
+
 function onGameEvent(event: GameEvent): void {
   recorder?.onGameEvent(event);
   hud.onEvent(event, session.core, performance.now());
+  shakeFor(event);
   // Damage shows when the server confirms it. A hit on this player's own
   // ship flashes at the ship; any other flashes at the target as drawn.
   if (event.kind !== 'hit') return;
@@ -108,7 +140,8 @@ function nearMiss(nowMs: number, x: number, y: number, z: number): void {
   if (!rock || nowMs - (nearMissAtMs.get(id) ?? -Infinity) < NEAR_MISS_REPEAT_MS) return;
   nearMissAtMs.set(id, nowMs);
   const at = asteroidPosition(rock, tick);
-  scene.spark(at.x, at.y, at.z, NEAR_MISS_SPARK, 1.5);
+  scene.spark(at.x, at.y, at.z, NEAR_MISS_SPARK, 0);
+  scene.shake(0.25); // main.js:8952
 }
 
 let lastFrameMs = performance.now();
