@@ -65,6 +65,8 @@ export interface DebugStatus {
   counters: ClientCore['counters'];
   score: number;
   storeTicks: number;
+  /** The picture quality tier in use. */
+  quality: string;
 }
 
 export interface DebugHook {
@@ -101,7 +103,7 @@ export interface DebugRecorder {
   onGameEvent: (event: GameEvent) => void;
   /** The scripted controls for a tick, or null when the keyboard is in charge. */
   controls: (tick: number, core: ClientCore) => Controls | null;
-  attach: (session: Session, readControls: () => Controls) => void;
+  attach: (session: Session, readControls: () => Controls, quality: () => string) => void;
   frame: (
     timeMs: number,
     elapsedMs: number,
@@ -126,7 +128,7 @@ export function createDebugRecorder(): DebugRecorder {
     onViewHit: (hit) => viewHits.push(hit),
     onGameEvent: (event) => events.push(event),
     controls: (tick, core) => (behaviour ? behaviour(tick, core) : null),
-    attach(session, readControls) {
+    attach(session, readControls, quality) {
       window.__orbit = {
         readControls,
         frames,
@@ -154,6 +156,7 @@ export function createDebugRecorder(): DebugRecorder {
             counters: { ...core.counters },
             score: core.score,
             storeTicks: core.storeTicks,
+            quality: quality(),
           };
         },
         setBehaviour: (spec) => {

@@ -41,6 +41,8 @@ import type { RemoteView } from '../net/remotes.ts';
 import { SHIP_HULL_RADIUS, SIM } from '../shared/constants.ts';
 import { Rng } from '../shared/rng.ts';
 import { Particles } from './particles.ts';
+import { TIERS } from './quality.ts';
+import type { QualityTier } from './quality.ts';
 import type { OrbKind } from '../shared/sim/orbs.ts';
 import type { World, WorldState } from '../shared/sim/world.ts';
 
@@ -60,7 +62,6 @@ const FOV_PER_SPEED = 0.7;
 const FOV_BOOST_KICK = 10; // main.js:8726
 const FOV_MAX_EXTRA = 28;
 const FOV_FOLLOW = 6; // per second, main.js:8730
-const MAX_PIXEL_RATIO = 1.75; // main.js:283
 
 /** v1 draws other players' ships half as big again as its own (main.js:6836). */
 const REMOTE_SHIP_SCALE = 1.5;
@@ -329,6 +330,13 @@ export class GameScene {
   private wormholeIds: number[] = [];
   /** Seconds since the scene was made. Turns the wormholes' arms. */
   private readonly seconds = { value: 0 };
+  private quality: QualityTier = TIERS[0] ?? {
+    name: 'high',
+    pixelRatio: 1.75,
+    maxPixels: Infinity,
+    particles: MAX_PARTICLES,
+    rockDistance: Infinity,
+  };
   private readonly wormholeMaterial = buildWormholeMaterial(this.seconds);
 
   // Scratch objects, reused every frame.
@@ -408,6 +416,13 @@ export class GameScene {
     window.addEventListener('resize', () => {
       this.resize();
     });
+  }
+
+  /** Draws more or less finely from now on. The quality controller decides when. */
+  setQuality(tier: QualityTier): void {
+    this.quality = tier;
+    this.particles.budget = tier.particles;
+    this.resize();
   }
 
   /**
@@ -568,10 +583,19 @@ export class GameScene {
     if (!rocks) return;
 
     const wholeTick = Math.floor(view.tick);
+    const ship = this.ship.group.position;
+    const shipRadial = Math.hypot(ship.x, ship.z);
+    const reach = this.quality.rockDistance;
     for (let id = 0; id < asteroids.length; id++) {
       const rock = asteroids[id];
       const turn = this.rockTurns[id];
       if (!rock || !turn) continue;
+      // On a slow device only the rocks whose orbits pass near the ship are drawn.
+      if (Math.abs(rock.orbitRadius - shipRadial) > reach) {
+        rocks.setMatrixAt(id, this.matrix.makeScale(0, 0, 0));
+        this.rockWasGone[id] = view.state.asteroidGone(id, wholeTick);
+        continue;
+      }
       // Drawing may use the platform's sin and cos: nothing is decided here.
       const angle = rock.angle0 + rock.anglePerTick * view.tick;
       this.position.set(
@@ -778,7 +802,11 @@ export class GameScene {
   private resize(): void {
     const width = window.innerWidth;
     const height = window.innerHeight;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO));
+    // As sharp as the screen, up to the tier's limits on sharpness and on pixels in all.
+    const fits = Math.sqrt(this.quality.maxPixels / Math.max(1, width * height));
+    this.renderer.setPixelRatio(
+      Math.min(window.devicePixelRatio || 1, this.quality.pixelRatio, fits),
+    );
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();

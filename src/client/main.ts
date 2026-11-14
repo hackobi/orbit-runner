@@ -7,6 +7,7 @@ import { InputDevices } from './input.ts';
 import { loadSettings, saveSettings } from './settings.ts';
 import { asteroidPosition, asteroidTouching } from '../shared/sim/belt.ts';
 import { Hud } from './hud.ts';
+import { QualityController, TIERS } from './quality.ts';
 import { GameScene, NEAR_MISS_SPARK } from './scene.ts';
 
 /** Set by the build. True only when VITE_TEST_HOOKS=1. */
@@ -99,7 +100,11 @@ const session: Session = new Session({
   },
   ...(recorder ? { onCorrection: recorder.onCorrection, onSnapshot: recorder.onSnapshot } : {}),
 });
-recorder?.attach(session, () => devices.read());
+recorder?.attach(
+  session,
+  () => devices.read(),
+  () => TIERS[quality.tier]?.name ?? '',
+);
 
 // --- Settings panel -----------------------------------------------------------
 
@@ -181,12 +186,22 @@ function nearMiss(nowMs: number, x: number, y: number, z: number): void {
   scene.shake(0.25); // main.js:8952
 }
 
+// A phone starts on the middle tier; the controller moves it from there.
+const quality = new QualityController(matchMedia('(pointer: coarse)').matches ? 1 : 0);
+const applyQuality = (): void => {
+  const tier = TIERS[quality.tier];
+  if (tier) scene.setQuality(tier);
+};
+applyQuality();
+
 let lastFrameMs = performance.now();
 const project = scene.project.bind(scene);
 
 function frame(nowMs: number): void {
   const elapsedMs = nowMs - lastFrameMs;
   lastFrameMs = nowMs;
+
+  if (quality.frame(elapsedMs)) applyQuality();
 
   session.update();
   const core = session.core;
