@@ -10,6 +10,8 @@ import type { BehaviourSpec } from '../../src/net/behaviours.ts';
 import type { CorrectionEvent, ViewHit } from '../../src/net/client.ts';
 import type { Truth, TruthRow } from '../../src/server/recorder.ts';
 import type { ShipState } from '../../src/shared/sim/ship.ts';
+import { createWorld } from '../../src/shared/sim/world.ts';
+import type { World } from '../../src/shared/sim/world.ts';
 import { hitAgreement, percentile, snapExcess } from '../support/metrics.ts';
 import { THRESHOLDS } from '../thresholds.ts';
 
@@ -101,6 +103,18 @@ export const placeShip = (id: number, ship: Partial<ShipState>): Promise<void> =
   post('/debug/place', { id, ship });
 
 export const sustain = (on: boolean): Promise<void> => post('/debug/sustain', { on });
+
+export const addScore = (id: number, points: number): Promise<void> =>
+  post('/debug/score', { id, points });
+
+/** The world the server is running, rebuilt here from its seed as a client does. */
+export async function serverWorld(): Promise<World> {
+  const health = (await (await fetch(`${SERVER}/health`)).json()) as {
+    worldSeed: number;
+    asteroidCount: number;
+  };
+  return createWorld(health.worldSeed, health.asteroidCount, true);
+}
 
 export async function serverTick(): Promise<number> {
   const health = (await (await fetch(`${SERVER}/health`)).json()) as { tick: number };

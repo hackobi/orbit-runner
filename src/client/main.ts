@@ -4,6 +4,7 @@ import { REJECT_VERSION } from '../shared/protocol.ts';
 import type { GameEvent } from '../shared/protocol.ts';
 import { createDebugRecorder } from './debugHook.ts';
 import { InputDevices } from './input.ts';
+import { loadSettings, saveSettings } from './settings.ts';
 import { asteroidPosition, asteroidTouching } from '../shared/sim/belt.ts';
 import { Hud } from './hud.ts';
 import { GameScene, NEAR_MISS_SPARK } from './scene.ts';
@@ -23,7 +24,8 @@ const scene = new GameScene(canvas);
 const hud = new Hud((item) => {
   session.core.buy(item);
 });
-const devices = new InputDevices(canvas);
+const settings = loadSettings();
+const devices = new InputDevices(canvas, settings);
 const recorder = __ORBIT_TEST_HOOKS__ ? createDebugRecorder() : null;
 
 // The page and the game socket share one origin. Test builds can point the
@@ -97,7 +99,42 @@ const session: Session = new Session({
   },
   ...(recorder ? { onCorrection: recorder.onCorrection, onSnapshot: recorder.onSnapshot } : {}),
 });
-recorder?.attach(session);
+recorder?.attach(session, () => devices.read());
+
+// --- Settings panel -----------------------------------------------------------
+
+const settingsButton = element('settings-button', HTMLButtonElement);
+const settingsPanel = element('settings', HTMLDivElement);
+const invertBox = element('invert-pitch', HTMLInputElement);
+const tiltBox = element('tilt', HTMLInputElement);
+const tiltRow = element('tilt-row', HTMLLabelElement);
+
+settingsButton.addEventListener('click', () => {
+  settingsPanel.hidden = !settingsPanel.hidden;
+  settingsButton.setAttribute('aria-expanded', String(!settingsPanel.hidden));
+  canvas.focus();
+});
+invertBox.checked = settings.invertPitch;
+invertBox.addEventListener('change', () => {
+  settings.invertPitch = invertBox.checked;
+  saveSettings(settings);
+  canvas.focus();
+});
+// Tilt needs a phone or tablet, and on iOS the player's say-so, given by this tap.
+tiltRow.hidden =
+  typeof DeviceOrientationEvent === 'undefined' || !matchMedia('(pointer: coarse)').matches;
+const applyTilt = async (wanted: boolean): Promise<void> => {
+  const on = await devices.setTilt(wanted);
+  tiltBox.checked = on;
+  settings.tilt = on;
+  saveSettings(settings);
+};
+tiltBox.addEventListener('change', () => {
+  void applyTilt(tiltBox.checked);
+});
+// A setting kept from last time. Where the browser must ask first, it will
+// refuse outside a tap, and the box then shows tilt as off.
+if (settings.tilt && !tiltRow.hidden) void applyTilt(true);
 canvas.focus();
 
 // A hidden tab gets no frames, so say so: the server holds the seat, and the

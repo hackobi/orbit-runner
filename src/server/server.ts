@@ -112,6 +112,13 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
       sendJson(response, 200, { ok: true, tick: room.tick, ship: room.shipOf(body.id) ?? null });
       return true;
     }
+    if (request.method === 'POST' && url.pathname === '/debug/score') {
+      // Body: { id, points }. Adds to the player's score.
+      const body = JSON.parse(await readBody(request)) as { id: number; points: number };
+      room.addScore(body.id, body.points);
+      sendJson(response, 200, { ok: true, score: room.scoreOf(body.id) });
+      return true;
+    }
     if (request.method === 'POST' && url.pathname === '/debug/sustain') {
       sustain = (JSON.parse(await readBody(request)) as { on: boolean }).on;
       sendJson(response, 200, { ok: true, sustain });
@@ -129,6 +136,9 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
         tickRate: TICK_RATE,
         tick: room.tick,
         players: room.playerCount,
+        // Not a secret: every client is sent these in its welcome.
+        worldSeed: room.world.seed,
+        asteroidCount: room.world.belt.asteroids.length,
         stats: room.stats,
       });
       return;

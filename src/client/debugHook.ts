@@ -63,6 +63,8 @@ export interface DebugStatus {
   interpolationDelayTicks: number;
   reconnects: number;
   counters: ClientCore['counters'];
+  score: number;
+  storeTicks: number;
 }
 
 export interface DebugHook {
@@ -80,6 +82,8 @@ export interface DebugHook {
   status(): DebugStatus;
   /** Hands the controls to a scripted behaviour, or back to the keyboard with null. */
   setBehaviour(spec: BehaviourSpec | null): void;
+  /** What the keyboard, mouse, touch controls and tilt add up to right now. */
+  readControls(): Controls;
   /** Forgets everything recorded so far, to start a measurement. */
   clear(): void;
 }
@@ -97,7 +101,7 @@ export interface DebugRecorder {
   onGameEvent: (event: GameEvent) => void;
   /** The scripted controls for a tick, or null when the keyboard is in charge. */
   controls: (tick: number, core: ClientCore) => Controls | null;
-  attach: (session: Session) => void;
+  attach: (session: Session, readControls: () => Controls) => void;
   frame: (
     timeMs: number,
     elapsedMs: number,
@@ -122,8 +126,9 @@ export function createDebugRecorder(): DebugRecorder {
     onViewHit: (hit) => viewHits.push(hit),
     onGameEvent: (event) => events.push(event),
     controls: (tick, core) => (behaviour ? behaviour(tick, core) : null),
-    attach(session) {
+    attach(session, readControls) {
       window.__orbit = {
+        readControls,
         frames,
         corrections,
         snapshots,
@@ -147,6 +152,8 @@ export function createDebugRecorder(): DebugRecorder {
             interpolationDelayTicks: core.remotes.delayTicks,
             reconnects: session.reconnects,
             counters: { ...core.counters },
+            score: core.score,
+            storeTicks: core.storeTicks,
           };
         },
         setBehaviour: (spec) => {

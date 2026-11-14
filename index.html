@@ -51,6 +51,23 @@
       </div>
 
       <div id="help"></div>
+
+      <div id="touch" hidden>
+        <div id="stick" hidden><div id="knob"></div></div>
+        <button type="button" id="faster" aria-label="Faster">▲</button>
+        <button type="button" id="slower" aria-label="Slower">▼</button>
+        <button type="button" id="fire" aria-label="Fire">FIRE</button>
+      </div>
+
+      <button type="button" id="settings-button" aria-label="Settings" aria-expanded="false">
+        ⚙
+      </button>
+      <div id="settings" hidden>
+        <label><input type="checkbox" id="invert-pitch" /> Invert pitch</label>
+        <label id="tilt-row"><input type="checkbox" id="tilt" /> Tilt the phone to steer</label>
+      </div>
+
+      <div id="rotate"><p>Turn your phone sideways to fly.</p></div>
     </div>
     <script type="module" src="/src/client/main.ts"></script>
   </body>

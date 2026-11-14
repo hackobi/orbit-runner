@@ -12,7 +12,7 @@ export const PROXY_PORT = 8798;
  */
 export const CHROMIUM_ARGS = ['--use-angle=metal'];
 
-const SINGLE_CLIENT = /(determinism|flight)\.spec\.ts/;
+const SINGLE_CLIENT = /(determinism|flight|hud)\.spec\.ts/;
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -30,6 +30,14 @@ export default defineConfig({
     { name: 'webkit', testMatch: SINGLE_CLIENT, use: { ...devices['Desktop Safari'] } },
     // These specs open several browsers of their own, of both engines, in one room.
     { name: 'multiplayer', testMatch: /(multiplayer|resilience)\.spec\.ts/ },
+    // The touch controls, on a phone's screen size with touch switched on.
+    // The fingers are real touch events sent through Chromium's own
+    // protocol; WebKit has no equivalent, so its touch handling is not covered.
+    {
+      name: 'touch',
+      testMatch: /touch\.spec\.ts/,
+      use: { ...devices['Pixel 7 landscape'], launchOptions: { args: CHROMIUM_ARGS } },
+    },
     // Firefox is a target browser but outside the brief's full suite: the
     // determinism check and one smoke run.
     {
