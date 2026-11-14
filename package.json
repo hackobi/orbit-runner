@@ -21,6 +21,7 @@
     "results": "node scripts/results.ts",
     "screenshot": "node scripts/screenshot.ts",
     "icons": "node scripts/make-icons.ts",
+    "console-check": "node scripts/console-check.ts",
     "spike:webgl": "node scripts/spike-headless-webgl.ts"
   },
   "dependencies": {
