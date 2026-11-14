@@ -19,7 +19,7 @@ This file is the running checkpoint. A new session should read it first, then `d
 
 | Command | What it does |
 |---|---|
-| `npm run server` | Game server on `127.0.0.1:8787` (Node runs the TypeScript directly; no build) |
+| `npm run server` | Game server on `127.0.0.1:8790` (Node runs the TypeScript directly; no build) |
 | `npm run dev` | Vite on `localhost:5173`, proxying `/ws` to the game server. Open it in two windows and fly: A/D or the arrows turn, I/K or the arrows pitch, W/S change speed, Space fires, hold the mouse button to steer, 1 2 3 buy from the store, P shows the players. On a touch screen: stick on the left, buttons on the right |
 | `npm run dev:lan` | The same over HTTPS to the local network, for a phone. **Its first run changes the Mac's keychain.** Read `docs/DEVICE-TESTING.md` first. Not run yet |
 | `npm test` | Unit and virtual-time tests of the simulation, the netcode, the content and the client's logic (about 1 s) |
@@ -28,7 +28,7 @@ This file is the running checkpoint. A new session should read it first, then `d
 | `npm run test:load` | 16 bots firing without pause for 5 minutes; reports tick time, heap and bandwidth. `npm run test:load -- 60` for a shorter look |
 | `npm run typecheck`, `npm run lint` | Must pass before a task is marked done |
 | `npm run console-check` | Builds the production client, opens it in a real browser window for 40 s, and records the console, the renderer and the browser's verdict on installing it |
-| `npm run app` | The Mac app from source, in a window, showing the last production build copied into it (run `npm run package:mac` once first) and connecting to `ws://127.0.0.1:8787/ws`. `app/config.json` sets where it loads from |
+| `npm run app` | The Mac app from source, in a window, showing the last production build copied into it (run `npm run package:mac` once first) and connecting to `ws://127.0.0.1:8790/ws`. `app/config.json` sets where it loads from |
 | `npm run package:mac` | Builds `release/Orbit Runner-darwin-arm64/Orbit Runner.app`, signs it ad hoc, starts it once against a server of its own and checks that it connects. About a minute |
 | `npm run update-check` | A real update from one build to the next, in Chromium with a kept profile and in the Mac app. About two minutes; opens windows |
 | `npm run results` | Rewrites the latest-results section of this file from `docs/results/` and fails if a gate fails |
@@ -445,7 +445,7 @@ Found while building, and what was done:
 - **Test runs of the app were writing a browser profile into `~/Library/Application Support/Electron`.** The tests and scripts now give the app a temporary profile folder and remove it; the stray folder, created by those runs, was deleted.
 - **A top-level `await app.whenReady()` in the app's main file makes Playwright's launch hang**, because Playwright holds back "ready" until the file has loaded.
 
-Changing where the packaged app connects: `config.json` is sealed inside the app, so either rebuild after editing `app/config.json`, or start the app with `ORBIT_GAME_URL` or `ORBIT_SERVER_URL` set. As packaged it shows its own copy of the client and connects to `ws://127.0.0.1:8787/ws`.
+Changing where the packaged app connects: `config.json` is sealed inside the app, so either rebuild after editing `app/config.json`, or start the app with `ORBIT_GAME_URL` or `ORBIT_SERVER_URL` set. As packaged it shows its own copy of the client and connects to `ws://127.0.0.1:8790/ws`.
 
 Manual checks for the user, when convenient: open `release/Orbit Runner-darwin-arm64/Orbit Runner.app` with `npm run server` running; fly; fullscreen and back; quit.
 

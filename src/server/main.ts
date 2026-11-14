@@ -1,6 +1,6 @@
 import { startServer } from './server.ts';
 
-const port = Number(process.env.ORBIT_SERVER_PORT ?? 8787);
+const port = Number(process.env.ORBIT_SERVER_PORT ?? 8790);
 // Bind to all interfaces only when asked: phones on the LAN reach the game
 // through the Vite proxy, not this port.
 const host = process.env.ORBIT_SERVER_HOST ?? '127.0.0.1';

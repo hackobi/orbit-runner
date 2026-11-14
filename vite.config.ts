@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 const clientPort = Number(process.env.ORBIT_CLIENT_PORT ?? 5173);
-const serverPort = Number(process.env.ORBIT_SERVER_PORT ?? 8787);
+const serverPort = Number(process.env.ORBIT_SERVER_PORT ?? 8790);
 
 // Page and game socket share one origin, so one certificate covers both.
 const proxy = {
