@@ -138,6 +138,7 @@ describe('server messages', () => {
       ship,
       worldSeed: 0xdeadbeef,
       asteroidCount: 2000,
+      withOrbs: true,
     };
     expect(decodeServerMessage(encodeWelcome(message))).toEqual({ type: 'welcome', ...message });
   });
@@ -203,7 +204,7 @@ describe('server messages', () => {
   });
 
   it('a snapshot is 86 bytes plus 20 per nearby ship', () => {
-    expect(SNAPSHOT_HEADER_BYTES).toBe(88);
+    expect(SNAPSHOT_HEADER_BYTES).toBe(89);
     expect(NEAR_ENTRY_BYTES).toBe(21);
     expect(FAR_ENTRY_BYTES).toBe(13);
   });
@@ -219,6 +220,7 @@ describe('server messages', () => {
         z: 4000.5,
         yaw: 0.5,
         pitch: -0.25,
+        beam: true,
       },
       { kind: 'hit', ownerId: 2, spawnTick: 1000, targetId: 5, tick: 1012, hp: 70, shield: 25 },
       {

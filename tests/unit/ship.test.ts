@@ -158,11 +158,12 @@ describe('determinism', () => {
     expect(Array.from(encodeShipState(a.final))).toEqual(Array.from(encodeShipState(b.final)));
   });
 
-  it('the trace exercises death, respawn, boost and crashes into the belt', () => {
+  it('the trace exercises death, respawn, boost, crashes into the belt and orbs', () => {
     const t = runTrace(20261113, 10_000);
     expect(t.deaths).toBeGreaterThan(1);
     expect(t.boostTicks).toBeGreaterThan(0);
     expect(t.crashes).toBeGreaterThan(10);
+    expect(t.pickups).toBeGreaterThan(10);
     expect(t.final.spawnSeq).toBeGreaterThan(0);
   });
 
@@ -172,7 +173,7 @@ describe('determinism', () => {
     // If this fails on another CPU with no change to the simulation, the
     // simulation is not portable and prediction will not match the server.
     // If the simulation or a constant changed on purpose, update the number.
-    expect(runTrace(20261113, 10_000).hash).toBe(766322025);
+    expect(runTrace(20261113, 10_000).hash).toBe(2964748546);
   });
 
   it('never fuses a multiply and an add, even in optimised code', () => {

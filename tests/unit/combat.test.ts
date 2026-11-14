@@ -109,14 +109,15 @@ interface Duel {
 
 /**
  * A hunter and a target that flies a slow circle in front of it. The target's
- * hit points are topped up every second so the fight goes on.
+ * hit points are topped up every second so the fight goes on. The belt is
+ * there but its orbs are not: a boost or a wormhole would end the duel.
  */
 function duel(
   profile: keyof typeof PROFILES,
   seed: number,
   onShooterFrame?: (core: ClientCore) => void,
 ): Duel {
-  const world = new TestWorld(seed);
+  const world = new TestWorld(seed, SIM.asteroidCount, false);
   const target = world.addClient({
     controls: (): Controls => ({ yaw: 0.15, pitch: 0, throttle: 0, fire: false }),
     link: profileLink(profile, seed * 10 + 1),
@@ -894,10 +895,20 @@ describe('on the 200 ms lossy profile', () => {
 });
 
 describe('a kill seen from the shooter', () => {
-  it.each(['clean', '100ms', '200ms'] as const)(
-    'on the %s profile the shooter sees exactly the hits that counted, and none on the wreck',
-    (profile) => {
-      const world = new TestWorld(4);
+  // A plain ship takes 7 bullets. A shield of 50 comes off first (decision
+  // D8), which makes it 10. A Fenix beam does 30, which makes it 4.
+  const CASES = [
+    { name: 'a plain ship', shield: 0, fenix: false, hits: 7 },
+    { name: 'a ship with half a shield', shield: 50, fenix: false, hits: 10 },
+    { name: 'a plain ship shot by a Fenix', shield: 0, fenix: true, hits: 4 },
+  ];
+  const PROFILES_TO_TRY = ['clean', '100ms', '200ms'] as const;
+  const all = CASES.flatMap((c) => PROFILES_TO_TRY.map((profile) => ({ ...c, profile })));
+
+  it.each(all)(
+    '$name on the $profile profile: the shooter sees exactly the $hits hits that counted, and none on the wreck',
+    ({ profile, shield, fenix, hits }) => {
+      const world = new TestWorld(4, SIM.asteroidCount, false);
       const victim = world.addClient({ link: profileLink(profile, 1) });
       const shooter = world.addClient({ controls: hunter(), link: profileLink(profile, 3) });
       world.run(600);
@@ -908,6 +919,7 @@ describe('a kill seen from the shooter', () => {
         yaw: 0,
         speed: 20,
         targetSpeed: 20,
+        fenix,
       });
       world.place(victim.core.playerId, {
         ...STILL,
@@ -916,21 +928,23 @@ describe('a kill seen from the shooter', () => {
         yaw: 0,
         speed: 20,
         targetSpeed: 20,
+        shield,
       });
       // Stop at the first death, before the respawn starts another fight.
       world.clock.every(TICK_MS, () => {
         if (world.deaths.length > 0) world.place(shooter.core.playerId, { fireCooldown: 250 });
       });
-      world.run(6000);
+      world.run(8000);
 
       expect(world.deaths).toHaveLength(1);
       const serverHits = world.hits.filter((h) => h.ownerId === shooter.core.playerId);
-      expect(serverHits).toHaveLength(7);
+      expect(serverHits).toHaveLength(hits);
       const result = hitAgreement(shooter.viewHits, serverHits);
-      // Without tracking the target's expected hit points the shooter would
-      // see one or two more hits land on a ship that was already dead.
-      expect(result.seen).toBe(7);
-      expect(result.confirmed).toBe(7);
+      // Without tracking the target's expected hit points and shield the
+      // shooter would see more hits land on a ship that was already dead.
+      expect(result.seen).toBe(hits);
+      expect(result.confirmed).toBe(hits);
+      expect(shooter.viewHits.every((h) => h.damage === (fenix ? 30 : 15))).toBe(true);
     },
   );
 });

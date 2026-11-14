@@ -10,6 +10,7 @@ import { SIM, TICK_MS } from '../shared/constants.ts';
 import {
   CAUSE_ASTEROID,
   CAUSE_DISCONNECT,
+  CAUSE_EDGE,
   CAUSE_PLANET,
   CAUSE_PLAYER,
   NO_PLAYER,
@@ -34,8 +35,14 @@ import type {
 import { distantSampleOf, sampleOf, sampleTrack } from '../shared/remote.ts';
 import type { RemoteSample } from '../shared/remote.ts';
 import { Rng } from '../shared/rng.ts';
-import { DestroyedAsteroids, bulletAsteroidHit, createBelt } from '../shared/sim/belt.ts';
-import { bulletExpired, bulletHit, spawnBullet } from '../shared/sim/bullets.ts';
+import { bulletAsteroidHit } from '../shared/sim/belt.ts';
+import {
+  bulletDamage,
+  bulletExpired,
+  bulletHit,
+  shipHitDistance,
+  spawnBullet,
+} from '../shared/sim/bullets.ts';
 import type { Bullet } from '../shared/sim/bullets.ts';
 import { SIM_FINGERPRINT } from '../shared/sim/fingerprint.ts';
 import {
@@ -47,7 +54,14 @@ import {
   spawnShip,
 } from '../shared/sim/ship.ts';
 import type { Input, ShipState } from '../shared/sim/ship.ts';
-import { stepPlayer } from '../shared/sim/world.ts';
+import { bulletOrbHit } from '../shared/sim/orbs.ts';
+import {
+  WorldLedger,
+  applyOrb,
+  createWorld,
+  outsideCombatZone,
+  stepPlayer,
+} from '../shared/sim/world.ts';
 import type { World, WorldEffect } from '../shared/sim/world.ts';
 import type { Channel, Transport } from '../shared/transport.ts';
 
@@ -121,6 +135,8 @@ export interface RoomOptions {
   maxPlayers?: number;
   /** Rocks in the belt. The default is the full belt; tests of one mechanism ask for empty space. */
   asteroidCount?: number;
+  /** False leaves the orbs out, for tests of one mechanism. */
+  orbs?: boolean;
   listener?: RoomListener;
   /** Called after every simulated tick. Tests use it to record what really happened. */
   onTick?: (tick: number, room: Room) => void;
@@ -147,6 +163,8 @@ export interface RoomStats {
   deaths: number;
   asteroidsShot: number;
   asteroidsCrashed: number;
+  orbsTaken: number;
+  orbsShot: number;
 }
 
 interface Connection {
@@ -184,6 +202,8 @@ interface Player {
   /** What snapshots have said about this ship, in tick order. Used to rewind it. */
   readonly track: RemoteSample[];
   readonly outbox: GameEvent[];
+  /** Orbs this player shot, whose effect on the ship is due on a coming tick. */
+  scheduledOrbs: { applyTick: number; orbId: number; spawnTick: number }[];
 }
 
 interface LiveBullet {
@@ -219,12 +239,14 @@ export class Room {
     deaths: 0,
     asteroidsShot: 0,
     asteroidsCrashed: 0,
+    orbsTaken: 0,
+    orbsShot: 0,
   };
 
-  /** The belt this room was built with. Clients build the same one from the welcome. */
+  /** The belt and orbs this room was built with. Clients build the same from the welcome. */
   readonly world: World;
-  /** Which rocks are destroyed. The only true copy. */
-  readonly destroyed: DestroyedAsteroids;
+  /** Which rocks are destroyed and which orbs are taken. The only true copy. */
+  readonly ledger: WorldLedger;
 
   private readonly now: () => number;
   private readonly rng: Rng;
@@ -251,8 +273,8 @@ export class Room {
     this.onWork = options.onWork;
     const asteroidCount = options.asteroidCount ?? SIM.asteroidCount;
     const worldSeed = options.seed >>> 0;
-    this.world = { seed: worldSeed, belt: createBelt(worldSeed, asteroidCount) };
-    this.destroyed = new DestroyedAsteroids(asteroidCount);
+    this.world = createWorld(worldSeed, asteroidCount, options.orbs ?? true);
+    this.ledger = new WorldLedger(this.world);
   }
 
   get playerCount(): number {
@@ -376,24 +398,53 @@ export class Room {
       }
       player.input = input;
 
-      const before = player.ship;
+      // What orbs shot earlier do to the ship today, then the step.
+      let before = player.ship;
+      if (player.scheduledOrbs.length > 0) {
+        for (const scheduled of player.scheduledOrbs) {
+          if (scheduled.applyTick === this.tick) {
+            before = applyOrb(before, scheduled.orbId, this.tick, this.world);
+          }
+        }
+        player.scheduledOrbs = player.scheduledOrbs.filter((s) => s.applyTick > this.tick);
+      }
       effects.length = 0;
-      player.ship = stepPlayer(before, input, this.tick, this.world, this.destroyed, effects);
-      // A rock destroyed by one ship is gone for the ships stepped after it.
+      player.ship = stepPlayer(before, input, this.tick, this.world, this.ledger, effects);
+      // A rock or orb taken by one ship is gone for the ships stepped after it.
+      let crashed = false;
       for (const effect of effects) {
-        this.destroyed.destroy(effect.id, this.tick);
-        this.stats.asteroidsCrashed += 1;
-        this.broadcast({
-          kind: 'asteroid',
-          asteroidId: effect.id,
-          tick: this.tick,
-          playerId: player.id,
-          spawnTick: 0,
-          byBullet: false,
-        });
+        if (effect.kind === 'asteroid') {
+          crashed = true;
+          this.ledger.asteroids.remove(effect.id, this.tick);
+          this.stats.asteroidsCrashed += 1;
+          this.broadcast({
+            kind: 'asteroid',
+            asteroidId: effect.id,
+            tick: this.tick,
+            playerId: player.id,
+            spawnTick: 0,
+            byBullet: false,
+          });
+        } else {
+          this.ledger.orbs.remove(effect.id, this.tick);
+          this.stats.orbsTaken += 1;
+          this.broadcast({
+            kind: 'orb',
+            orbId: effect.id,
+            tick: this.tick,
+            playerId: player.id,
+            spawnTick: 0,
+            byBullet: false,
+          });
+        }
       }
       if (before.alive && !player.ship.alive) {
-        this.recordDeath(player, null, effects.length > 0 ? CAUSE_ASTEROID : CAUSE_PLANET);
+        const cause = crashed
+          ? CAUSE_ASTEROID
+          : outsideCombatZone(player.ship)
+            ? CAUSE_EDGE
+            : CAUSE_PLANET;
+        this.recordDeath(player, null, cause);
       }
       if (firedThisTick(player.ship)) this.fire(player);
     }
@@ -412,6 +463,7 @@ export class Room {
         z: ship.z,
         yaw: ship.yaw,
         pitch: ship.pitch,
+        beam: ship.fenix,
       },
     };
     this.bullets.push(live);
@@ -421,7 +473,8 @@ export class Room {
 
   /**
    * Moves every bullet one tick and decides hits. A bullet stops at the
-   * first thing on its path this tick, ship or rock; a ship wins a tie.
+   * first thing on its path this tick: ship, rock or orb. On a tie a ship
+   * comes before a rock and a rock before an orb.
    *
    * Lag compensation (decision D2): a bullet is tested against each target
    * where its shooter was seeing that target on this tick. The shooter's
@@ -437,6 +490,7 @@ export class Room {
       if (!owner || bulletExpired(bullet, this.tick)) continue;
 
       const viewTick = this.tick - owner.input.viewDelay / VIEW_DELAY_STEPS_PER_TICK;
+      const hitDistance = shipHitDistance(bullet);
       let hitTarget: Player | null = null;
       let hitAt = Infinity;
       for (const target of this.players.values()) {
@@ -445,7 +499,7 @@ export class Room {
         // The shooter must have been looking at this life of the ship, alive
         // and unprotected.
         if (!seen?.alive || seen.invulnerable || seen.spawnSeq !== target.ship.spawnSeq) continue;
-        const at = bulletHit(bullet, this.tick, seen.x, seen.y, seen.z);
+        const at = bulletHit(bullet, this.tick, seen.x, seen.y, seen.z, hitDistance);
         if (at >= 0 && at < hitAt) {
           hitAt = at;
           hitTarget = target;
@@ -454,9 +508,32 @@ export class Room {
 
       // Rocks are tested where they are now: every client computes the same
       // place for them, so there is nothing to rewind.
-      const rock = bulletAsteroidHit(this.world.belt, this.destroyed, bullet, this.tick);
+      // Orbs do not move at all.
+      const rock = bulletAsteroidHit(this.world.belt, this.ledger, bullet, this.tick);
+      const orb = bulletOrbHit(this.world.orbs, this.ledger, bullet, this.tick);
+      const rockAt = rock ? rock.at : Infinity;
+      if (orb && orb.at < hitAt && orb.at < rockAt) {
+        // The orb is gone now. What it does to the shooter happens a little
+        // later, on a tick the announcement lets the shooter's client know.
+        this.ledger.orbs.remove(orb.id, this.tick);
+        this.stats.orbsShot += 1;
+        owner.scheduledOrbs.push({
+          applyTick: this.tick + SIM.shotEffectDelayTicks,
+          orbId: orb.id,
+          spawnTick: bullet.spawnTick,
+        });
+        this.broadcast({
+          kind: 'orb',
+          orbId: orb.id,
+          tick: this.tick,
+          playerId: owner.id,
+          spawnTick: bullet.spawnTick,
+          byBullet: true,
+        });
+        continue;
+      }
       if (rock && rock.at < hitAt) {
-        this.destroyed.destroy(rock.id, this.tick);
+        this.ledger.asteroids.remove(rock.id, this.tick);
         this.stats.asteroidsShot += 1;
         this.broadcast({
           kind: 'asteroid',
@@ -472,7 +549,7 @@ export class Room {
         survivors.push(live);
         continue;
       }
-      hitTarget.ship = damageShip(hitTarget.ship, SIM.bulletDamage);
+      hitTarget.ship = damageShip(hitTarget.ship, bulletDamage(bullet));
       this.stats.hits += 1;
       this.listener.hit?.({
         ownerId: owner.id,
@@ -722,6 +799,7 @@ export class Room {
       fullStateDue: true,
       track: [],
       outbox: [],
+      scheduledOrbs: [],
     };
     this.players.set(id, player);
     this.listener.playerJoined?.(id, this.tick);
@@ -757,10 +835,24 @@ export class Room {
         ship: player.ship,
         worldSeed: this.world.seed,
         asteroidCount: this.world.belt.asteroids.length,
+        withOrbs: this.world.orbs.orbs.length > 0,
       }),
       'reliable',
     );
-    for (const gone of this.destroyed.goneAt(this.tick)) {
+    for (const gone of this.ledger.orbs.goneAt(this.tick)) {
+      // An orb this player shot, whose effect is still to come, is told in
+      // full, so the client schedules it again.
+      const own = player.scheduledOrbs.find((s) => s.orbId === gone.id);
+      player.outbox.push({
+        kind: 'orb',
+        orbId: gone.id,
+        tick: gone.tick,
+        playerId: own ? player.id : NO_PLAYER,
+        spawnTick: own ? own.spawnTick : 0,
+        byBullet: own !== undefined,
+      });
+    }
+    for (const gone of this.ledger.asteroids.goneAt(this.tick)) {
       player.outbox.push({
         kind: 'asteroid',
         asteroidId: gone.id,

@@ -10,17 +10,18 @@ import { CONSTANTS_HASH, SIM } from '../constants.ts';
 import { encodeShipState } from '../protocol.ts';
 import { Rng } from '../rng.ts';
 import { cos, sin } from '../math.ts';
-import { DestroyedAsteroids, asteroidAngle, createBelt } from './belt.ts';
+import { asteroidAngle } from './belt.ts';
 import { damageShip, quantiseControls, spawnShip } from './ship.ts';
 import type { Input, ShipState } from './ship.ts';
-import { stepPlayer } from './world.ts';
-import type { World, WorldEffect } from './world.ts';
+import { WorldLedger, applyOrb, createWorld, stepPlayer } from './world.ts';
+import type { WorldEffect } from './world.ts';
 
 export interface TraceResult {
   hash: number;
   deaths: number;
   boostTicks: number;
   crashes: number;
+  pickups: number;
   final: ShipState;
 }
 
@@ -45,7 +46,8 @@ function mix(hash: number, bytes: Uint8Array): number {
  * A fixed, seeded flight. It covers turning, pitching against the clamp,
  * throttle, boost, firing, damage, death on the planet and by damage,
  * respawn with its protection, the orbits of the belt far into a room's
- * life, and crashes into its rocks.
+ * life, crashes into its rocks, every kind of orb, a wormhole jump, flight
+ * as a Fenix, and the edge of the combat zone.
  */
 export function runTrace(seed: number, ticks: number): TraceResult {
   const rng = new Rng(seed);
@@ -59,8 +61,9 @@ export function runTrace(seed: number, ticks: number): TraceResult {
   let crashes = 0;
 
   // The clock starts weeks into a room's life, where the orbit angles are large.
-  const world: World = { seed, belt: createBelt(seed, SIM.asteroidCount) };
-  const destroyed = new DestroyedAsteroids(SIM.asteroidCount);
+  const world = createWorld(seed, SIM.asteroidCount, true);
+  const ledger = new WorldLedger(world);
+  let pickups = 0;
   const effects: WorldEffect[] = [];
 
   for (let step = 1; step <= ticks; step++) {
@@ -94,13 +97,28 @@ export function runTrace(seed: number, ticks: number): TraceResult {
         crashTicks: 0,
       };
     }
+    // And on an orb of each kind in turn, so that it takes it. Fenix orbs
+    // can only be shot, which the trace does by applying one directly.
+    const orbId = (step * 37) % world.orbs.orbs.length;
+    const orb = world.orbs.orbs[orbId];
+    if (ship.alive && orb && step % 250 === 125) {
+      ship = { ...ship, x: orb.x, y: orb.y, z: orb.z };
+      if (orb.kind === 'fenix') ship = applyOrb(ship, orbId, tick, world);
+    }
+    // Out past the edge of the combat zone for a while.
+    if (ship.alive && step === 5200) ship = { ...ship, x: 9500, y: 0, z: 0, yaw: 1.5 };
 
     const wasAlive = ship.alive;
     effects.length = 0;
-    ship = stepPlayer(ship, input, tick, world, destroyed, effects);
+    ship = stepPlayer(ship, input, tick, world, ledger, effects);
     for (const effect of effects) {
-      destroyed.destroy(effect.id, tick);
-      crashes++;
+      if (effect.kind === 'asteroid') {
+        ledger.asteroids.remove(effect.id, tick);
+        crashes++;
+      } else {
+        ledger.orbs.remove(effect.id, tick);
+        pickups++;
+      }
       hash = mix(hash, Uint8Array.of(effect.id & 255, effect.id >> 8));
     }
     if (wasAlive && !ship.alive) deaths++;
@@ -112,7 +130,7 @@ export function runTrace(seed: number, ticks: number): TraceResult {
     const rock = world.belt.asteroids[(step * 7) % SIM.asteroidCount];
     if (rock) hash = mixNumber(hash, asteroidAngle(rock, tick));
   }
-  return { hash, deaths, boostTicks, crashes, final: ship };
+  return { hash, deaths, boostTicks, crashes, pickups, final: ship };
 }
 
 /** Thirty days at 60 ticks a second. */

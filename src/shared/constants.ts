@@ -48,6 +48,46 @@ export const SIM = {
   crashDamageSpread: 30, // a crash costs 45 to 75, main.js:8496
   crashCooldownTicks: 36, // 0.6 s without another crash, main.js:8509
 
+  // Orbs. Fixed in place on the ring; counts are v1's caps (main.js:8340-8370, 5418).
+  orbYSpread: 40, // height is ±20, main.js:5140
+  orbRespawnTicks: 1800, // 30 s. v1 topped orbs up around the ship instead
+  pickupRadius: 2.2, // the ship against orbs, main.js:4495
+  shieldOrbs: 160,
+  pinkOrbs: 120,
+  fenixOrbs: 120,
+  zaphireOrbs: 120,
+  wormholeOrbs: 120,
+  boostOrbs: 120,
+  minerOrbs: 300,
+  hunterOrbs: 300,
+  shieldOrbRadius: 1.2, // main.js:5126
+  pinkOrbRadius: 1.6, // main.js:5186
+  fenixOrbRadius: 1.7, // shot only, main.js:9211
+  zaphireOrbRadius: 2.4, // main.js:5344
+  wormholeOrbRadius: 1.8, // main.js:5553
+  boostOrbRadius: 6.2, // v1's pulsed between 5.94 and 6.46, main.js:9329
+  multiplierOrbRadius: 4.3, // miner and hunter; v1's pulsed between 4.01 and 4.59
+  shieldOrbGain: 25, // main.js:9099
+  boostTicksMin: 180, // 3 s, main.js:9332
+  boostTicksSpread: 180, // a boost lasts 3 to 6 s, main.js:9332
+  wormholeMinJump: 5000, // decision D9. v1 asked for 12,000, which no two ring wormholes are
+  wormholeScatterMin: 150, // the ship arrives this far from the exit, main.js:9537
+  wormholeScatterSpread: 250, // main.js:9537
+  shotEffectDelayTicks: 30, // what a shot orb does to the shooter happens 0.5 s later
+
+  // Fenix (main.js:5095-5106, 8697-8701, 6023-6039)
+  fenixMaxSpeed: 80, // main.js:8700
+  fenixCrashDivisor: 2, // a crash costs a Fenix half, main.js:8494
+  beamSpeed: 300, // units/s, main.js:353
+  beamLifeTicks: 155, // v1's 2.576 s in whole ticks, main.js:354
+  beamRadius: 0.45, // main.js:6031
+  beamDamage: 30, // main.js:9872
+
+  // World edge (decision D11)
+  combatZoneRadius: 9000, // from the planet's axis
+  edgeDamage: 5, // off the ship every edgeDamageEveryTicks while outside
+  edgeDamageEveryTicks: 30,
+
   // Life cycle
   maxHp: 100, // main.js:4314
   maxShield: 100, // main.js:9099

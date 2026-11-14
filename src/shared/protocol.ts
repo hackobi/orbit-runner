@@ -19,7 +19,7 @@ import type { RemoteSample } from './remote.ts';
 import { inputFromWire } from './sim/ship.ts';
 import type { Input, ShipState } from './sim/ship.ts';
 
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 /** Inputs carried per message: the tick's own plus the ones before it. */
 export const INPUT_REDUNDANCY = 3;
@@ -48,8 +48,14 @@ export const CAUSE_PLANET = 1;
 export const CAUSE_PLAYER = 2;
 export const CAUSE_DISCONNECT = 3;
 export const CAUSE_ASTEROID = 4;
+/** Flew out of the combat zone and stayed out (decision D11). */
+export const CAUSE_EDGE = 5;
 export type DeathCause =
-  typeof CAUSE_PLANET | typeof CAUSE_PLAYER | typeof CAUSE_DISCONNECT | typeof CAUSE_ASTEROID;
+  | typeof CAUSE_PLANET
+  | typeof CAUSE_PLAYER
+  | typeof CAUSE_DISCONNECT
+  | typeof CAUSE_ASTEROID
+  | typeof CAUSE_EDGE;
 
 // --- Message types ----------------------------------------------------------
 
@@ -88,9 +94,10 @@ export interface WelcomeMessage {
   readonly clientTimeMs: number;
   readonly sessionToken: Uint8Array;
   readonly ship: ShipState;
-  /** What the client builds the belt from. Rocks are never sent one by one. */
+  /** What the client builds the belt and the orbs from. Neither is sent piece by piece. */
   readonly worldSeed: number;
   readonly asteroidCount: number;
+  readonly withOrbs: boolean;
 }
 
 export interface RejectMessage {
@@ -130,6 +137,8 @@ export interface BulletEvent {
   readonly z: number;
   readonly yaw: number;
   readonly pitch: number;
+  /** A Fenix beam rather than a bullet. */
+  readonly beam: boolean;
 }
 
 export interface HitEvent {
@@ -175,7 +184,26 @@ export interface AsteroidEvent {
   readonly byBullet: boolean;
 }
 
-export type GameEvent = BulletEvent | HitEvent | DeathEvent | LeftEvent | AsteroidEvent;
+/**
+ * An orb was taken. World state, sent to every player like a rock.
+ *
+ * When a ship flew through it, the effect on that ship happened on `tick`,
+ * and the ship's own client predicted it. When a bullet took it, the effect
+ * on the shooter happens SIM.shotEffectDelayTicks later, so that the news
+ * reaches the shooter's client first and it can apply it on the same tick.
+ */
+export interface OrbEvent {
+  readonly kind: 'orb';
+  readonly orbId: number;
+  readonly tick: number;
+  /** Who took it. NO_PLAYER when the event only reports that it is gone. */
+  readonly playerId: number;
+  /** The tick the bullet that took it was fired, or 0 if a ship flew through it. */
+  readonly spawnTick: number;
+  readonly byBullet: boolean;
+}
+
+export type GameEvent = BulletEvent | HitEvent | DeathEvent | LeftEvent | AsteroidEvent | OrbEvent;
 
 export interface EventsMessage {
   readonly type: 'events';
@@ -303,7 +331,7 @@ class Reader {
 
 // --- Own ship, full precision -----------------------------------------------
 
-export const SHIP_STATE_BYTES = 8 * 8 + 2 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1;
+export const SHIP_STATE_BYTES = 8 * 8 + 2 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1;
 
 function writeShip(w: Writer, s: ShipState): void {
   w.f64(s.x);
@@ -323,6 +351,7 @@ function writeShip(w: Writer, s: ShipState): void {
   w.u8(s.invulnTicks);
   w.u8(s.fireCooldown);
   w.u8(s.crashTicks);
+  w.u8(s.fenix ? 1 : 0);
 }
 
 function readShip(r: Reader): ShipState {
@@ -344,6 +373,7 @@ function readShip(r: Reader): ShipState {
     invulnTicks: r.u8(),
     fireCooldown: r.u8(),
     crashTicks: r.u8(),
+    fenix: r.u8() === 1,
   };
 }
 
@@ -370,6 +400,7 @@ const FLAG_ALIVE = 1;
 const FLAG_BOOSTING = 2;
 const FLAG_INVULNERABLE = 4;
 const FLAG_FULL = 8;
+const FLAG_FENIX = 16;
 
 /** A nearby ship: 1 id + 1 flags + 10 position + 6 angles + 1 hp + 1 shield + 1 spawn. */
 export const NEAR_ENTRY_BYTES = 21;
@@ -383,7 +414,8 @@ function writeRemote(w: Writer, entry: RemoteEntry): void {
     (s.alive ? FLAG_ALIVE : 0) |
       (s.boosting ? FLAG_BOOSTING : 0) |
       (s.invulnerable ? FLAG_INVULNERABLE : 0) |
-      (s.full ? FLAG_FULL : 0),
+      (s.full ? FLAG_FULL : 0) |
+      (s.fenix ? FLAG_FENIX : 0),
   );
   w.i32(quantisePosition(s.x));
   w.i16(quantiseHeight(s.y));
@@ -421,6 +453,7 @@ function readRemote(r: Reader, tick: number): RemoteEntry {
       alive: (flags & FLAG_ALIVE) !== 0,
       boosting: (flags & FLAG_BOOSTING) !== 0,
       invulnerable: (flags & FLAG_INVULNERABLE) !== 0,
+      fenix: (flags & FLAG_FENIX) !== 0,
       full,
     },
   };
@@ -521,7 +554,7 @@ export function decodeClientMessage(data: Uint8Array): ClientMessage | null {
 // --- Server to client -------------------------------------------------------
 
 export function encodeWelcome(message: Omit<WelcomeMessage, 'type'>): Uint8Array {
-  const w = new Writer(1 + 1 + 4 + 8 + SESSION_TOKEN_BYTES + SHIP_STATE_BYTES + 4 + 2);
+  const w = new Writer(1 + 1 + 4 + 8 + SESSION_TOKEN_BYTES + SHIP_STATE_BYTES + 4 + 2 + 1);
   w.u8(SERVER_WELCOME);
   w.u8(message.playerId);
   w.u32(message.serverTick);
@@ -530,6 +563,7 @@ export function encodeWelcome(message: Omit<WelcomeMessage, 'type'>): Uint8Array
   writeShip(w, message.ship);
   w.u32(message.worldSeed);
   w.u16(message.asteroidCount);
+  w.u8(message.withOrbs ? 1 : 0);
   return w.finish();
 }
 
@@ -561,8 +595,9 @@ const EVENT_HIT = 2;
 const EVENT_DEATH = 3;
 const EVENT_LEFT = 4;
 const EVENT_ASTEROID = 5;
+const EVENT_ORB = 6;
 
-const MAX_EVENT_BYTES = 26;
+const MAX_EVENT_BYTES = 27;
 
 export function encodeEvents(events: readonly GameEvent[]): Uint8Array {
   const count = Math.min(events.length, 255);
@@ -582,6 +617,7 @@ export function encodeEvents(events: readonly GameEvent[]): Uint8Array {
         w.f32(event.z);
         w.f32(event.yaw);
         w.f32(event.pitch);
+        w.u8(event.beam ? 1 : 0);
         break;
       case 'hit':
         w.u8(EVENT_HIT);
@@ -612,6 +648,14 @@ export function encodeEvents(events: readonly GameEvent[]): Uint8Array {
         w.u32(event.spawnTick);
         w.u8(event.byBullet ? 1 : 0);
         break;
+      case 'orb':
+        w.u8(EVENT_ORB);
+        w.u16(event.orbId);
+        w.u32(event.tick);
+        w.u8(event.playerId);
+        w.u32(event.spawnTick);
+        w.u8(event.byBullet ? 1 : 0);
+        break;
     }
   }
   return w.finish();
@@ -629,6 +673,7 @@ function readEvent(r: Reader): GameEvent | null {
       z: r.f32(),
       yaw: r.f32(),
       pitch: r.f32(),
+      beam: r.u8() === 1,
     };
   }
   if (kind === EVENT_HIT) {
@@ -652,7 +697,8 @@ function readEvent(r: Reader): GameEvent | null {
       cause !== CAUSE_PLANET &&
       cause !== CAUSE_PLAYER &&
       cause !== CAUSE_DISCONNECT &&
-      cause !== CAUSE_ASTEROID
+      cause !== CAUSE_ASTEROID &&
+      cause !== CAUSE_EDGE
     ) {
       return null;
     }
@@ -663,6 +709,16 @@ function readEvent(r: Reader): GameEvent | null {
     return {
       kind: 'asteroid',
       asteroidId: r.u16(),
+      tick: r.u32(),
+      playerId: r.u8(),
+      spawnTick: r.u32(),
+      byBullet: r.u8() === 1,
+    };
+  }
+  if (kind === EVENT_ORB) {
+    return {
+      kind: 'orb',
+      orbId: r.u16(),
       tick: r.u32(),
       playerId: r.u8(),
       spawnTick: r.u32(),
@@ -684,6 +740,7 @@ export function decodeServerMessage(data: Uint8Array): ServerMessage | null {
       const ship = readShip(r);
       const worldSeed = r.u32();
       const asteroidCount = r.u16();
+      const withOrbs = r.u8() === 1;
       if (!r.atEnd()) return null;
       return {
         type: 'welcome',
@@ -694,6 +751,7 @@ export function decodeServerMessage(data: Uint8Array): ServerMessage | null {
         ship,
         worldSeed,
         asteroidCount,
+        withOrbs,
       };
     }
     if (type === SERVER_REJECT) {

@@ -69,16 +69,17 @@ export class TestWorld {
   readonly left: number[] = [];
 
   /**
-   * `asteroidCount` is the full belt unless a test of one mechanism asks
-   * for empty space, so that nothing but that mechanism decides its result.
+   * The full belt and every orb, unless a test of one mechanism asks for
+   * emptier space, so that nothing but that mechanism decides its result.
    */
-  constructor(seed = 1, asteroidCount: number = SIM.asteroidCount) {
+  constructor(seed = 1, asteroidCount: number = SIM.asteroidCount, orbs = true) {
     // Tokens only need to be distinct here, so a seeded generator will do.
     const tokens = new Rng(seed ^ 0x5eed);
     this.room = new Room({
       now: this.clock.now,
       seed,
       asteroidCount,
+      orbs,
       createToken: () => Uint8Array.from({ length: 16 }, () => Math.floor(tokens.next() * 256)),
       listener: {
         hit: (hit) => this.hits.push(hit),

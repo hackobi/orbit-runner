@@ -131,14 +131,19 @@ function frame(nowMs: number): void {
   if (view) {
     const remotes = core.remoteViews();
     const bullets = core.bulletViews();
-    const belt = core.world ? { world: core.world, tick: core.drawTick, gone: core } : null;
+    const world = core.world ? { world: core.world, tick: core.drawTick, state: core } : null;
     if (view.alive) nearMiss(nowMs, view.x, view.y, view.z);
-    scene.render(view, remotes, bullets, core.playerId, elapsedMs / 1000, belt);
+    scene.render(view, remotes, bullets, core.playerId, elapsedMs / 1000, world);
     recorder?.frame(nowMs, elapsedMs, core, view, remotes, bullets.length);
   }
 
   show(statusLine, statusText());
-  show(hullLine, view ? `Hull ${view.hp} / ${SIM.maxHp}` : '');
+  show(
+    hullLine,
+    view
+      ? `Hull ${view.hp} / ${SIM.maxHp}${view.shield > 0 ? `   Shield ${view.shield}` : ''}`
+      : '',
+  );
   show(speedLine, view ? `${Math.round(view.speed)} u/s` : '');
   show(killsLine, view ? `Kills ${core.kills}` : '');
 

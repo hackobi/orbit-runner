@@ -22,6 +22,7 @@ export interface RemoteSample {
   readonly alive: boolean;
   readonly boosting: boolean;
   readonly invulnerable: boolean;
+  readonly fenix: boolean;
   /**
    * False for a distant ship, which is sent less often and as a position
    * only. Its angles are zero.
@@ -56,6 +57,7 @@ export function sampleOf(tick: number, ship: ShipState): RemoteSample {
     alive: ship.alive,
     boosting: ship.boostTicks > 0,
     invulnerable: ship.invulnTicks > 0,
+    fenix: ship.fenix,
     full: true,
   };
 }
@@ -89,6 +91,7 @@ export interface TrackPose {
   alive: boolean;
   boosting: boolean;
   invulnerable: boolean;
+  fenix: boolean;
   full: boolean;
   /** 0 when the pose lies between two samples; otherwise how many ticks past the newest it was pushed. */
   extrapolatedTicks: number;
@@ -121,6 +124,7 @@ function poseAt(sample: RemoteSample): TrackPose {
     alive: sample.alive,
     boosting: sample.boosting,
     invulnerable: sample.invulnerable,
+    fenix: sample.fenix,
     full: sample.full,
     extrapolatedTicks: 0,
     stateTick: sample.tick,

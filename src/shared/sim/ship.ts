@@ -111,6 +111,11 @@ export interface ShipState {
   readonly fireCooldown: number;
   /** Ticks until the ship can crash into another asteroid (main.js:8509). */
   readonly crashTicks: number;
+  /**
+   * The ship has become a Fenix (main.js:5095): faster, fires beams, and
+   * takes half from a crash. It lasts until the ship is destroyed.
+   */
+  readonly fenix: boolean;
 }
 
 export const SPAWN_SEQ_MODULO = 256;
@@ -127,8 +132,9 @@ const YAW_STEP = SIM.yawRate * TICK_DT;
 const PITCH_STEP = SIM.pitchRate * TICK_DT;
 
 /** Top speed for a ship in this state (main.js:8697-8702). */
-export function maxSpeedOf(boosting: boolean): number {
-  return boosting ? SIM.maxSpeed * SIM.boostMultiplier : SIM.maxSpeed;
+export function maxSpeedOf(boosting: boolean, fenix = false): number {
+  const base = fenix ? SIM.fenixMaxSpeed : SIM.maxSpeed;
+  return boosting ? base * SIM.boostMultiplier : base;
 }
 
 export function stepShip(s: ShipState, input: Input): ShipState {
@@ -149,7 +155,7 @@ export function stepShip(s: ShipState, input: Input): ShipState {
   const boostTicks = boosting ? s.boostTicks - 1 : 0;
 
   // Target speed (main.js:8697-8721).
-  const maxSpeed = maxSpeedOf(boosting);
+  const maxSpeed = maxSpeedOf(boosting, s.fenix);
   let targetSpeed = s.targetSpeed;
   if (!boosting) targetSpeed = Math.min(targetSpeed, maxSpeed);
   if (input.throttle > 0) targetSpeed = Math.min(maxSpeed, targetSpeed + THROTTLE_STEP);
@@ -194,6 +200,7 @@ export function stepShip(s: ShipState, input: Input): ShipState {
     invulnTicks,
     fireCooldown,
     crashTicks,
+    fenix: s.fenix,
   };
   // The planet is at the origin and kills on contact (main.js:9620-9624).
   return x * x + y * y + z * z < KILL_RADIUS_SQ ? destroyed(moved) : moved;
@@ -213,6 +220,7 @@ function destroyed(s: ShipState): ShipState {
     invulnTicks: 0,
     fireCooldown: 0,
     crashTicks: 0,
+    fenix: false,
   };
 }
 
@@ -264,6 +272,7 @@ export function spawnShip(rng: Rng, spawnSeq: number): ShipState {
     invulnTicks: SIM.invulnerableTicks,
     fireCooldown: 0,
     crashTicks: 0,
+    fenix: false,
   };
 }
 
@@ -286,6 +295,7 @@ export function shipStatesEqual(a: ShipState, b: ShipState): boolean {
     a.shield === b.shield &&
     a.invulnTicks === b.invulnTicks &&
     a.fireCooldown === b.fireCooldown &&
-    a.crashTicks === b.crashTicks
+    a.crashTicks === b.crashTicks &&
+    a.fenix === b.fenix
   );
 }

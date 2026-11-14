@@ -4,14 +4,14 @@ import { CAUSE_ASTEROID, NO_PLAYER } from '../../src/shared/protocol.ts';
 import type { AsteroidEvent } from '../../src/shared/protocol.ts';
 import { Rng } from '../../src/shared/rng.ts';
 import {
-  DestroyedAsteroids,
+  Depleted,
   asteroidPosition,
   asteroidTouching,
   bulletAsteroidHit,
   createBelt,
 } from '../../src/shared/sim/belt.ts';
 import type { Belt, GoneView } from '../../src/shared/sim/belt.ts';
-import { bulletFrom, bulletHit } from '../../src/shared/sim/bullets.ts';
+import { bulletFrom, bulletHit, bulletRadius } from '../../src/shared/sim/bullets.ts';
 import type { Bullet } from '../../src/shared/sim/bullets.ts';
 import type { Controls, ShipState } from '../../src/shared/sim/ship.ts';
 import { crashDamage } from '../../src/shared/sim/world.ts';
@@ -107,7 +107,7 @@ describe('the belt', () => {
       let best: { id: number; at: number } | null = null;
       for (const [id, rock] of belt.asteroids.entries()) {
         const p = asteroidPosition(rock, tick);
-        const at = bulletHit(bullet, tick, p.x, p.y, p.z, rock.radius + SIM.bulletRadius);
+        const at = bulletHit(bullet, tick, p.x, p.y, p.z, rock.radius + bulletRadius(bullet));
         if (at >= 0 && (!best || at < best.at)) best = { id, at };
       }
       return best;
@@ -128,6 +128,7 @@ describe('the belt', () => {
         at.z + (rng.next() - 0.5) * 30,
         (rng.next() - 0.5) * 6,
         (rng.next() - 0.5) * 0.4,
+        i % 3 === 0,
       );
       const expected = bruteForce(bullet, tick);
       expect(bulletAsteroidHit(belt, NOTHING_GONE, bullet, tick)).toEqual(expected);
@@ -137,13 +138,13 @@ describe('the belt', () => {
   });
 
   it('a destroyed rock is gone for 30 s and then back', () => {
-    const destroyed = new DestroyedAsteroids(10);
-    expect(destroyed.asteroidGone(3, 100)).toBe(false);
-    destroyed.destroy(3, 100);
-    expect(destroyed.asteroidGone(3, 99)).toBe(false);
-    expect(destroyed.asteroidGone(3, 100)).toBe(true);
-    expect(destroyed.asteroidGone(3, 100 + SIM.asteroidRespawnTicks - 1)).toBe(true);
-    expect(destroyed.asteroidGone(3, 100 + SIM.asteroidRespawnTicks)).toBe(false);
+    const destroyed = new Depleted(10, SIM.asteroidRespawnTicks);
+    expect(destroyed.gone(3, 100)).toBe(false);
+    destroyed.remove(3, 100);
+    expect(destroyed.gone(3, 99)).toBe(false);
+    expect(destroyed.gone(3, 100)).toBe(true);
+    expect(destroyed.gone(3, 100 + SIM.asteroidRespawnTicks - 1)).toBe(true);
+    expect(destroyed.gone(3, 100 + SIM.asteroidRespawnTicks)).toBe(false);
     expect(destroyed.goneAt(150)).toEqual([{ id: 3, tick: 100 }]);
     expect(destroyed.goneAt(100 + SIM.asteroidRespawnTicks)).toEqual([]);
   });
@@ -151,7 +152,7 @@ describe('the belt', () => {
 
 /**
  * These tests each need one rock with nothing else nearby, so that only
- * that rock decides the result. A thin belt has plenty of those.
+ * that rock decides the result. A thin belt with no orbs has plenty of those.
  */
 const SPARSE = 150;
 
@@ -182,7 +183,7 @@ describe('crashing into a rock', () => {
   it.each(['clean', '100ms', '200ms-lossy'] as const)(
     'on the %s profile: the server decides it, everyone hears of it, and the pilot predicted it',
     (profile) => {
-      const world = new TestWorld(31, SPARSE);
+      const world = new TestWorld(31, SPARSE, false);
       const pilot = world.addClient({ link: profileLink(profile, 3) });
       // A second player on the far side of the planet still has to be told.
       const far = world.addClient({ link: profileLink(profile, 5) });
@@ -209,7 +210,7 @@ describe('crashing into a rock', () => {
       expect(damage).toBeLessThanOrEqual(75);
       const ship = world.room.shipOf(pilot.core.playerId);
       expect(ship).toMatchObject({ alive: true, hp: SIM.maxHp - damage });
-      expect(world.room.destroyed.asteroidGone(rockId, world.room.tick)).toBe(true);
+      expect(world.room.ledger.asteroidGone(rockId, world.room.tick)).toBe(true);
 
       // The pilot's client ran the same step: it lost the same hit points on
       // the same tick, saw the rock go, and was never corrected for it. Only
@@ -226,7 +227,7 @@ describe('crashing into a rock', () => {
   );
 
   it('kills a ship that is nearly finished, and the death says why', () => {
-    const world = new TestWorld(31, SPARSE);
+    const world = new TestWorld(31, SPARSE, false);
     const pilot = world.addClient({});
     world.run(600);
     const rockId = loneRock(world.room.world.belt, world.room.tick);
@@ -241,7 +242,7 @@ describe('crashing into a rock', () => {
   });
 
   it('the shield takes a crash first and the hull only what is left (decision D8)', () => {
-    const world = new TestWorld(31, SPARSE);
+    const world = new TestWorld(31, SPARSE, false);
     const pilot = world.addClient({});
     world.run(600);
     const rockId = loneRock(world.room.world.belt, world.room.tick);
@@ -256,7 +257,7 @@ describe('crashing into a rock', () => {
   });
 
   it('does nothing to a ship under spawn protection, and the rock survives', () => {
-    const world = new TestWorld(31, SPARSE);
+    const world = new TestWorld(31, SPARSE, false);
     const pilot = world.addClient({});
     world.run(600);
     const rockId = loneRock(world.room.world.belt, world.room.tick);
@@ -264,11 +265,11 @@ describe('crashing into a rock', () => {
     world.run(1000);
     expect(world.room.stats.asteroidsCrashed).toBe(0);
     expect(world.room.shipOf(pilot.core.playerId)).toMatchObject({ alive: true, hp: SIM.maxHp });
-    expect(world.room.destroyed.asteroidGone(rockId, world.room.tick)).toBe(false);
+    expect(world.room.ledger.asteroidGone(rockId, world.room.tick)).toBe(false);
   });
 
   it('cannot be skipped by a client that sends nothing: the server flies the ship into the rock', () => {
-    const world = new TestWorld(31, SPARSE);
+    const world = new TestWorld(31, SPARSE, false);
     const pilot = world.addClient({});
     world.run(600);
     const rockId = loneRock(world.room.world.belt, world.room.tick);
@@ -283,7 +284,7 @@ describe('crashing into a rock', () => {
 describe('shooting a rock', () => {
   /** A shooter 60 units from a lone rock, flying alongside it and firing at it. */
   function shootAt(profile: 'clean' | '100ms', withTarget: boolean) {
-    const world = new TestWorld(31, SPARSE);
+    const world = new TestWorld(31, SPARSE, false);
     let fire = false;
     const shooter = world.addClient({
       controls: (): Controls => ({ yaw: 0, pitch: 0, throttle: 0, fire }),
@@ -367,19 +368,19 @@ describe('shooting a rock', () => {
     expect(world.hits).toHaveLength(0);
     expect(shooter.viewHits).toHaveLength(0);
     expect(world.room.shipOf(target.core.playerId)?.hp).toBe(SIM.maxHp);
-    expect(world.room.destroyed.asteroidGone(rockId, world.room.tick)).toBe(true);
+    expect(world.room.ledger.asteroidGone(rockId, world.room.tick)).toBe(true);
   });
 });
 
 describe('the belt for someone who was not there', () => {
   it('a late joiner is told which rocks are gone, and a rock comes back after 30 s for everyone', () => {
-    const world = new TestWorld(31, SPARSE);
+    const world = new TestWorld(31, SPARSE, false);
     const pilot = world.addClient({});
     world.run(600);
     const rockId = loneRock(world.room.world.belt, world.room.tick);
     placeInPathOf(world, pilot.core.playerId, rockId);
     world.run(1500);
-    expect(world.room.destroyed.asteroidGone(rockId, world.room.tick)).toBe(true);
+    expect(world.room.ledger.asteroidGone(rockId, world.room.tick)).toBe(true);
 
     const late = world.addClient({});
     world.run(500);
@@ -389,7 +390,7 @@ describe('the belt for someone who was not there', () => {
     expect(report).toMatchObject({ playerId: NO_PLAYER, byBullet: false });
 
     world.run(SIM.asteroidRespawnTicks * (1000 / 60));
-    expect(world.room.destroyed.asteroidGone(rockId, world.room.tick)).toBe(false);
+    expect(world.room.ledger.asteroidGone(rockId, world.room.tick)).toBe(false);
     expect(late.core.asteroidGone(rockId, late.core.tick)).toBe(false);
     expect(pilot.core.asteroidGone(rockId, pilot.core.tick)).toBe(false);
   });

@@ -21,17 +21,34 @@ export interface Bullet {
   readonly dx: number;
   readonly dy: number;
   readonly dz: number;
+  /**
+   * A Fenix beam (main.js:6023-6039): faster, fatter, shorter-lived, and
+   * twice the damage. A Fenix fires these instead of bullets.
+   */
+  readonly beam: boolean;
 }
 
-/** Distance a bullet covers in one tick. */
+/** Distance an ordinary bullet covers in one tick. */
 export const BULLET_STEP = SIM.bulletSpeed * TICK_DT;
+const BEAM_STEP = SIM.beamSpeed * TICK_DT;
+/** The longest step of any kind of bullet. */
+export const BULLET_STEP_MAX = Math.max(BULLET_STEP, BEAM_STEP);
 
-/** Bullets hit a ship when their centres are this close. */
+/** An ordinary bullet hits a ship when their centres are this close. */
 export const BULLET_HIT_DISTANCE = SIM.shipHitRadius + SIM.bulletRadius;
+
+/** Distance this bullet covers in one tick. */
+export const bulletStep = (bullet: Bullet): number => (bullet.beam ? BEAM_STEP : BULLET_STEP);
+export const bulletRadius = (bullet: Bullet): number =>
+  bullet.beam ? SIM.beamRadius : SIM.bulletRadius;
+export const bulletDamage = (bullet: Bullet): number =>
+  bullet.beam ? SIM.beamDamage : SIM.bulletDamage;
+export const bulletLifeTicks = (bullet: Bullet): number =>
+  bullet.beam ? SIM.beamLifeTicks : SIM.bulletLifeTicks;
 
 /** A bullet leaving the nose of `ship` at `tick` (main.js:6014-6021). Roll does not aim. */
 export function spawnBullet(ownerId: number, tick: number, ship: ShipState): Bullet {
-  return bulletFrom(ownerId, tick, ship.x, ship.y, ship.z, ship.yaw, ship.pitch);
+  return bulletFrom(ownerId, tick, ship.x, ship.y, ship.z, ship.yaw, ship.pitch, ship.fenix);
 }
 
 /** The same, from the ship's position and heading. Used for bullets received from the server. */
@@ -43,6 +60,7 @@ export function bulletFrom(
   shipZ: number,
   yaw: number,
   pitch: number,
+  beam: boolean,
 ): Bullet {
   const cosPitch = cos(pitch);
   const dx = sin(yaw) * cosPitch;
@@ -57,21 +75,22 @@ export function bulletFrom(
     dx,
     dy,
     dz,
+    beam,
   };
 }
 
 export function bulletExpired(bullet: Bullet, tick: number): boolean {
-  return tick - bullet.spawnTick >= SIM.bulletLifeTicks;
+  return tick - bullet.spawnTick >= bulletLifeTicks(bullet);
 }
 
 /** Distance along its path that a bullet has reached at a tick (which may be fractional). */
 export function bulletTravel(bullet: Bullet, tick: number): number {
-  return (tick - bullet.spawnTick) * BULLET_STEP;
+  return (tick - bullet.spawnTick) * bulletStep(bullet);
 }
 
 /**
  * Tests the path a bullet covers during `tick` against a sphere of radius
- * `hitDistance` around (cx, cy, cz); by default a ship's. Returns how far along the path the first
+ * `hitDistance` around (cx, cy, cz). For a ship that is shipHitDistance. Returns how far along the path the first
  * contact is, 0 to 1, or −1 for a miss.
  *
  * On the tick it is fired the path runs from the ship's centre to the muzzle,
@@ -83,11 +102,12 @@ export function bulletHit(
   cx: number,
   cy: number,
   cz: number,
-  hitDistance = BULLET_HIT_DISTANCE,
+  hitDistance: number,
 ): number {
   const age = tick - bullet.spawnTick;
-  const from = age === 0 ? -SIM.muzzleOffset : (age - 1) * BULLET_STEP;
-  const length = age === 0 ? SIM.muzzleOffset : BULLET_STEP;
+  const step = bulletStep(bullet);
+  const from = age === 0 ? -SIM.muzzleOffset : (age - 1) * step;
+  const length = age === 0 ? SIM.muzzleOffset : step;
 
   // Start of the path, relative to the sphere's centre.
   const px = bullet.ox + bullet.dx * from - cx;
@@ -106,3 +126,6 @@ export function bulletHit(
   const entry = along - Math.sqrt(radiusSq - missSq);
   return entry <= length ? entry / length : -1;
 }
+
+/** How close this bullet's centre must come to a ship's to hit it. */
+export const shipHitDistance = (bullet: Bullet): number => SIM.shipHitRadius + bulletRadius(bullet);

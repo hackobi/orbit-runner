@@ -4,11 +4,14 @@ import { Rng } from '../../src/shared/rng.ts';
 import {
   BULLET_HIT_DISTANCE,
   BULLET_STEP,
+  bulletDamage,
   bulletExpired,
   bulletHit,
   bulletTravel,
+  shipHitDistance,
   spawnBullet,
 } from '../../src/shared/sim/bullets.ts';
+import type { Bullet } from '../../src/shared/sim/bullets.ts';
 import {
   damageShip,
   destroyShip,
@@ -25,6 +28,10 @@ const HOLD = quantiseControls({ yaw: 0, pitch: 0, throttle: 0, fire: false });
 function shipAt(z: number, overrides: Partial<ShipState> = {}): ShipState {
   return { ...spawnShip(new Rng(1), 0), x: 0, y: 0, z, invulnTicks: 0, ...overrides };
 }
+
+/** The path a bullet covers in a tick against a ship at a point. */
+const shipHit = (bullet: Bullet, tick: number, x: number, y: number, z: number): number =>
+  bulletHit(bullet, tick, x, y, z, shipHitDistance(bullet));
 
 describe('the gun (v1 main.js:8837-8841, 6014-6050)', () => {
   it('fires every 7 ticks while the button is held', () => {
@@ -79,7 +86,7 @@ describe('bullet against ship', () => {
     // Centre at z = 4050: contact begins 2.25 short of it.
     const hits: number[] = [];
     for (let tick = 100; tick < 130; tick++) {
-      if (bulletHit(bullet, tick, 0, 0, 4050) >= 0) hits.push(tick);
+      if (shipHit(bullet, tick, 0, 0, 4050) >= 0) hits.push(tick);
     }
     const contactAt = (4050 - BULLET_HIT_DISTANCE - 4001.8) / BULLET_STEP;
     expect(hits[0]).toBe(100 + Math.ceil(contactAt));
@@ -89,7 +96,7 @@ describe('bullet against ship', () => {
     const tick = 112;
     const startOfTick = 4001.8 + 11 * BULLET_STEP;
     const centre = startOfTick + BULLET_HIT_DISTANCE + BULLET_STEP / 2;
-    expect(bulletHit(bullet, tick, 0, 0, centre)).toBeCloseTo(0.5, 9);
+    expect(shipHit(bullet, tick, 0, 0, centre)).toBeCloseTo(0.5, 9);
   });
 
   it('never tunnels: a ship between two tick positions is still hit', () => {
@@ -97,7 +104,7 @@ describe('bullet against ship', () => {
     // on the path must be hit on some tick.
     for (let z = 4004; z < 4690; z += 0.37) {
       let hit = false;
-      for (let tick = 100; tick < 280 && !hit; tick++) hit = bulletHit(bullet, tick, 0, 0, z) >= 0;
+      for (let tick = 100; tick < 280 && !hit; tick++) hit = shipHit(bullet, tick, 0, 0, z) >= 0;
       expect(hit, `target at z=${z}`).toBe(true);
     }
   });
@@ -105,7 +112,7 @@ describe('bullet against ship', () => {
   it('a grazing pass just inside 2.25 units hits; just outside misses', () => {
     const anyTick = (offset: number): boolean => {
       for (let tick = 100; tick < 280; tick++) {
-        if (bulletHit(bullet, tick, offset, 0, 4300) >= 0) return true;
+        if (shipHit(bullet, tick, offset, 0, 4300) >= 0) return true;
       }
       return false;
     };
@@ -114,13 +121,13 @@ describe('bullet against ship', () => {
   });
 
   it('does not hit what is behind it or beyond its reach this tick', () => {
-    expect(bulletHit(bullet, 110, 0, 0, 3990)).toBe(-1);
-    expect(bulletHit(bullet, 101, 0, 0, 4300)).toBe(-1);
+    expect(shipHit(bullet, 110, 0, 0, 3990)).toBe(-1);
+    expect(shipHit(bullet, 101, 0, 0, 4300)).toBe(-1);
   });
 
   it('on the tick it is fired, covers the gap from the ship to the muzzle', () => {
-    expect(bulletHit(bullet, 100, 0, 0, 4003)).toBeGreaterThanOrEqual(0);
-    expect(bulletHit(bullet, 100, 0, 0, 4010)).toBe(-1);
+    expect(shipHit(bullet, 100, 0, 0, 4003)).toBeGreaterThanOrEqual(0);
+    expect(shipHit(bullet, 100, 0, 0, 4010)).toBe(-1);
   });
 });
 
@@ -148,5 +155,43 @@ describe('damage (v1 main.js:9872, server:3086-3102)', () => {
   it('damage to a dead ship does nothing', () => {
     const dead = destroyShip(shipAt(4000));
     expect(damageShip(dead, 15)).toBe(dead);
+  });
+});
+
+describe('the Fenix beam (v1 main.js:353-354, 6023-6039, 9872)', () => {
+  const beam = spawnBullet(0, 100, shipAt(4000, { fenix: true })); // flying +Z from z = 4001.8
+
+  it('a Fenix fires beams; any other ship fires bullets', () => {
+    expect(beam.beam).toBe(true);
+    expect(spawnBullet(0, 100, shipAt(4000)).beam).toBe(false);
+  });
+
+  it('flies 300 u/s for 155 ticks and does 30 damage', () => {
+    expect(bulletTravel(beam, 160)).toBeCloseTo(300, 9);
+    expect(bulletExpired(beam, 254)).toBe(false);
+    expect(bulletExpired(beam, 255)).toBe(true);
+    expect(bulletDamage(beam)).toBe(30);
+    expect(bulletDamage(spawnBullet(0, 100, shipAt(4000)))).toBe(15);
+  });
+
+  it('is fatter: it hits a ship 2.45 units off its line, where a bullet needs 2.25', () => {
+    const anyTick = (offset: number): boolean => {
+      for (let tick = 100; tick < 255; tick++) {
+        if (shipHit(beam, tick, offset, 0, 4300) >= 0) return true;
+      }
+      return false;
+    };
+    expect(shipHitDistance(beam)).toBeCloseTo(2.45, 12);
+    expect(anyTick(2.449)).toBe(true);
+    expect(anyTick(2.451)).toBe(false);
+  });
+
+  it('never tunnels at its longer step either', () => {
+    // Its reach: 1.8 to the muzzle, 154 steps of 5, and 2.45 to a ship's centre.
+    for (let z = 4004; z < 4774; z += 0.41) {
+      let hit = false;
+      for (let tick = 100; tick < 255 && !hit; tick++) hit = shipHit(beam, tick, 0, 0, z) >= 0;
+      expect(hit, `target at z=${z}`).toBe(true);
+    }
   });
 });

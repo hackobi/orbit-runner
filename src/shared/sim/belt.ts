@@ -9,7 +9,7 @@
 import { SIM, TICK_DT } from '../constants.ts';
 import { TWO_PI, cos, sin, wrapTurns } from '../math.ts';
 import { Rng } from '../rng.ts';
-import { BULLET_STEP, bulletHit } from './bullets.ts';
+import { bulletHit, bulletRadius, bulletStep } from './bullets.ts';
 import type { Bullet } from './bullets.ts';
 
 export interface Asteroid {
@@ -147,13 +147,15 @@ export function bulletAsteroidHit(
 ): AsteroidHit | null {
   // The middle of this tick's path, and half its length.
   const age = tick - bullet.spawnTick;
-  const half = (age === 0 ? SIM.muzzleOffset : BULLET_STEP) / 2;
-  const middle = age === 0 ? -half : (age - 1) * BULLET_STEP + half;
+  const step = bulletStep(bullet);
+  const half = (age === 0 ? SIM.muzzleOffset : step) / 2;
+  const middle = age === 0 ? -half : (age - 1) * step + half;
   const x = bullet.ox + bullet.dx * middle;
   const y = bullet.oy + bullet.dy * middle;
   const z = bullet.oz + bullet.dz * middle;
 
-  const extra = SIM.bulletRadius + half;
+  const hitRadius = bulletRadius(bullet);
+  const extra = hitRadius + half;
   const reachMax = belt.maxRadius + extra;
   const radial = Math.sqrt(x * x + z * z);
   if (radial < SIM.beltInner - reachMax || radial > SIM.beltOuter + reachMax) return null;
@@ -178,7 +180,7 @@ export function bulletAsteroidHit(
         cos(angle) * asteroid.orbitRadius,
         asteroid.y,
         sin(angle) * asteroid.orbitRadius,
-        asteroid.radius + SIM.bulletRadius,
+        asteroid.radius + hitRadius,
       );
       if (at < 0 || gone.asteroidGone(id, tick)) continue;
       // The nearer contact wins; on a tie, the lower id, so every machine agrees.
@@ -189,37 +191,36 @@ export function bulletAsteroidHit(
 }
 
 /**
- * Which rocks are destroyed, and since when. A rock comes back a fixed time
- * after it was destroyed, so one tick per rock answers "was it there?" for
- * any recent tick, which is what replaying a prediction needs.
+ * Which things of one kind are gone, and since when: destroyed rocks, or
+ * taken orbs. Each comes back a fixed time after it went, so one tick per
+ * thing answers "was it there?" for any recent tick, which is what replaying
+ * a prediction needs.
  */
-export class DestroyedAsteroids implements GoneView {
+export class Depleted {
   private readonly since: Int32Array;
+  private readonly respawnTicks: number;
 
-  constructor(count: number) {
+  constructor(count: number, respawnTicks: number) {
     this.since = new Int32Array(count).fill(NEVER);
+    this.respawnTicks = respawnTicks;
   }
 
-  asteroidGone(id: number, tick: number): boolean {
+  gone(id: number, tick: number): boolean {
     const since = this.since[id];
-    return since !== undefined && since <= tick && tick < since + SIM.asteroidRespawnTicks;
+    return since !== undefined && since <= tick && tick < since + this.respawnTicks;
   }
 
-  destroy(id: number, tick: number): void {
+  remove(id: number, tick: number): void {
     if (id >= 0 && id < this.since.length) this.since[id] = tick;
   }
 
-  /** Every rock that is gone at `tick`, with the tick it was destroyed. */
+  /** Everything that is gone at `tick`, with the tick it went. */
   goneAt(tick: number): { id: number; tick: number }[] {
     const list: { id: number; tick: number }[] = [];
     for (let id = 0; id < this.since.length; id++) {
-      if (this.asteroidGone(id, tick)) list.push({ id, tick: this.since[id] ?? NEVER });
+      if (this.gone(id, tick)) list.push({ id, tick: this.since[id] ?? NEVER });
     }
     return list;
-  }
-
-  clear(): void {
-    this.since.fill(NEVER);
   }
 }
 
