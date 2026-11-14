@@ -49,16 +49,26 @@ const pwa = VitePWA({
   },
 });
 
-export default defineConfig({
-  plugins: [pwa],
+// `npm run dev:lan` serves the dev build over HTTPS to other devices on the
+// local network, so a phone can load it (docs/DEVICE-TESTING.md). The first
+// run downloads mkcert, makes a certificate authority in .cert/ and adds it
+// to this Mac's keychain, which macOS asks permission for. Nothing here runs
+// unless ORBIT_LAN=1.
+const lan = process.env.ORBIT_LAN === '1';
+
+export default defineConfig(async () => ({
+  plugins: [
+    pwa,
+    ...(lan ? [(await import('vite-plugin-mkcert')).default({ savePath: '.cert' })] : []),
+  ],
   // The debug hook is compiled in only when VITE_TEST_HOOKS=1. A literal
   // false lets the bundler delete the hook and everything it imports.
   define: {
     __ORBIT_TEST_HOOKS__: JSON.stringify(process.env.VITE_TEST_HOOKS === '1'),
   },
-  server: { port: clientPort, strictPort: true, proxy },
+  server: { port: clientPort, strictPort: true, proxy, host: lan },
   // `vite preview` serves the production build the same way; the end-to-end
   // tests use it.
   preview: { port: clientPort, strictPort: true, proxy },
   build: { target: 'es2022' },
-});
+}));

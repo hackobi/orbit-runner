@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:lan": "ORBIT_LAN=1 vite",
     "server": "node src/server/main.ts",
     "build": "vite build",
     "typecheck": "tsc -p . && tsc -p src/shared && tsc -p src/net && tsc -p src/client && tsc -p src/server && tsc -p tests && tsc -p scripts",
@@ -18,6 +19,8 @@
     "test:e2e": "playwright test",
     "test:load": "node --expose-gc scripts/load-test.ts",
     "results": "node scripts/results.ts",
+    "screenshot": "node scripts/screenshot.ts",
+    "icons": "node scripts/make-icons.ts",
     "spike:webgl": "node scripts/spike-headless-webgl.ts"
   },
   "dependencies": {
@@ -36,6 +39,7 @@
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.2",
     "vite": "8.3.8",
+    "vite-plugin-mkcert": "2.1.0",
     "vite-plugin-pwa": "2.0.0",
     "vitest": "5.1.0",
     "workbox-window": "7.4.1"
