@@ -116,6 +116,24 @@ export function applyOrb(ship: ShipState, orbId: number, tick: number, world: Wo
   }
 }
 
+/** What a ship can be given outright: the store's three items (main.js:8011-8032). */
+export type Grant = 'hp' | 'shield' | 'fenix';
+
+/** True if the grant would change the ship. The store does not sell what would do nothing. */
+export function grantWouldChange(ship: ShipState, grant: Grant): boolean {
+  if (!ship.alive) return false;
+  if (grant === 'hp') return ship.hp < SIM.maxHp;
+  if (grant === 'shield') return ship.shield < SIM.maxShield;
+  return !ship.fenix;
+}
+
+export function applyGrant(ship: ShipState, grant: Grant): ShipState {
+  if (!grantWouldChange(ship, grant)) return ship;
+  if (grant === 'hp') return { ...ship, hp: SIM.maxHp };
+  if (grant === 'shield') return { ...ship, shield: SIM.maxShield };
+  return { ...ship, fenix: true, hp: SIM.maxHp };
+}
+
 /**
  * Steps a ship one tick and adds what it did to the world to `effects`.
  *

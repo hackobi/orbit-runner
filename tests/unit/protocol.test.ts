@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CAUSE_EDGE,
   CAUSE_PLAYER,
   FAR_ENTRY_BYTES,
   INPUT_REDUNDANCY,
@@ -10,17 +11,20 @@ import {
   SNAPSHOT_HEADER_BYTES,
   decodeClientMessage,
   decodeServerMessage,
+  encodeBuy,
   encodeEvents,
   encodeHello,
   encodeInput,
   encodePresence,
   encodeReject,
+  encodeScores,
   encodeSnapshot,
   encodeWelcome,
 } from '../../src/shared/protocol.ts';
 import type { GameEvent } from '../../src/shared/protocol.ts';
 import { distantSampleOf, sampleOf } from '../../src/shared/remote.ts';
 import { Rng } from '../../src/shared/rng.ts';
+import { STORE_ITEMS } from '../../src/shared/scoring.ts';
 import { SIM_FINGERPRINT } from '../../src/shared/sim/fingerprint.ts';
 import { MAX_VIEW_DELAY, quantiseControls, spawnShip } from '../../src/shared/sim/ship.ts';
 
@@ -95,6 +99,15 @@ describe('client messages', () => {
     });
   });
 
+  it('a store request round-trips, and one for something the store does not sell is refused', () => {
+    for (const item of STORE_ITEMS) {
+      expect(decodeClientMessage(encodeBuy(item))).toEqual({ type: 'buy', item });
+    }
+    expect(encodeBuy('hp').byteLength).toBe(2);
+    expect(decodeClientMessage(new Uint8Array([4, 3]))).toBeNull();
+    expect(decodeClientMessage(new Uint8Array([4, 0, 0]))).toBeNull();
+  });
+
   it('malformed messages decode to null', () => {
     const good = encodeInput(10, [neutral]);
     expect(decodeClientMessage(new Uint8Array(0))).toBeNull();
@@ -160,6 +173,10 @@ describe('server messages', () => {
       missedInputs: 1,
       ship,
       kills: 12,
+      score: 4_000_000_000,
+      asteroidMultTicks: 1800,
+      killMultTicks: 7,
+      storeTicks: 1200,
       remotes: [
         { id: 3, sample: near },
         { id: 15, sample: far },
@@ -197,16 +214,28 @@ describe('server messages', () => {
         missedInputs: 0,
         ship,
         kills: 0,
+        score: 0,
+        asteroidMultTicks: 0,
+        killMultTicks: 0,
+        storeTicks: 0,
         remotes: [],
       }),
     );
     expect(none?.type === 'snapshot' && Number.isNaN(none.inputLead)).toBe(true);
   });
 
-  it('a snapshot is 86 bytes plus 20 per nearby ship', () => {
-    expect(SNAPSHOT_HEADER_BYTES).toBe(89);
+  it('a snapshot is 99 bytes plus 21 per nearby ship', () => {
+    expect(SNAPSHOT_HEADER_BYTES).toBe(99);
     expect(NEAR_ENTRY_BYTES).toBe(21);
     expect(FAR_ENTRY_BYTES).toBe(13);
+  });
+
+  it('the scoreboard round-trips', () => {
+    const entries = [
+      { playerId: 0, score: 0, kills: 0 },
+      { playerId: 15, score: 123456, kills: 42 },
+    ];
+    expect(decodeServerMessage(encodeScores(entries))).toEqual({ type: 'scores', entries });
   });
 
   it('events round-trip', () => {
@@ -234,6 +263,10 @@ describe('server messages', () => {
       { kind: 'death', deathId: 77, victimId: 5, killerId: 2, cause: CAUSE_PLAYER, tick: 1100 },
       { kind: 'death', deathId: 78, victimId: 6, killerId: NO_PLAYER, cause: 1, tick: 1101 },
       { kind: 'left', playerId: 9 },
+      { kind: 'orb', orbId: 1359, tick: 1014, playerId: 3, spawnTick: 0, byBullet: false },
+      { kind: 'orb', orbId: 2, tick: 1015, playerId: NO_PLAYER, spawnTick: 990, byBullet: true },
+      { kind: 'death', deathId: 79, victimId: 6, killerId: NO_PLAYER, cause: CAUSE_EDGE, tick: 9 },
+      { kind: 'grant', item: 'fenix', applyTick: 1044 },
     ];
     expect(decodeServerMessage(encodeEvents(events))).toEqual({ type: 'events', events });
     expect(decodeServerMessage(encodeEvents([]))).toEqual({ type: 'events', events: [] });

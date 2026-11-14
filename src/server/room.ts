@@ -21,6 +21,7 @@ import {
   decodeClientMessage,
   encodeEvents,
   encodeReject,
+  encodeScores,
   encodeSnapshot,
   encodeWelcome,
 } from '../shared/protocol.ts';
@@ -35,6 +36,15 @@ import type {
 import { distantSampleOf, sampleOf, sampleTrack } from '../shared/remote.ts';
 import type { RemoteSample } from '../shared/remote.ts';
 import { Rng } from '../shared/rng.ts';
+import {
+  SCORE,
+  STORE_PRICES,
+  asteroidScore,
+  inBelt,
+  killScore,
+  orbScore,
+} from '../shared/scoring.ts';
+import type { StoreItem } from '../shared/scoring.ts';
 import { bulletAsteroidHit } from '../shared/sim/belt.ts';
 import {
   bulletDamage,
@@ -57,8 +67,10 @@ import type { Input, ShipState } from '../shared/sim/ship.ts';
 import { bulletOrbHit } from '../shared/sim/orbs.ts';
 import {
   WorldLedger,
+  applyGrant,
   applyOrb,
   createWorld,
+  grantWouldChange,
   outsideCombatZone,
   stepPlayer,
 } from '../shared/sim/world.ts';
@@ -76,6 +88,9 @@ export const NEAR_RADIUS = 2000;
 export const NEAR_RADIUS_EXIT = 2200;
 /** Distant ships are sent as a position on every sixth snapshot: 5 a second. */
 export const FAR_EVERY_SNAPSHOTS = 6;
+
+/** The scoreboard goes to everyone once a second. */
+export const SCORES_EVERY_TICKS = 60;
 
 /** Bullets and hits are announced to players within this distance. A bullet flies 690 units. */
 const EVENT_RADIUS = NEAR_RADIUS + 800;
@@ -109,6 +124,8 @@ export interface DeathRecord {
   survivalTicks: number;
   /** Kills the victim made in this life. */
   kills: number;
+  /** The victim's points at the moment of death. */
+  score: number;
 }
 
 export interface HitRecord {
@@ -195,6 +212,16 @@ interface Player {
   kills: number;
   killsThisLife: number;
   spawnedAtTick: number;
+  /** Points. Only the server ever changes them. */
+  score: number;
+  /** Ticks left of doubled asteroid and orb points (miner orb), and of doubled kill points (hunter orb). */
+  asteroidMultTicks: number;
+  killMultTicks: number;
+  /** Ticks the store stays open. A Zaphire orb opens it; a purchase shuts it. */
+  storeTicks: number;
+  lastFireTick: number;
+  /** Sixtieths of a point of belt income not yet paid out. */
+  beltIncome: number;
   /** The ships currently sent to this player in full. */
   readonly near: Set<number>;
   /** Send every distant ship in the next snapshot, whatever the schedule says. */
@@ -204,6 +231,8 @@ interface Player {
   readonly outbox: GameEvent[];
   /** Orbs this player shot, whose effect on the ship is due on a coming tick. */
   scheduledOrbs: { applyTick: number; orbId: number; spawnTick: number }[];
+  /** Things bought from the store, due on a coming tick in the same way. */
+  scheduledGrants: { applyTick: number; item: StoreItem }[];
 }
 
 interface LiveBullet {
@@ -294,6 +323,16 @@ export class Room {
     return this.players.get(playerId)?.kills ?? 0;
   }
 
+  scoreOf(playerId: number): number {
+    return this.players.get(playerId)?.score ?? 0;
+  }
+
+  /** Test and development aid: gives a player points. Never reachable from the network. */
+  addScore(playerId: number, points: number): void {
+    const player = this.players.get(playerId);
+    if (player) player.score = Math.max(0, player.score + points);
+  }
+
   isAway(playerId: number): boolean {
     return this.players.get(playerId)?.away ?? false;
   }
@@ -351,6 +390,7 @@ export class Room {
       this.step();
       steps++;
       if (this.tick % SNAPSHOT_EVERY_TICKS === 0) snapshotDue = true;
+      if (this.tick % SCORES_EVERY_TICKS === 0) this.sendScores();
     }
     if (snapshotDue) this.sendSnapshots();
     if (steps > 0) this.onWork?.(this.now() - now, steps);
@@ -398,7 +438,11 @@ export class Room {
       }
       player.input = input;
 
-      // What orbs shot earlier do to the ship today, then the step.
+      if (player.asteroidMultTicks > 0) player.asteroidMultTicks -= 1;
+      if (player.killMultTicks > 0) player.killMultTicks -= 1;
+      if (player.storeTicks > 0) player.storeTicks -= 1;
+
+      // What orbs shot earlier and things bought do to the ship today, then the step.
       let before = player.ship;
       if (player.scheduledOrbs.length > 0) {
         for (const scheduled of player.scheduledOrbs) {
@@ -407,6 +451,12 @@ export class Room {
           }
         }
         player.scheduledOrbs = player.scheduledOrbs.filter((s) => s.applyTick > this.tick);
+      }
+      if (player.scheduledGrants.length > 0) {
+        for (const scheduled of player.scheduledGrants) {
+          if (scheduled.applyTick === this.tick) before = applyGrant(before, scheduled.item);
+        }
+        player.scheduledGrants = player.scheduledGrants.filter((s) => s.applyTick > this.tick);
       }
       effects.length = 0;
       player.ship = stepPlayer(before, input, this.tick, this.world, this.ledger, effects);
@@ -428,6 +478,7 @@ export class Room {
         } else {
           this.ledger.orbs.remove(effect.id, this.tick);
           this.stats.orbsTaken += 1;
+          this.rewardOrb(player, effect.id);
           this.broadcast({
             kind: 'orb',
             orbId: effect.id,
@@ -446,11 +497,48 @@ export class Room {
             : CAUSE_PLANET;
         this.recordDeath(player, null, cause);
       }
+
+      // A point a second for being in the belt; two soon after firing (main.js:8852-8859).
+      if (player.ship.alive && inBelt(player.ship.x, player.ship.z)) {
+        const inCombat = this.tick - player.lastFireTick < SCORE.combatTicks;
+        player.beltIncome += inCombat ? SCORE.beltIncomeInCombat : SCORE.beltIncome;
+        if (player.beltIncome >= SIM.tickRate) {
+          player.beltIncome -= SIM.tickRate;
+          player.score += 1;
+        }
+      }
       if (firedThisTick(player.ship)) this.fire(player);
     }
   }
 
+  /** What taking an orb is worth, and what it sets going, whether flown through or shot. */
+  private rewardOrb(player: Player, orbId: number): void {
+    const orb = this.world.orbs.orbs[orbId];
+    if (!orb) return;
+    player.score += orbScore(orb.kind, player.asteroidMultTicks > 0);
+    if (orb.kind === 'miner') player.asteroidMultTicks = SCORE.multiplierTicks;
+    if (orb.kind === 'hunter') player.killMultTicks = SCORE.multiplierTicks;
+    if (orb.kind === 'zaphire') player.storeTicks = SCORE.storeTicks;
+  }
+
+  /**
+   * The store. A purchase needs the store to be open, the points, and a
+   * ship the item would do something for. It reaches the ship a little
+   * later, on a tick the buyer's client is told.
+   */
+  private buy(player: Player, item: StoreItem): void {
+    const price = STORE_PRICES[item];
+    if (player.storeTicks === 0 || player.score < price) return;
+    if (!grantWouldChange(player.ship, item)) return;
+    player.score -= price;
+    player.storeTicks = 0;
+    const applyTick = this.tick + SIM.shotEffectDelayTicks;
+    player.scheduledGrants.push({ applyTick, item });
+    player.outbox.push({ kind: 'grant', item, applyTick });
+  }
+
   private fire(player: Player): void {
+    player.lastFireTick = this.tick;
     const ship = player.ship;
     const live: LiveBullet = {
       bullet: spawnBullet(player.id, this.tick, ship),
@@ -517,6 +605,7 @@ export class Room {
         // later, on a tick the announcement lets the shooter's client know.
         this.ledger.orbs.remove(orb.id, this.tick);
         this.stats.orbsShot += 1;
+        this.rewardOrb(owner, orb.id);
         owner.scheduledOrbs.push({
           applyTick: this.tick + SIM.shotEffectDelayTicks,
           orbId: orb.id,
@@ -535,6 +624,7 @@ export class Room {
       if (rock && rock.at < hitAt) {
         this.ledger.asteroids.remove(rock.id, this.tick);
         this.stats.asteroidsShot += 1;
+        owner.score += asteroidScore(owner.asteroidMultTicks > 0);
         this.broadcast({
           kind: 'asteroid',
           asteroidId: rock.id,
@@ -551,6 +641,7 @@ export class Room {
       }
       hitTarget.ship = damageShip(hitTarget.ship, bulletDamage(bullet));
       this.stats.hits += 1;
+      owner.score += SCORE.pvpHit;
       this.listener.hit?.({
         ownerId: owner.id,
         spawnTick: bullet.spawnTick,
@@ -576,6 +667,7 @@ export class Room {
       if (!hitTarget.ship.alive) {
         owner.kills += 1;
         owner.killsThisLife += 1;
+        owner.score += killScore(hitTarget.ship.x, hitTarget.ship.z, owner.killMultTicks > 0);
         this.recordDeath(hitTarget, owner, CAUSE_PLAYER);
       }
     }
@@ -613,6 +705,7 @@ export class Room {
       tick: this.tick,
       survivalTicks: this.tick - victim.spawnedAtTick,
       kills: victim.killsThisLife,
+      score: victim.score,
     });
     const event: GameEvent = {
       kind: 'death',
@@ -713,12 +806,28 @@ export class Room {
           missedInputs: player.missedSinceSnapshot,
           ship: player.ship,
           kills: player.kills,
+          score: player.score,
+          asteroidMultTicks: player.asteroidMultTicks,
+          killMultTicks: player.killMultTicks,
+          storeTicks: player.storeTicks,
           remotes,
         }),
         'droppable',
       );
       player.worstLead = Number.NaN;
       player.missedSinceSnapshot = 0;
+    }
+  }
+
+  private sendScores(): void {
+    const entries = [...this.players.values()].map((player) => ({
+      playerId: player.id,
+      score: player.score,
+      kills: player.kills,
+    }));
+    const message = encodeScores(entries);
+    for (const player of this.players.values()) {
+      if (player.connection) this.send(player.connection, message, 'droppable');
     }
   }
 
@@ -743,6 +852,8 @@ export class Room {
     }
     if (message.type === 'input') {
       this.acceptInputs(player, message);
+    } else if (message.type === 'buy') {
+      if (!player.away) this.buy(player, message.item);
     } else if (message.away) {
       this.markAway(player);
     } else {
@@ -795,11 +906,18 @@ export class Room {
       kills: 0,
       killsThisLife: 0,
       spawnedAtTick: this.tick,
+      score: 0,
+      asteroidMultTicks: 0,
+      killMultTicks: 0,
+      storeTicks: 0,
+      lastFireTick: -SCORE.combatTicks,
+      beltIncome: 0,
       near: new Set(),
       fullStateDue: true,
       track: [],
       outbox: [],
       scheduledOrbs: [],
+      scheduledGrants: [],
     };
     this.players.set(id, player);
     this.listener.playerJoined?.(id, this.tick);
@@ -851,6 +969,9 @@ export class Room {
         spawnTick: own ? own.spawnTick : 0,
         byBullet: own !== undefined,
       });
+    }
+    for (const grant of player.scheduledGrants) {
+      player.outbox.push({ kind: 'grant', item: grant.item, applyTick: grant.applyTick });
     }
     for (const gone of this.ledger.asteroids.goneAt(this.tick)) {
       player.outbox.push({

@@ -346,6 +346,11 @@ describe('shooting a rock', () => {
       expect(world.room.stats.bulletsFired).toBe(1);
       expect(world.room.stats.asteroidsShot).toBe(1);
       expect(world.room.bulletCount).toBe(0);
+      // 160 for a ring rock, doubled in the belt (main.js:9020, 4626), plus
+      // a few points of belt income.
+      const score = world.room.scoreOf(shooter.core.playerId);
+      expect(score).toBeGreaterThanOrEqual(320);
+      expect(score).toBeLessThan(340);
       const told = asteroidEvents(target).filter((e) => e.byBullet);
       expect(told).toHaveLength(1);
       expect(told[0]).toMatchObject({ asteroidId: rockId, playerId: shooter.core.playerId });

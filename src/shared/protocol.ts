@@ -1,8 +1,8 @@
 // Binary wire format, little-endian.
 //
-// Clients send three things only: a hello, their numbered inputs, and
-// whether they are away. There is no message that carries a position, a hit
-// or a score from client to server.
+// Clients send four things only: a hello, their numbered inputs, whether
+// they are away, and a request to buy something from the store. There is no
+// message that carries a position, a hit or a score from client to server.
 //
 // The own ship travels as float64 so the client can compare its prediction
 // with the server's state exactly. Other ships travel quantised (remote.ts).
@@ -16,10 +16,12 @@ import {
   quantisePosition,
 } from './remote.ts';
 import type { RemoteSample } from './remote.ts';
+import { STORE_ITEMS } from './scoring.ts';
+import type { StoreItem } from './scoring.ts';
 import { inputFromWire } from './sim/ship.ts';
 import type { Input, ShipState } from './sim/ship.ts';
 
-export const PROTOCOL_VERSION = 4;
+export const PROTOCOL_VERSION = 5;
 
 /** Inputs carried per message: the tick's own plus the ones before it. */
 export const INPUT_REDUNDANCY = 3;
@@ -31,11 +33,13 @@ export const SESSION_TOKEN_BYTES = 16;
 const CLIENT_HELLO = 1;
 const CLIENT_INPUT = 2;
 const CLIENT_PRESENCE = 3;
+const CLIENT_BUY = 4;
 
 const SERVER_WELCOME = 1;
 const SERVER_REJECT = 2;
 const SERVER_SNAPSHOT = 3;
 const SERVER_EVENTS = 4;
+const SERVER_SCORES = 5;
 
 export const REJECT_VERSION = 1;
 export const REJECT_FULL = 2;
@@ -84,7 +88,13 @@ export interface PresenceMessage {
   readonly clientTimeMs: number;
 }
 
-export type ClientMessage = HelloMessage | InputMessage | PresenceMessage;
+/** Asks for something from the store. The server decides whether the player can have it. */
+export interface BuyMessage {
+  readonly type: 'buy';
+  readonly item: StoreItem;
+}
+
+export type ClientMessage = HelloMessage | InputMessage | PresenceMessage | BuyMessage;
 
 export interface WelcomeMessage {
   readonly type: 'welcome';
@@ -123,6 +133,12 @@ export interface SnapshotMessage {
   readonly missedInputs: number;
   readonly ship: ShipState;
   readonly kills: number;
+  readonly score: number;
+  /** Ticks left of doubled asteroid and orb points, and of doubled kill points. */
+  readonly asteroidMultTicks: number;
+  readonly killMultTicks: number;
+  /** Ticks the store stays open for this player. 0 when it is shut. */
+  readonly storeTicks: number;
   /** Every other ship this client is told about at this tick, near ones in full. */
   readonly remotes: readonly RemoteEntry[];
 }
@@ -203,14 +219,39 @@ export interface OrbEvent {
   readonly byBullet: boolean;
 }
 
-export type GameEvent = BulletEvent | HitEvent | DeathEvent | LeftEvent | AsteroidEvent | OrbEvent;
+/**
+ * The store has sold this player something. Sent to the buyer only. Like a
+ * shot orb, it reaches the ship a little later, on `applyTick`, so that the
+ * buyer's client can apply it on the same tick as the server.
+ */
+export interface GrantEvent {
+  readonly kind: 'grant';
+  readonly item: StoreItem;
+  readonly applyTick: number;
+}
+
+export type GameEvent =
+  BulletEvent | HitEvent | DeathEvent | LeftEvent | AsteroidEvent | OrbEvent | GrantEvent;
 
 export interface EventsMessage {
   readonly type: 'events';
   readonly events: readonly GameEvent[];
 }
 
-export type ServerMessage = WelcomeMessage | RejectMessage | SnapshotMessage | EventsMessage;
+export interface ScoreEntry {
+  readonly playerId: number;
+  readonly score: number;
+  readonly kills: number;
+}
+
+/** Everyone's points, once a second, for the scoreboard. */
+export interface ScoresMessage {
+  readonly type: 'scores';
+  readonly entries: readonly ScoreEntry[];
+}
+
+export type ServerMessage =
+  WelcomeMessage | RejectMessage | SnapshotMessage | EventsMessage | ScoresMessage;
 
 // --- Byte reading and writing -----------------------------------------------
 
@@ -502,6 +543,13 @@ export function encodePresence(away: boolean, clientTimeMs: number): Uint8Array 
 }
 
 /** Returns null for anything that is not a well-formed client message. */
+export function encodeBuy(item: StoreItem): Uint8Array {
+  const w = new Writer(2);
+  w.u8(CLIENT_BUY);
+  w.u8(STORE_ITEMS.indexOf(item));
+  return w.finish();
+}
+
 export function decodeClientMessage(data: Uint8Array): ClientMessage | null {
   if (data.byteLength === 0 || data.byteLength > MAX_CLIENT_MESSAGE_BYTES) return null;
   try {
@@ -545,6 +593,11 @@ export function decodeClientMessage(data: Uint8Array): ClientMessage | null {
       if (!r.atEnd() || away > 1) return null;
       return { type: 'presence', away: away === 1, clientTimeMs };
     }
+    if (type === CLIENT_BUY) {
+      const item = STORE_ITEMS[r.u8()];
+      if (!r.atEnd() || !item) return null;
+      return { type: 'buy', item };
+    }
     return null;
   } catch {
     return null;
@@ -575,7 +628,7 @@ export function encodeReject(reason: RejectReason): Uint8Array {
 }
 
 /** Everything in a snapshot before the list of other ships. */
-export const SNAPSHOT_HEADER_BYTES = 1 + 4 + 4 + 1 + SHIP_STATE_BYTES + 2 + 1;
+export const SNAPSHOT_HEADER_BYTES = 1 + 4 + 4 + 1 + SHIP_STATE_BYTES + 2 + 4 + 2 + 2 + 2 + 1;
 
 export function encodeSnapshot(message: Omit<SnapshotMessage, 'type'>): Uint8Array {
   const w = new Writer(SNAPSHOT_HEADER_BYTES + message.remotes.length * NEAR_ENTRY_BYTES);
@@ -585,8 +638,27 @@ export function encodeSnapshot(message: Omit<SnapshotMessage, 'type'>): Uint8Arr
   w.u8(Math.min(255, message.missedInputs));
   writeShip(w, message.ship);
   w.u16(Math.min(65535, message.kills));
+  w.u32(Math.min(0xffffffff, message.score));
+  w.u16(Math.min(65535, message.asteroidMultTicks));
+  w.u16(Math.min(65535, message.killMultTicks));
+  w.u16(Math.min(65535, message.storeTicks));
   w.u8(message.remotes.length);
   for (const entry of message.remotes) writeRemote(w, entry);
+  return w.finish();
+}
+
+export function encodeScores(entries: readonly ScoreEntry[]): Uint8Array {
+  const count = Math.min(entries.length, 255);
+  const w = new Writer(2 + count * 7);
+  w.u8(SERVER_SCORES);
+  w.u8(count);
+  for (let i = 0; i < count; i++) {
+    const entry = entries[i];
+    if (!entry) break;
+    w.u8(entry.playerId);
+    w.u32(Math.min(0xffffffff, entry.score));
+    w.u16(Math.min(65535, entry.kills));
+  }
   return w.finish();
 }
 
@@ -596,6 +668,7 @@ const EVENT_DEATH = 3;
 const EVENT_LEFT = 4;
 const EVENT_ASTEROID = 5;
 const EVENT_ORB = 6;
+const EVENT_GRANT = 7;
 
 const MAX_EVENT_BYTES = 27;
 
@@ -647,6 +720,11 @@ export function encodeEvents(events: readonly GameEvent[]): Uint8Array {
         w.u8(event.playerId);
         w.u32(event.spawnTick);
         w.u8(event.byBullet ? 1 : 0);
+        break;
+      case 'grant':
+        w.u8(EVENT_GRANT);
+        w.u8(STORE_ITEMS.indexOf(event.item));
+        w.u32(event.applyTick);
         break;
       case 'orb':
         w.u8(EVENT_ORB);
@@ -715,6 +793,11 @@ function readEvent(r: Reader): GameEvent | null {
       byBullet: r.u8() === 1,
     };
   }
+  if (kind === EVENT_GRANT) {
+    const item = STORE_ITEMS[r.u8()];
+    const applyTick = r.u32();
+    return item ? { kind: 'grant', item, applyTick } : null;
+  }
   if (kind === EVENT_ORB) {
     return {
       kind: 'orb',
@@ -765,11 +848,27 @@ export function decodeServerMessage(data: Uint8Array): ServerMessage | null {
       const missedInputs = r.u8();
       const ship = readShip(r);
       const kills = r.u16();
+      const score = r.u32();
+      const asteroidMultTicks = r.u16();
+      const killMultTicks = r.u16();
+      const storeTicks = r.u16();
       const count = r.u8();
       const remotes: RemoteEntry[] = [];
       for (let i = 0; i < count; i++) remotes.push(readRemote(r, serverTick));
       if (!r.atEnd()) return null;
-      return { type: 'snapshot', serverTick, inputLead, missedInputs, ship, kills, remotes };
+      return {
+        type: 'snapshot',
+        serverTick,
+        inputLead,
+        missedInputs,
+        ship,
+        kills,
+        score,
+        asteroidMultTicks,
+        killMultTicks,
+        storeTicks,
+        remotes,
+      };
     }
     if (type === SERVER_EVENTS) {
       const count = r.u8();
@@ -780,6 +879,14 @@ export function decodeServerMessage(data: Uint8Array): ServerMessage | null {
         events.push(event);
       }
       return r.atEnd() ? { type: 'events', events } : null;
+    }
+    if (type === SERVER_SCORES) {
+      const count = r.u8();
+      const entries: ScoreEntry[] = [];
+      for (let i = 0; i < count; i++) {
+        entries.push({ playerId: r.u8(), score: r.u32(), kills: r.u16() });
+      }
+      return r.atEnd() ? { type: 'scores', entries } : null;
     }
     return null;
   } catch {

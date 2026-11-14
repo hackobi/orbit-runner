@@ -12,6 +12,7 @@ import {
   INPUT_REDUNDANCY,
   PROTOCOL_VERSION,
   decodeServerMessage,
+  encodeBuy,
   encodeHello,
   encodeInput,
   encodePresence,
@@ -19,9 +20,11 @@ import {
 import type {
   GameEvent,
   RejectReason,
+  ScoreEntry,
   SnapshotMessage,
   WelcomeMessage,
 } from '../shared/protocol.ts';
+import type { StoreItem } from '../shared/scoring.ts';
 import { bulletAsteroidHit } from '../shared/sim/belt.ts';
 import {
   bulletDamage,
@@ -45,7 +48,7 @@ import {
 } from '../shared/sim/ship.ts';
 import type { Controls, Input, ShipState } from '../shared/sim/ship.ts';
 import { bulletOrbHit } from '../shared/sim/orbs.ts';
-import { applyOrb, createWorld, stepPlayer } from '../shared/sim/world.ts';
+import { applyGrant, applyOrb, createWorld, stepPlayer } from '../shared/sim/world.ts';
 import type { World, WorldEffect, WorldState } from '../shared/sim/world.ts';
 import { PredictedWorld } from './predictedWorld.ts';
 import type { WorldThing } from './predictedWorld.ts';
@@ -223,11 +226,13 @@ interface OwnBullet {
   took: { thing: WorldThing; id: number } | null;
 }
 
-/** An orb's effect on the own ship that the server has announced for a coming tick. */
-interface ScheduledOrb {
-  applyTick: number;
-  orbId: number;
-}
+/**
+ * Something the server has announced will happen to the own ship on a
+ * coming tick: the effect of an orb this player shot, or of a purchase.
+ */
+type Scheduled =
+  | { applyTick: number; orbId: number; item?: undefined }
+  | { applyTick: number; item: StoreItem; orbId?: undefined };
 
 function sameBullet(a: Bullet, b: Bullet): boolean {
   return (
@@ -286,6 +291,13 @@ export class ClientCore implements WorldState {
   ackTick = -1;
   ackState: ShipState | null = null;
   kills = 0;
+  /** Points, the two multiplier timers and the store's timer, as of the newest snapshot. */
+  score = 0;
+  asteroidMultTicks = 0;
+  killMultTicks = 0;
+  storeTicks = 0;
+  /** Everyone's points, as last sent. */
+  scoreboard: readonly ScoreEntry[] = [];
 
   /** Smoothed round trip in milliseconds, measured from input acknowledgements. */
   rttMs = 0;
@@ -362,8 +374,8 @@ export class ClientCore implements WorldState {
   /** Which rocks and orbs are gone: what the server has said, plus this client's predictions. */
   private predicted: PredictedWorld | null = null;
   private readonly effects: WorldEffect[] = [];
-  /** Effects of orbs this player shot, each waiting for its tick. */
-  private scheduledOrbs: ScheduledOrb[] = [];
+  /** Effects of orbs this player shot and of purchases, each waiting for its tick. */
+  private scheduled: Scheduled[] = [];
 
   private ownBullets: OwnBullet[] = [];
   private remoteBullets: RemoteBullet[] = [];
@@ -419,6 +431,11 @@ export class ClientCore implements WorldState {
     for (const arrival of this.inbox) this.handle(arrival);
     this.inbox.length = 0;
     if (!wasPlaying && this.status === 'playing') this.runDueTicks(now);
+  }
+
+  /** Asks the store for something. Whether the player gets it is the server's decision. */
+  buy(item: StoreItem): void {
+    if (this.status === 'playing') this.transport.send(encodeBuy(item), 'reliable');
   }
 
   /**
@@ -554,6 +571,9 @@ export class ClientCore implements WorldState {
           for (const event of message.events) this.applyEvent(event);
         }
         break;
+      case 'scores':
+        this.scoreboard = message.entries;
+        break;
     }
   }
 
@@ -586,7 +606,7 @@ export class ClientCore implements WorldState {
     }
     if (this.predicted) this.predicted.reset(this.world);
     else this.predicted = new PredictedWorld(this.world);
-    this.scheduledOrbs = [];
+    this.scheduled = [];
     this.alignTo(welcome.serverTick, welcome.ship, NEUTRAL_INPUT);
   }
 
@@ -682,13 +702,21 @@ export class ClientCore implements WorldState {
 
   /**
    * One tick of the own ship, in the order the server uses: first what orbs
-   * shot earlier do to it on this tick, then the step. The rocks it crashes
+   * shot earlier and things bought do to it on this tick, then the step. The rocks it crashes
    * into and the orbs it flies through are noted as predictions.
    */
   private stepOwnShip(state: ShipState, input: Input, tick: number, world: World): ShipState {
     let ship = state;
-    for (const scheduled of this.scheduledOrbs) {
-      if (scheduled.applyTick === tick) ship = applyOrb(ship, scheduled.orbId, tick, world);
+    // Orbs first, then purchases, as on the server.
+    for (const scheduled of this.scheduled) {
+      if (scheduled.applyTick === tick && scheduled.orbId !== undefined) {
+        ship = applyOrb(ship, scheduled.orbId, tick, world);
+      }
+    }
+    for (const scheduled of this.scheduled) {
+      if (scheduled.applyTick === tick && scheduled.item !== undefined) {
+        ship = applyGrant(ship, scheduled.item);
+      }
     }
     this.effects.length = 0;
     const next = stepPlayer(ship, input, tick, world, this, this.effects);
@@ -867,6 +895,10 @@ export class ClientCore implements WorldState {
     this.ackTick = snapshot.serverTick;
     this.ackState = snapshot.ship;
     this.kills = snapshot.kills;
+    this.score = snapshot.score;
+    this.asteroidMultTicks = snapshot.asteroidMultTicks;
+    this.killMultTicks = snapshot.killMultTicks;
+    this.storeTicks = snapshot.storeTicks;
     this.counters.snapshots += 1;
     this.counters.missedInputs += snapshot.missedInputs;
 
@@ -900,7 +932,7 @@ export class ClientCore implements WorldState {
     );
     // The same goes for rocks and orbs.
     this.predicted?.settle(snapshot.serverTick);
-    this.scheduledOrbs = this.scheduledOrbs.filter(
+    this.scheduled = this.scheduled.filter(
       (scheduled) => scheduled.applyTick > snapshot.serverTick - HISTORY_SIZE,
     );
 
@@ -1056,11 +1088,14 @@ export class ClientCore implements WorldState {
         // An orb this player shot acts on its ship a little later, on a
         // tick the server and this client both know.
         if (event.byBullet && event.playerId === this.playerId) {
-          this.scheduledOrbs.push({
+          this.scheduled.push({
             applyTick: event.tick + SIM.shotEffectDelayTicks,
             orbId: event.orbId,
           });
         }
+        break;
+      case 'grant':
+        this.scheduled.push({ applyTick: event.applyTick, item: event.item });
         break;
     }
     this.onGameEvent?.(event);
