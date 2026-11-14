@@ -27,6 +27,8 @@ body {
     sans-serif;
   /* No rubber-band scrolling, long-press menus or text selection over the game. */
   overscroll-behavior: none;
+  /* No double-tap or pinch zoom anywhere: once zoomed, the game blocks the pinch that would undo it. */
+  touch-action: pan-x pan-y;
   -webkit-touch-callout: none;
   user-select: none;
   -webkit-user-select: none;
