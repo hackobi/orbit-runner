@@ -18,10 +18,11 @@ declare const __ORBIT_TEST_HOOKS__: boolean;
 declare global {
   interface Window {
     /**
-     * Present only inside the Mac app when it shows the copy of the client
-     * packed into it (app/preload.cjs): the game socket to use.
+     * Present only inside the Mac app (app/preload.cjs). `serverUrl` is the
+     * game socket to use when the app shows the copy of the client packed
+     * into it, and null when the page came from the game's own server.
      */
-    orbitApp?: { serverUrl: string };
+    orbitApp?: { serverUrl: string | null };
   }
 }
 
@@ -125,7 +126,10 @@ function keepToken(token: Uint8Array): void {
   }
 }
 
-// The Mac app's packed copy is replaced with the app; it has no service worker.
+// The Mac app has no service worker. It loads the page from the network (or
+// from inside itself) at every start, so it is always the current version,
+// and under Electron 45 a start-up with a worker's update waiting never
+// finished loading (DECISIONS.md section 9).
 const updates = window.orbitApp
   ? { ready: false, apply: (): void => undefined }
   : watchForUpdates();

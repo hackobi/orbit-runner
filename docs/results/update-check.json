@@ -1,0 +1,69 @@
+{
+  "measuredAt": "2026-11-14T01:25:32.444Z",
+  "data": {
+    "browser": {
+      "first": {
+        "build": "A",
+        "hull": "Hull 100",
+        "status": "",
+        "serviceWorkers": 1
+      },
+      "second": {
+        "whileFlying": {
+          "build": "A",
+          "hull": "Hull 100",
+          "status": "A new version is ready. It loads after this life.",
+          "serviceWorkers": 1
+        },
+        "stillFlying": {
+          "build": "A",
+          "hull": "Hull 100",
+          "status": "A new version is ready. It loads after this life.",
+          "serviceWorkers": 1
+        },
+        "afterTheShipWasDestroyed": {
+          "build": "B",
+          "hull": "Hull 100",
+          "status": "",
+          "serviceWorkers": 1
+        },
+        "sameSeat": true,
+        "pointsKept": true
+      },
+      "third": {
+        "build": "B",
+        "hull": "Hull 100",
+        "status": "",
+        "serviceWorkers": 1
+      }
+    },
+    "macApp": {
+      "starts": [
+        {
+          "build": "A",
+          "hull": "Hull 100",
+          "status": "",
+          "serviceWorkers": 0
+        },
+        {
+          "build": "B",
+          "hull": "Hull 100",
+          "status": "",
+          "serviceWorkers": 0
+        },
+        {
+          "build": "B",
+          "hull": "Hull 100",
+          "status": "",
+          "serviceWorkers": 0
+        },
+        {
+          "build": "B",
+          "hull": "Hull 100",
+          "status": "",
+          "serviceWorkers": 0
+        }
+      ]
+    }
+  }
+}

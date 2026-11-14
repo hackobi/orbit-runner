@@ -1,0 +1,16 @@
+{
+  "measuredAt": "2026-11-14T01:23:55.407Z",
+  "data": {
+    "bundle": "release/Orbit Runner-darwin-arm64/Orbit Runner.app",
+    "sizeMB": 254,
+    "url": "app://game/index.html",
+    "hull": "Hull 100",
+    "speed": "60 u/s",
+    "status": "",
+    "players": 1,
+    "packaged": true,
+    "name": "Orbit Runner",
+    "debugHook": false,
+    "consoleProblems": []
+  }
+}

@@ -50,7 +50,18 @@ const noPlatformImports = (extra) => ({
 });
 
 export default tseslint.config(
-  { ignores: ['dist/', 'dist-e2e/', 'node_modules/', 'test-results/', 'playwright-report/'] },
+  {
+    ignores: [
+      'dist/',
+      'dist-e2e/',
+      'node_modules/',
+      'test-results/',
+      'playwright-report/',
+      'release/',
+      // The copy of the built client that goes into the Mac app.
+      'app/client/',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.strictTypeChecked,
   {
@@ -89,4 +100,15 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   { files: ['eslint.config.js'], ...tseslint.configs.disableTypeChecked },
+  // The Mac app's own files are plain JavaScript run by Electron.
+  {
+    files: ['app/*.mjs', 'app/*.cjs'],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: { globals: globals.node, parserOptions: { projectService: false } },
+  },
+  {
+    files: ['app/*.cjs'],
+    languageOptions: { sourceType: 'commonjs' },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
 );

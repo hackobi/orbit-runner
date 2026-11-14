@@ -1,10 +1,12 @@
-// Draws the app's icons and writes them to public/icons:
+// Draws the app's icons and writes them to public/icons, and the Mac app's
+// icon to app/icon.icns:
 //   node scripts/make-icons.ts
 // The picture is the saucer over the planet, drawn as an SVG and turned into
 // PNGs of each size by a headless browser. Run it again if the art changes;
 // the PNGs are committed.
 
-import { writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { chromium } from '@playwright/test';
 
 /** `inset` shrinks the art towards the middle, as "maskable" icons need (safe zone 80%). */
@@ -43,5 +45,28 @@ for (const icon of ICONS) {
   await page.close();
 }
 writeFileSync('public/icons/icon.svg', art(0).trim() + '\n');
+
+// macOS wants one file holding the icon at every size it may show it.
+// `iconutil` (part of macOS) builds that from a folder of PNGs. macOS draws
+// app icons with a margin, so the art is drawn a little smaller.
+if (process.platform === 'darwin') {
+  const set = 'app/icon.iconset';
+  rmSync(set, { recursive: true, force: true });
+  mkdirSync(set, { recursive: true });
+  for (const points of [16, 32, 128, 256, 512]) {
+    for (const scale of [1, 2]) {
+      const size = points * scale;
+      const page = await browser.newPage({ viewport: { width: size, height: size } });
+      await page.setContent(
+        `<style>html,body{margin:0;background:transparent}svg{display:block;width:100vw;height:100vh;border-radius:22%}</style>${art(0.1)}`,
+      );
+      const name = `icon_${points}x${points}${scale === 2 ? '@2x' : ''}.png`;
+      writeFileSync(`${set}/${name}`, await page.screenshot({ type: 'png', omitBackground: true }));
+      await page.close();
+    }
+  }
+  execFileSync('iconutil', ['--convert', 'icns', '--output', 'app/icon.icns', set]);
+  rmSync(set, { recursive: true, force: true });
+}
 await browser.close();
-console.log(`wrote ${ICONS.length} PNGs and icon.svg to public/icons`);
+console.log(`wrote ${ICONS.length} PNGs and icon.svg to public/icons, and app/icon.icns`);

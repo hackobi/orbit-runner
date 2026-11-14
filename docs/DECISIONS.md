@@ -1,6 +1,6 @@
 # Orbit Runner v2: decisions
 
-Phase 0 output. Written 2026-11-13 and approved the same day with defaults D1–D7. Phases 1, 2 and 3 are built; where building changed or confirmed something, the text says so ("As built"). `PLAN.md` has the status and the measured numbers.
+Phase 0 output. Written 2026-11-13 and approved the same day with defaults D1–D7. Phases 1 to 4 are built; where building changed or confirmed something, the text says so ("As built"). `PLAN.md` has the status and the measured numbers.
 
 How to read the evidence labels:
 
@@ -344,7 +344,7 @@ A controller watches frame time and moves between quality tiers with hysteresis.
 
 `vite-plugin-pwa` precaches the app shell. Updates use `registerType: 'prompt'` and are applied between lives, never mid-match. Install on iOS is through the Share menu only. Android Chrome installs from the manifest.
 
-**As built.** `display` is `fullscreen` with `standalone` as the fallback, `orientation` is `landscape`. In a real window Chromium raises no objection to installing the production build, and does object to a control page with no manifest (`npm run console-check`; headless Chromium objects to nothing, so the headless test checks the conditions one by one). The page opens with the network off (`tests/e2e/pwa.spec.ts`). A waiting update is loaded when the ship is not flying. The reload that causes would have cost the player their seat, so the server's session token is now kept in the tab's `sessionStorage`: a reload inside the ten seconds a seat is held comes back to the same ship and points. The real update path (two builds, one after the other) has not been run end to end; the rule that decides when is unit-tested.
+**As built.** `display` is `fullscreen` with `standalone` as the fallback, `orientation` is `landscape`. In a real window Chromium raises no objection to installing the production build, and does object to a control page with no manifest (`npm run console-check`; headless Chromium objects to nothing, so the headless test checks the conditions one by one). The page opens with the network off (`tests/e2e/pwa.spec.ts`). A waiting update is loaded when the ship is not flying. The reload that causes would have cost the player their seat, so the server's session token is now kept in the tab's `sessionStorage`: a reload inside the ten seconds a seat is held comes back to the same ship and points. The real update path is run end to end by `npm run update-check`, in Chromium with a profile kept between visits: the old build opens and keeps flying with the new one waiting; when the ship is destroyed the page loads the new build and is back in the same seat with its points; the next visit opens the new build.
 
 ### 8.4 Device testing over the LAN
 
@@ -370,6 +370,10 @@ Why Electron: the Mac app can be smoke-tested by the same Playwright suite, it b
 
 Update path: the server rejects clients whose protocol version or constants differ ([5.8](#58-resilience)), so a Mac app with a bundled client would stop working after any such change. Phase 4 therefore loads the client from the game server's HTTPS origin by default, and uses the bundled copy only for local development.
 
+**As built (Phase 4).** Electron 45.3.2 (Chromium 156). `app/config.json` holds `gameUrl` and `serverUrl`; with `gameUrl` empty the app shows the packed copy from `app://game/`. The window is sandboxed with context isolation, shows one origin only, opens no windows, grants no permissions, and the packed copy is served with a content security policy. Playwright drives it in a real window: 100.0 frames a second on this Mac's 100 Hz display (p99 frame time 12.0 ms), zero corrections. The packaged app is 254 MB, signed ad hoc, and `spctl` rejects it, as expected without notarisation.
+
+**The Mac app has no service worker.** With one registered and an update waiting, the next start under Electron 45 never finished loading, and neither did any start after it. Chromium 158 with the same profile and the same two builds loads the new build on the third visit. The cause in Electron was not found. The app loads its page afresh at every start, so it loses nothing.
+
 The web build is an installable PWA regardless, so "Install app" in Chrome and "Add to Dock" in Safari work at no cost. Distribution outside this Mac would need an Apple Developer ID and notarisation ($99 a year); that is out of scope unless you ask.
 
 ## 10. Mobile payments (direction only; decided in Phase 5)
@@ -392,10 +396,11 @@ SDK notes for Phase 5: `@kynesyslabs/demosdk` is at 4.0.21, ESM. Its `D402Server
 | Bit-identical simulation across engines and CPUs | **Half resolved in Phase 1.** V8 and JavaScriptCore agree on this ARM64 Mac. x86 is not measured: run `npm test` on the server's architecture before deploying; the pinned hash test fails if it differs |
 | ~~Desktop Firefox: headless WebGL, and the game itself~~ | **Resolved in Phase 2.** Firefox 159 headless: WebGL2 works, 60 frames a second, connects, flies, sees a second player, zero corrections. One smoke run, not the full suite |
 | ~~Whether the ReadPixels warning appears in a GPU-backed browser~~ | **Resolved in Phase 3.** It does not, in headed Chromium 158 on this Mac's GPU ([3.2](#32-the-readpixels-startup-stall)) |
-| Electron `requestAnimationFrame` rate on a 120 Hz display | Phase 4, on your Mac |
+| Electron `requestAnimationFrame` rate on a 120 Hz display | **Still open.** This Mac's display is 100 Hz, and Electron 45 follows it exactly: 100.0 frames a second. 120 Hz needs a 120 Hz display |
 | iOS suspension timing; iOS WebGL context loss on backgrounding | On your iPhone, with `DEVICE-TESTING.md`. Not done |
 | Service worker behaviour with the mkcert certificate on iOS | On your iPhone. Not done |
 | Touch controls in WebKit, tilt steering, and frame rate on any phone | On your phones, with `DEVICE-TESTING.md`. Not done |
+| Why Electron 45 hangs on start with a service worker update waiting | Not pursued: the Mac app does not register one ([section 9](#9-mac-app)) |
 | Colyseus: per-correction events, headless `Predict`, projectile rewind | Only if D1 goes the other way |
 | JavaScriptCore's `Math.sin` implementation | Not needed: the sim does not call it |
 | The content of the Valve networking pages and the two GDC talks | Titles and URLs verified; content not re-read this session, so they are not cited as evidence |

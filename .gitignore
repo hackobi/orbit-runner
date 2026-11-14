@@ -1,6 +1,10 @@
 node_modules/
 dist/
 dist-e2e/
+# The Mac app as built, and the copy of the client packed into it.
+release/
+app/client/
+app/icon.icns
 test-results/
 playwright-report/
 .env

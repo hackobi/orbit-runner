@@ -40,6 +40,8 @@ export default defineConfig({
       testMatch: /touch\.spec\.ts/,
       use: { ...devices['Pixel 7 landscape'], launchOptions: { args: CHROMIUM_ARGS } },
     },
+    // The Mac app, started by Electron in a real window. It needs a Mac.
+    ...(process.platform === 'darwin' ? [{ name: 'macapp', testMatch: /macapp\.spec\.ts/ }] : []),
     // Firefox is a target browser but outside the brief's full suite: the
     // determinism check and one smoke run.
     {

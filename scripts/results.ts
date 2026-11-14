@@ -4,7 +4,8 @@
 // measured with the full belt, every orb and scoring switched on. Exits with an error if any gate fails, after writing
 // the section, so the plan shows the failure.
 //
-// Run: npm run results   (after test:integration, test:e2e, test:load and console-check)
+// Run: npm run results   (after test:integration, test:e2e, test:load, console-check,
+// update-check and package:mac)
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -113,6 +114,45 @@ const headed = readResult('console-headed').data as {
   softwareRendering: boolean;
   installabilityErrors: string[];
   installabilityErrorsForAPageWithNoManifest: string[];
+};
+const macApp = readResult('macapp').data as {
+  electron: string;
+  chrome: string;
+  display: { hertz: number };
+  framesPerSecond: number;
+  frameMsP50: number;
+  frameMsP99: number;
+  frameMsMax: number;
+  seconds: number;
+  corrections: number;
+  largestCorrection: number;
+};
+const packaged = readResult('macapp-packaged').data as {
+  bundle: string;
+  sizeMB: number;
+  hull: string;
+  players: number;
+  packaged: boolean;
+  debugHook: boolean;
+  consoleProblems: unknown[];
+};
+interface UpdateSeen {
+  build: string;
+  serviceWorkers: number;
+}
+const update = readResult('update-check').data as {
+  browser: {
+    first: UpdateSeen;
+    second: {
+      whileFlying: UpdateSeen;
+      stillFlying: UpdateSeen;
+      afterTheShipWasDestroyed: UpdateSeen;
+      sameSeat: boolean;
+      pointsKept: boolean;
+    };
+    third: UpdateSeen;
+  };
+  macApp: { starts: UpdateSeen[] };
 };
 const engines = ['chromium', 'webkit', 'firefox'].map((name) => ({
   name,
@@ -295,6 +335,10 @@ const lines: string[] = [
   ),
   `| Headed browser on this Mac's GPU, ${headed.playedSeconds} s of play | ${headed.browser}; ${headed.renderer}; ${headed.framesPerSecond} frames a second; ${headed.warningsAndErrors.length} console warnings or errors; ${headed.readPixelsMessages.length} "ReadPixels" messages; software rendering ${headed.softwareRendering ? '**yes**' : 'no'} |`,
   `| Can it be installed? The browser's own verdict, same headed run, production build | objections to the game: ${headed.installabilityErrors.length === 0 ? 'none' : `**${headed.installabilityErrors.join(', ')}**`}; to a control page with no manifest: ${headed.installabilityErrorsForAPageWithNoManifest.join(', ') || '**none, so the check proves nothing**'} |`,
+  `| A real update in Chromium, profile kept between visits (\`npm run update-check\`) | first visit: build ${update.browser.first.build}. Build B put on the server. Second visit: build ${update.browser.second.whileFlying.build} opens and is still flying 3 s later (${update.browser.second.stillFlying.build}) with the new one waiting; when the ship is destroyed the page loads build ${update.browser.second.afterTheShipWasDestroyed.build}, in the same seat (${update.browser.second.sameSeat ? 'yes' : '**no**'}) with its points (${update.browser.second.pointsKept ? 'yes' : '**no**'}). Third visit: build ${update.browser.third.build} |`,
+  `| The same update in the Mac app, four starts with one profile | builds shown: ${update.macApp.starts.map((seen) => seen.build).join(', ')}; service workers registered: ${Math.max(...update.macApp.starts.map((seen) => seen.serviceWorkers))} |`,
+  `| Mac app from source, in a window on this Mac's ${macApp.display.hertz} Hz display, ${macApp.seconds.toFixed(0)} s of flying | Electron ${macApp.electron} (Chromium ${macApp.chrome}); ${macApp.framesPerSecond.toFixed(1)} frames a second; frame time p50 ${macApp.frameMsP50.toFixed(1)} ms, p99 ${macApp.frameMsP99.toFixed(1)} ms, worst ${macApp.frameMsMax.toFixed(1)} ms; ${macApp.corrections} corrections, largest ${macApp.largestCorrection.toFixed(3)} |`,
+  `| The packaged, ad hoc signed app (\`npm run package:mac\`), started once | ${packaged.bundle}, ${packaged.sizeMB} MB; opened, connected (${packaged.players} player in the room), showed "${packaged.hull}"; packaged build ${packaged.packaged ? 'yes' : '**no**'}; debug hook in it ${packaged.debugHook ? '**yes**' : 'no'}; ${packaged.consoleProblems.length} console warnings or errors |`,
   '',
   `Load test detail: ${load.data.bots} bots in one place firing without pause for ${load.data.seconds} s, about ${load.data.bulletsPerSecond.toFixed(0)} bullets a second, each tested against ${load.data.bots - 1} targets every tick. ` +
     `The server held ${load.data.ticksPerSecond.toFixed(2)} ticks a second with ${load.data.catchUps} catch-ups and ${load.data.droppedTicks} dropped ticks; ${percent(load.data.lateInputShare, 2)} of inputs were late. ` +

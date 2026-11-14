@@ -22,6 +22,9 @@
     "screenshot": "node scripts/screenshot.ts",
     "icons": "node scripts/make-icons.ts",
     "console-check": "node scripts/console-check.ts",
+    "update-check": "node scripts/update-check.ts",
+    "app": "electron app",
+    "package:mac": "node scripts/package-mac.ts",
     "spike:webgl": "node scripts/spike-headless-webgl.ts"
   },
   "dependencies": {
@@ -29,11 +32,13 @@
     "ws": "8.23.0"
   },
   "devDependencies": {
+    "@electron/packager": "20.3.0",
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.65.0",
     "@types/node": "22.20.5",
     "@types/three": "0.187.0",
     "@types/ws": "8.18.2",
+    "electron": "45.3.2",
     "eslint": "10.14.0",
     "globals": "17.14.0",
     "prettier": "3.10.1",
