@@ -13,6 +13,8 @@ export const PROXY_PORT = 8798;
 export const CHROMIUM_ARGS = ['--use-angle=metal'];
 
 const SINGLE_CLIENT = /(determinism|flight|hud)\.spec\.ts/;
+// Chromium only: it is Chrome's verdict on installing that is being asked for.
+const CHROMIUM_ONLY = /(determinism|flight|hud|pwa)\.spec\.ts/;
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -24,7 +26,7 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      testMatch: SINGLE_CLIENT,
+      testMatch: CHROMIUM_ONLY,
       use: { ...devices['Desktop Chrome'], launchOptions: { args: CHROMIUM_ARGS } },
     },
     { name: 'webkit', testMatch: SINGLE_CLIENT, use: { ...devices['Desktop Safari'] } },

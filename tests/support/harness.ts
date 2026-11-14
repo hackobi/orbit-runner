@@ -56,6 +56,10 @@ export interface ClientSetup {
   tuning?: Partial<ClientTuning>;
   /** Called after each of this client's frames, where a renderer would draw. */
   onFrame?: (core: ClientCore) => void;
+  /** For a session: a token kept from an earlier one, as a reloaded page has. */
+  sessionToken?: Uint8Array | null;
+  /** For a session: called with each token the server issues. */
+  onSessionToken?: (token: Uint8Array) => void;
 }
 
 export class TestWorld {
@@ -162,6 +166,8 @@ export class TestWorld {
       },
       now: this.clock.now,
       controls: controls ? (tick) => controls(tick, session.core) : () => NEUTRAL_CONTROLS,
+      ...(setup.sessionToken ? { sessionToken: setup.sessionToken } : {}),
+      ...(setup.onSessionToken ? { onSessionToken: setup.onSessionToken } : {}),
       onCorrection: (event) => log.corrections.push(event),
       onSnapshot: (event) => log.snapshots.push(event),
       onViewHit: (hit) => log.viewHits.push(hit),

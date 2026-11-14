@@ -11,6 +11,10 @@ import type { ClientOptions } from './client.ts';
 export interface SessionOptions extends Omit<ClientOptions, 'transport' | 'sessionToken'> {
   /** Opens a new connection to the server. */
   connect: () => Transport;
+  /** A token kept from before this session began, such as across a page reload. */
+  sessionToken?: Uint8Array | null;
+  /** Called with each token the server issues, so that it can be kept. */
+  onSessionToken?: (token: Uint8Array) => void;
   /** After coming back, how long to wait for the server's answer before reconnecting. */
   resumeTimeoutMs?: number;
   /** How long to wait for a new connection's welcome before trying again. */
@@ -42,6 +46,7 @@ export class Session {
     this.resumeTimeoutMs = options.resumeTimeoutMs ?? 1000;
     this.connectTimeoutMs = options.connectTimeoutMs ?? 5000;
     this.connectDeadlineMs = this.now() + this.connectTimeoutMs;
+    this.token = options.sessionToken ?? null;
     this.core = this.open();
   }
 
@@ -49,7 +54,11 @@ export class Session {
   update(): void {
     const now = this.now();
     this.core.update();
-    if (this.core.sessionToken) this.token = this.core.sessionToken;
+    const issued = this.core.sessionToken;
+    if (issued && issued !== this.token) {
+      this.token = issued;
+      this.options.onSessionToken?.(issued);
+    }
     if (this.hidden) return;
 
     switch (this.core.status) {

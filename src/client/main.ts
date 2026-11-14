@@ -5,6 +5,8 @@ import type { GameEvent } from '../shared/protocol.ts';
 import { createDebugRecorder } from './debugHook.ts';
 import { InputDevices } from './input.ts';
 import { loadSettings, saveSettings } from './settings.ts';
+import { watchForUpdates } from './update.ts';
+import { shouldApplyUpdate } from './updatePolicy.ts';
 import { asteroidPosition, asteroidTouching } from '../shared/sim/belt.ts';
 import { Hud } from './hud.ts';
 import { QualityController, TIERS } from './quality.ts';
@@ -87,8 +89,35 @@ function onGameEvent(event: GameEvent): void {
   if (target && event.ownerId !== core.playerId) scene.spark(target.x, target.y, target.z);
 }
 
+// The server's token for this player's seat is kept for the life of the tab,
+// so a reload (an update, or a slip of the finger) comes back to the same
+// seat and the same points if it is quick. It is per tab: a second tab is a
+// second player.
+const TOKEN_KEY = 'orbit-runner.session';
+function keptToken(): Uint8Array | null {
+  try {
+    const hex = sessionStorage.getItem(TOKEN_KEY) ?? '';
+    if (!/^([0-9a-f]{2})+$/.test(hex)) return null;
+    return Uint8Array.from(hex.match(/../g) ?? [], (byte) => parseInt(byte, 16));
+  } catch {
+    return null;
+  }
+}
+function keepToken(token: Uint8Array): void {
+  try {
+    const hex = Array.from(token, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    sessionStorage.setItem(TOKEN_KEY, hex);
+  } catch {
+    // Storage switched off: a reload starts afresh.
+  }
+}
+
+const updates = watchForUpdates();
+
 const session: Session = new Session({
   connect: () => new WebSocketTransport(new WebSocket(socketUrl())),
+  sessionToken: keptToken(),
+  onSessionToken: keepToken,
   now: () => performance.now(),
   controls: (tick) => recorder?.controls(tick, session.core) ?? devices.read(),
   onGameEvent,
@@ -162,7 +191,7 @@ function statusText(): string {
     case 'away':
       return 'Paused.';
     case 'playing':
-      return '';
+      return updates.ready ? 'A new version is ready. It loads after this life.' : '';
   }
 }
 
@@ -216,6 +245,7 @@ function frame(nowMs: number): void {
   }
 
   hud.update(core, statusText(), view, remotes, project, nowMs);
+  if (shouldApplyUpdate(updates.ready, core.status, view?.alive ?? false)) updates.apply();
 
   requestAnimationFrame(frame);
 }
