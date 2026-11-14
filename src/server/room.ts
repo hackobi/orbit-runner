@@ -96,7 +96,10 @@ export const SCORES_EVERY_TICKS = 60;
 /** Bullets and hits are announced to players within this distance. A bullet flies 690 units. */
 const EVENT_RADIUS = NEAR_RADIUS + 800;
 
-/** Decision D6: how long a seat is held for a player who has gone away. */
+/**
+ * Decision D6: how long the ship of a player who has gone away keeps flying
+ * before it is destroyed. The seat and its points are held for SEAT_TICKS.
+ */
 export const AWAY_GRACE_TICKS = 600;
 
 /**
@@ -379,6 +382,16 @@ export class Room {
 
   playerIds(): number[] {
     return [...this.players.keys()];
+  }
+
+  /**
+   * Test aid: gives up at once every seat whose connection has closed, instead
+   * of holding it for SEAT_TICKS, so a browser test starts in an empty room.
+   */
+  releaseDroppedSeats(): void {
+    for (const player of [...this.players.values()]) {
+      if (!player.connection && !player.claim) this.remove(player);
+    }
   }
 
   /**
@@ -734,10 +747,6 @@ export class Room {
       if ((graceOver || player.idle) && player.ship.alive) {
         player.ship = destroyShip(player.ship);
         this.recordDeath(player, null, CAUSE_DISCONNECT);
-      }
-      if (graceOver && !player.connection) {
-        this.remove(player);
-        continue;
       }
       // Nobody keeps one of the sixteen seats for ever without playing.
       const outSince = player.away ? player.awaySinceTick : player.idle ? player.idleSinceTick : -1;
@@ -1171,7 +1180,7 @@ export class Room {
     this.drop(connection);
   }
 
-  /** The socket is gone. The player, if any, stays for the grace period. */
+  /** The socket is gone. The player, if any, keeps the seat for SEAT_TICKS. */
   private drop(connection: Connection): void {
     connection.closed = true;
     this.connections.delete(connection);

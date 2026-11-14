@@ -126,12 +126,14 @@ export async function serverHealth(): Promise<{ tick: number; players: number }>
 }
 
 /**
- * Waits until nobody is left in the room. The server holds a seat for ten
- * seconds after a player disconnects, so the previous test's players are
- * still there for a while.
+ * Waits until nobody is left in the room. The server holds a seat for five
+ * minutes after a player disconnects, so this asks it to give up the seats of
+ * the previous test's closed pages, and waits for their sockets to be seen to
+ * close.
  */
 export async function waitForEmptyRoom(): Promise<void> {
   for (let attempt = 0; attempt < 150; attempt++) {
+    await post('/debug/release', {});
     if ((await serverHealth()).players === 0) return;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }

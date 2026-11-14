@@ -12,7 +12,7 @@ import { Rng } from '../../src/shared/rng.ts';
 import { inputFromWire, maxSpeedOf, shipStatesEqual } from '../../src/shared/sim/ship.ts';
 import type { Controls, ShipState } from '../../src/shared/sim/ship.ts';
 import type { ClientCore } from '../../src/net/client.ts';
-import { AWAY_GRACE_TICKS } from '../../src/server/room.ts';
+import { AWAY_GRACE_TICKS, SEAT_TICKS } from '../../src/server/room.ts';
 import { THRESHOLDS } from '../thresholds.ts';
 import { hunter, wanderer } from '../../src/net/behaviours.ts';
 import { PROFILES, TestWorld, profileLink } from '../support/harness.ts';
@@ -478,7 +478,7 @@ describe('interest tiers', () => {
 });
 
 describe('disconnect (decision D6)', () => {
-  it('holds the seat for 10 s with the ship flying straight and able to be hit, then kills it', () => {
+  it('the ship flies straight for 10 s and can be hit, then dies; the seat stays', () => {
     const world = new TestWorld(6);
     const leaver = world.addClient({
       controls: (): Controls => ({ yaw: 1, pitch: 0, throttle: 0, fire: false }),
@@ -529,11 +529,11 @@ describe('disconnect (decision D6)', () => {
     });
     const diedAfter = (world.deaths[0]?.tick ?? 0) - droppedAt;
     expect(Math.abs(diedAfter - AWAY_GRACE_TICKS)).toBeLessThanOrEqual(8);
-    expect(world.left).toEqual([id]);
-    expect(world.room.playerCount).toBe(1);
-    // The watcher was told, and no longer draws it.
-    expect(watcher.events.some((e) => e.kind === 'left' && e.playerId === id)).toBe(true);
-    expect(watcher.core.remoteViews()).toEqual([]);
+    // The seat and its points are still held: a phone that was locked comes back to them.
+    expect(world.left).toEqual([]);
+    expect(world.room.playerCount).toBe(2);
+    // The watcher no longer draws the destroyed ship.
+    expect(watcher.core.remoteViews().some((v) => v.id === id && v.alive)).toBe(false);
   });
 
   it('a hunter can shoot down a ship whose player has gone', () => {
@@ -602,29 +602,46 @@ describe('reconnect', () => {
     expect(predicted && core.ackState && shipStatesEqual(predicted, core.ackState)).toBe(true);
   });
 
-  it('after the grace period the seat is gone and the player starts afresh', () => {
+  it('a phone locked for a minute, its socket closed, comes back to the same seat and points', () => {
     const world = new TestWorld(8);
     let reachable = true;
     const player = world.addSession({
       link: { up: () => (reachable ? 0 : null), down: () => (reachable ? 0 : null) },
     });
     world.run(2000);
+    const id = player.session.core.playerId;
     const firstToken = player.session.core.sessionToken;
-    world.place(player.session.core.playerId, { hp: 40 });
+    world.room.addScore(id, 777);
 
-    // The network goes dark for 12 seconds; the socket closes.
+    // The network goes dark for a minute; the socket closes.
     reachable = false;
     player.links[0]?.close();
-    world.run(12_000);
-    expect(world.room.playerCount).toBe(0);
-    expect(world.deaths[0]).toMatchObject({ cause: CAUSE_DISCONNECT });
+    world.run(60_000);
+    expect(world.deaths[0]).toMatchObject({ victimId: id, cause: CAUSE_DISCONNECT });
+    expect(world.room.playerCount).toBe(1);
+    expect(world.left).toEqual([]);
 
     reachable = true;
     world.run(8000);
     expect(player.session.core.status).toBe('playing');
+    expect(player.session.core.playerId).toBe(id);
+    expect(player.session.core.sessionToken).toEqual(firstToken);
+    expect(world.room.scoreOf(id)).toBeGreaterThanOrEqual(777);
+    expect(world.room.shipOf(id)).toMatchObject({ hp: 100, alive: true });
     expect(world.room.playerCount).toBe(1);
-    expect(world.room.shipOf(player.session.core.playerId)).toMatchObject({ hp: 100, alive: true });
-    expect(player.session.core.sessionToken).not.toEqual(firstToken);
+  });
+
+  it('a dropped seat is given up after five minutes', () => {
+    const world = new TestWorld(8);
+    const leaver = world.addClient({});
+    world.run(1000);
+    const id = leaver.core.playerId;
+    leaver.transport.close();
+    world.run((SEAT_TICKS - 600) * TICK_MS);
+    expect(world.room.playerIds()).toEqual([id]);
+    world.run(1200 * TICK_MS);
+    expect(world.left).toEqual([id]);
+    expect(world.room.playerCount).toBe(0);
   });
 
   it("a wrong token does not take anyone else's seat", () => {

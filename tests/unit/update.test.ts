@@ -50,7 +50,7 @@ describe('a page that reloads (as an update does)', () => {
     expect(world.deaths).toHaveLength(0);
   });
 
-  it('starts afresh if it took longer than the ten seconds a seat is held', () => {
+  it('after longer than ten seconds the ship was destroyed, but the seat and points are kept', () => {
     const world = new TestWorld(8, 0, false);
     let kept: Uint8Array | null = null;
     const first = world.addSession({
@@ -59,12 +59,16 @@ describe('a page that reloads (as an update does)', () => {
       },
     });
     world.run(1000);
-    world.room.addScore(first.session.core.playerId, 4321);
+    const id = first.session.core.playerId;
+    world.room.addScore(id, 4321);
     first.session.close();
     world.run(12_000 + SIM.respawnTicks * TICK_MS);
+    expect(world.deaths).toHaveLength(1);
     const second = world.addSession({ sessionToken: kept });
     world.run(1000);
     expect(second.session.core.status).toBe('playing');
-    expect(second.session.core.score).toBe(0);
+    expect(second.session.core.playerId).toBe(id);
+    expect(second.session.core.score).toBeGreaterThanOrEqual(4321);
+    expect(second.session.core.state?.alive).toBe(true);
   });
 });

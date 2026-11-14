@@ -57,7 +57,7 @@ describe('joining', () => {
     expect(world.room.playerCount).toBe(16);
   });
 
-  it('holds the seat for ten seconds after a player leaves, then frees it', () => {
+  it('holds the seat for five minutes after a player leaves, then frees it', () => {
     const world = new TestWorld();
     const link = createLink(world.clock);
     world.room.connect(link.server);
@@ -73,10 +73,10 @@ describe('joining', () => {
     world.run(5);
     expect(world.room.playerCount).toBe(1);
     link.client.close();
-    world.run(9000);
+    world.run((SEAT_TICKS - 600) * TICK_MS);
     expect(world.room.playerCount).toBe(1);
     expect(world.room.isAway(0)).toBe(true);
-    world.run(1200);
+    world.run(1200 * TICK_MS);
     expect(world.room.playerCount).toBe(0);
     expect(joined(world).welcome.playerId).toBe(0);
   });

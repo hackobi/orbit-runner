@@ -119,6 +119,11 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
       sendJson(response, 200, { ok: true, score: room.scoreOf(body.id) });
       return true;
     }
+    if (request.method === 'POST' && url.pathname === '/debug/release') {
+      room.releaseDroppedSeats();
+      sendJson(response, 200, { ok: true, players: room.playerCount });
+      return true;
+    }
     if (request.method === 'POST' && url.pathname === '/debug/sustain') {
       sustain = (JSON.parse(await readBody(request)) as { on: boolean }).on;
       sendJson(response, 200, { ok: true, sustain });

@@ -45,6 +45,8 @@ export interface TestSession extends ClientLog {
   links: Transport[];
   /** Stops this session's frames with its connection left open, as a page being unloaded does for a moment. */
   pause(): void;
+  /** Starts its frames again, as a frozen page does when the phone is unlocked. */
+  resume(): void;
 }
 
 export interface ClientSetup {
@@ -191,6 +193,9 @@ export class TestWorld {
       ...log,
       pause: () => {
         paused = true;
+      },
+      resume: () => {
+        paused = false;
       },
     };
   }

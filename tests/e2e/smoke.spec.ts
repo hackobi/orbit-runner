@@ -15,9 +15,10 @@ test('connects, flies and sees another player', async ({ page, browser }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
 
-  // The server holds seats for ten seconds after a disconnect; wait out
-  // whoever the previous test left behind.
+  // The server holds seats for five minutes after a disconnect; ask it to
+  // give up those the previous test left behind, and wait for them to go.
   for (let attempt = 0; attempt < 150; attempt++) {
+    await fetch(`http://127.0.0.1:${SERVER_PORT}/debug/release`, { method: 'POST', body: '{}' });
     const health = (await (await fetch(`http://127.0.0.1:${SERVER_PORT}/health`)).json()) as {
       players: number;
     };
