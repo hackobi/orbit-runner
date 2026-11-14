@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { TICK_MS } from '../../src/shared/constants.ts';
 import {
+  CAUSE_DISCONNECT,
   PROTOCOL_VERSION,
   REJECT_FULL,
   REJECT_VERSION,
   encodeHello,
   encodeInput,
+  encodePresence,
 } from '../../src/shared/protocol.ts';
 import { SIM_FINGERPRINT } from '../../src/shared/sim/fingerprint.ts';
 import { quantiseControls, shipStatesEqual, stepShip } from '../../src/shared/sim/ship.ts';
-import { Room } from '../../src/server/room.ts';
+import { IDLE_TICKS, Room, SEAT_TICKS } from '../../src/server/room.ts';
 import { TestWorld } from '../support/harness.ts';
 import { RawClient, joined } from '../support/rawClient.ts';
 import { createLink } from '../support/loopback.ts';
@@ -274,5 +276,110 @@ describe('tick loop', () => {
     expect(respawnedAtTick - diedAtTick).toBe(180);
     const ship = world.room.shipOf(welcome.playerId);
     expect(ship?.spawnSeq).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('room rules', () => {
+  // High above the belt and outside it: nothing to run into, and inside the combat zone.
+  const PARKED = { x: 0, y: 400, z: 7000, yaw: 1.5, pitch: 0, speed: 5, targetSpeed: 5 };
+
+  it('a player who does not touch the controls for two minutes is taken out, and comes back by moving one', () => {
+    const world = new TestWorld(3, 0, false);
+    let yaw = 0;
+    const pilot = world.addClient({
+      controls: () => ({ yaw, pitch: 0, throttle: 0, fire: false }),
+    });
+    world.run(500);
+    const id = pilot.core.playerId;
+    // Flying a slow circle, so it never leaves the combat zone.
+    yaw = 0.3;
+    world.place(id, PARKED);
+    world.room.addScore(id, 900);
+
+    world.run((IDLE_TICKS - 120) * TICK_MS);
+    expect(world.room.shipOf(id)?.alive).toBe(true);
+    world.run(240 * TICK_MS);
+    expect(world.room.shipOf(id)?.alive).toBe(false);
+    expect(world.deaths).toHaveLength(1);
+    expect(world.deaths[0]).toMatchObject({ victimId: id, cause: CAUSE_DISCONNECT });
+
+    // It does not respawn to be shot at again while nobody is flying it.
+    world.run(30_000);
+    expect(world.room.shipOf(id)?.alive).toBe(false);
+    expect(world.deaths).toHaveLength(1);
+
+    // A hand on the controls brings it straight back, points and all.
+    yaw = -0.3;
+    world.run(500);
+    expect(world.room.shipOf(id)?.alive).toBe(true);
+    expect(world.room.scoreOf(id)).toBeGreaterThanOrEqual(900);
+    expect(pilot.core.status).toBe('playing');
+  });
+
+  it('a player who keeps steering is never idle', () => {
+    const world = new TestWorld(3, 0, false);
+    const pilot = world.addClient({
+      // A new stick position every ten seconds.
+      controls: (tick) => ({
+        yaw: tick % 1200 < 600 ? 0.3 : 0.31,
+        pitch: 0,
+        throttle: 0,
+        fire: false,
+      }),
+    });
+    world.run(500);
+    world.place(pilot.core.playerId, PARKED);
+    world.run((IDLE_TICKS + 1200) * TICK_MS);
+    expect(world.deaths).toHaveLength(0);
+  });
+
+  it('after five minutes out, the seat is given up and the connection closed', () => {
+    const world = new TestWorld(3, 0, false);
+    const pilot = world.addClient({});
+    world.run(500);
+    const id = pilot.core.playerId;
+    world.place(id, PARKED);
+    world.run((IDLE_TICKS + SEAT_TICKS - 600) * TICK_MS);
+    expect(world.room.playerCount).toBe(1);
+    world.run(1200 * TICK_MS);
+    expect(world.room.playerCount).toBe(0);
+    expect(world.left).toEqual([id]);
+    expect(pilot.core.status).toBe('closed');
+  });
+
+  it('a hidden tab that stays hidden for five minutes loses its seat too', () => {
+    const world = new TestWorld(3, 0, false);
+    const pilot = world.addClient({});
+    world.run(500);
+    pilot.core.setAway(true);
+    world.run((SEAT_TICKS - 600) * TICK_MS);
+    expect(world.room.playerCount).toBe(1);
+    world.run(1200 * TICK_MS);
+    expect(world.room.playerCount).toBe(0);
+  });
+
+  it('answers "I am back" with a fresh welcome at most once a second', () => {
+    const world = new TestWorld(3, 0, false);
+    world.run(1000);
+    const { client } = joined(world);
+    const welcomes = (): number => client.received.filter((m) => m.type === 'welcome').length;
+    expect(welcomes()).toBe(1);
+
+    // A hundred requests in a burst, straight after joining.
+    for (let i = 0; i < 100; i++) client.send(encodePresence(false, i));
+    world.run(500);
+    expect(welcomes()).toBe(1);
+    // The request is not lost: it is answered when the second is up.
+    world.run(700);
+    expect(welcomes()).toBe(2);
+
+    // And over ten seconds of asking every tick, ten or eleven answers.
+    for (let i = 0; i < 600; i++) {
+      client.send(encodePresence(false, i));
+      world.run(TICK_MS);
+    }
+    expect(welcomes()).toBeGreaterThanOrEqual(11);
+    expect(welcomes()).toBeLessThanOrEqual(13);
+    expect(world.room.stats.malformedMessages).toBe(0);
   });
 });

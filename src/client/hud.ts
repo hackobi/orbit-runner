@@ -237,7 +237,9 @@ export class Hud {
       case CAUSE_EDGE:
         return own ? 'You left the combat zone.' : 'left the combat zone';
       case CAUSE_DISCONNECT:
-        return own ? 'You were away too long.' : 'was away too long';
+        return own
+          ? 'You were away too long. Move the controls to fly again.'
+          : 'was away too long';
       default:
         return own ? 'You were shot down.' : 'was shot down';
     }

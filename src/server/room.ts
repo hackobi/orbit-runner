@@ -98,6 +98,19 @@ const EVENT_RADIUS = NEAR_RADIUS + 800;
 /** Decision D6: how long a seat is held for a player who has gone away. */
 export const AWAY_GRACE_TICKS = 600;
 
+/**
+ * A player whose controls have not changed for two minutes is taken to have
+ * walked away: the ship is destroyed and stays out until a control moves. An
+ * idle ship would otherwise be a free target, worth 500 points a hit.
+ */
+export const IDLE_TICKS = 120 * 60;
+
+/** Five minutes away or idle, and the seat goes to someone else. */
+export const SEAT_TICKS = 300 * 60;
+
+/** A client is given a fresh welcome at most once a second. */
+export const WELCOME_EVERY_TICKS = 60;
+
 /** Inputs numbered further ahead than this are refused, which bounds the buffer. */
 export const MAX_INPUT_LEAD_TICKS = 120;
 
@@ -209,6 +222,14 @@ interface Player {
   /** Tab hidden or socket gone. The ship flies straight and the seat is held for a while. */
   away: boolean;
   awaySinceTick: number;
+  /** Ticks in a row that the controls applied have been the same. */
+  unchangedTicks: number;
+  /** Held out of the game for not touching the controls. Ends when one moves. */
+  idle: boolean;
+  idleSinceTick: number;
+  lastWelcomeTick: number;
+  /** A "back" that arrived too soon after the last welcome, to be answered when a second has passed. */
+  backDue: { connection: Connection; clientTimeMs: number } | null;
   kills: number;
   killsThisLife: number;
   spawnedAtTick: number;
@@ -436,6 +457,15 @@ export class Room {
           }
         }
       }
+      // The view delay drifts by itself; only the controls show a hand on them.
+      const last = player.input;
+      const unchanged =
+        input.yaw === last.yaw &&
+        input.pitch === last.pitch &&
+        input.throttle === last.throttle &&
+        input.fire === last.fire;
+      player.unchangedTicks = unchanged ? player.unchangedTicks + 1 : 0;
+      if (!unchanged) player.idle = false;
       player.input = input;
 
       if (player.asteroidMultTicks > 0) player.asteroidMultTicks -= 1;
@@ -677,7 +707,11 @@ export class Room {
   private stepAwayAndRespawn(): void {
     for (const player of [...this.players.values()]) {
       const graceOver = player.away && this.tick - player.awaySinceTick >= AWAY_GRACE_TICKS;
-      if (graceOver && player.ship.alive) {
+      if (!player.away && !player.idle && player.unchangedTicks >= IDLE_TICKS) {
+        player.idle = true;
+        player.idleSinceTick = this.tick;
+      }
+      if ((graceOver || player.idle) && player.ship.alive) {
         player.ship = destroyShip(player.ship);
         this.recordDeath(player, null, CAUSE_DISCONNECT);
       }
@@ -685,8 +719,27 @@ export class Room {
         this.remove(player);
         continue;
       }
-      // A dead ship comes back after its timer, but not while its player is away.
-      if (!player.ship.alive && player.ship.respawnTicks === 0 && !player.away) {
+      // Nobody keeps one of the sixteen seats for ever without playing.
+      const outSince = player.away ? player.awaySinceTick : player.idle ? player.idleSinceTick : -1;
+      if (outSince >= 0 && this.tick - outSince >= SEAT_TICKS) {
+        const connection = player.connection;
+        this.remove(player);
+        if (connection) {
+          connection.player = null;
+          this.close(connection);
+        }
+        continue;
+      }
+      // A "back" that came too soon after the last welcome is answered now.
+      const due = player.backDue;
+      if (due && this.tick - player.lastWelcomeTick >= WELCOME_EVERY_TICKS) {
+        player.backDue = null;
+        if (player.connection === due.connection && !due.connection.closed) {
+          this.welcomeBack(player, due.connection, due.clientTimeMs);
+        }
+      }
+      // A dead ship comes back after its timer, but not while its player is away or idle.
+      if (!player.ship.alive && player.ship.respawnTicks === 0 && !player.away && !player.idle) {
         player.ship = spawnShip(this.rng, player.ship.spawnSeq + 1);
         player.killsThisLife = 0;
         player.spawnedAtTick = this.tick;
@@ -856,8 +909,12 @@ export class Room {
       if (!player.away) this.buy(player, message.item);
     } else if (message.away) {
       this.markAway(player);
-    } else {
+    } else if (this.tick - player.lastWelcomeTick >= WELCOME_EVERY_TICKS) {
       this.welcomeBack(player, connection, message.clientTimeMs);
+    } else {
+      // A welcome carries the state of the whole world. One a second is
+      // plenty; this one waits its turn.
+      player.backDue = { connection, clientTimeMs: message.clientTimeMs };
     }
   }
 
@@ -903,6 +960,11 @@ export class Room {
       missedSinceSnapshot: 0,
       away: false,
       awaySinceTick: 0,
+      unchangedTicks: 0,
+      idle: false,
+      idleSinceTick: 0,
+      lastWelcomeTick: 0,
+      backDue: null,
       kills: 0,
       killsThisLife: 0,
       spawnedAtTick: this.tick,
@@ -934,6 +996,10 @@ export class Room {
     player.connection = connection;
     connection.player = player;
     player.away = false;
+    player.idle = false;
+    player.unchangedTicks = 0;
+    player.lastWelcomeTick = this.tick;
+    player.backDue = null;
     player.pending.clear();
     player.input = NEUTRAL_INPUT;
     player.firstInputTick = null;
