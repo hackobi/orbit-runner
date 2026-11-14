@@ -62,7 +62,6 @@ const MAX_PIXEL_RATIO = 1.75; // main.js:283
 const REMOTE_SHIP_SCALE = 1.5;
 
 const MAX_BULLETS = 512;
-const MAX_MARKERS = 32;
 const MAX_SPARKS = 24;
 const SPARK_SECONDS = 0.3;
 
@@ -271,8 +270,6 @@ export class GameScene {
   private orbsOf: World | null = null;
   private orbWasGone: boolean[] = [];
   private readonly identity = new Quaternion();
-  private readonly markers: Points;
-  private readonly markerPositions: Float32Array;
   private readonly sparks: Spark[] = [];
   private nextSpark = 0;
 
@@ -326,20 +323,6 @@ export class GameScene {
     this.bullets.frustumCulled = false;
     this.bullets.count = 0;
 
-    // A dot on every other ship, the same size at any distance, so players
-    // can find each other across the belt.
-    this.markerPositions = new Float32Array(MAX_MARKERS * 3);
-    const markerGeometry = new BufferGeometry();
-    const markerAttribute = new BufferAttribute(this.markerPositions, 3);
-    markerAttribute.setUsage(DynamicDrawUsage);
-    markerGeometry.setAttribute('position', markerAttribute);
-    markerGeometry.setDrawRange(0, 0);
-    this.markers = new Points(
-      markerGeometry,
-      new PointsMaterial({ color: 0xff5533, size: 5, sizeAttenuation: false, depthTest: false }),
-    );
-    this.markers.frustumCulled = false;
-
     const sparkGeometry = new SphereGeometry(1, 10, 8);
     for (let i = 0; i < MAX_SPARKS; i++) {
       const material = new MeshBasicMaterial({
@@ -355,12 +338,25 @@ export class GameScene {
       this.scene.add(mesh);
     }
 
-    this.scene.add(planet, buildStars(), this.ship.group, this.bullets, this.markers);
+    this.scene.add(planet, buildStars(), this.ship.group, this.bullets);
 
     this.resize();
     window.addEventListener('resize', () => {
       this.resize();
     });
+  }
+
+  /**
+   * Where a point of the world falls on the screen, in CSS pixels, as the
+   * last frame was drawn. False if it is behind the camera or off the screen.
+   */
+  project(x: number, y: number, z: number, out: { x: number; y: number }): boolean {
+    this.position.set(x, y, z).project(this.camera);
+    const p = this.position;
+    if (p.z > 1 || p.x < -1 || p.x > 1 || p.y < -1 || p.y > 1) return false;
+    out.x = (p.x * 0.5 + 0.5) * window.innerWidth;
+    out.y = (-p.y * 0.5 + 0.5) * window.innerHeight;
+    return true;
   }
 
   /** A short flash: where a bullet met a ship, or a rock broke up or passed close. */
@@ -577,7 +573,6 @@ export class GameScene {
 
   private drawRemotes(remotes: readonly RemoteView[]): void {
     const seen = new Set<number>();
-    let markers = 0;
     for (const remote of remotes) {
       seen.add(remote.id);
       let model = this.remoteShips.get(remote.id);
@@ -597,22 +592,12 @@ export class GameScene {
         mesh.quaternion.setFromEuler(this.euler);
         mesh.position.set(remote.x, remote.y, remote.z);
       }
-      if (remote.alive && markers < MAX_MARKERS) {
-        this.markerPositions[markers * 3] = remote.x;
-        this.markerPositions[markers * 3 + 1] = remote.y;
-        this.markerPositions[markers * 3 + 2] = remote.z;
-        markers++;
-      }
     }
     for (const [id, model] of this.remoteShips) {
       if (seen.has(id)) continue;
       this.scene.remove(model.group);
       this.remoteShips.delete(id);
     }
-    const geometry = this.markers.geometry;
-    geometry.setDrawRange(0, markers);
-    const attribute = geometry.getAttribute('position');
-    attribute.needsUpdate = true;
   }
 
   private drawBullets(bullets: readonly BulletView[], ownId: number): void {

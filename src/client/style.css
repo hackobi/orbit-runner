@@ -1,15 +1,35 @@
+:root {
+  --ink: #cfe6ff;
+  --dim: #7f9bbd;
+  --panel: rgb(6 16 36 / 72%);
+  --edge: rgb(120 170 255 / 28%);
+  --hull: #5fe08a;
+  --shield: #5ab8ff;
+  --warn: #ffb347;
+  --bad: #ff6a5c;
+  --inset-top: env(safe-area-inset-top, 0px);
+  --inset-right: env(safe-area-inset-right, 0px);
+  --inset-bottom: env(safe-area-inset-bottom, 0px);
+  --inset-left: env(safe-area-inset-left, 0px);
+}
+
 html,
 body {
   margin: 0;
   height: 100%;
   overflow: hidden;
   background: #030a1a;
-  color: #cfe6ff;
+  color: var(--ink);
   font-family:
     system-ui,
     -apple-system,
     'Segoe UI',
     sans-serif;
+  /* No rubber-band scrolling, long-press menus or text selection over the game. */
+  overscroll-behavior: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 #game {
@@ -20,21 +40,253 @@ body {
   outline: none;
   /* The game handles every gesture itself. */
   touch-action: none;
-  user-select: none;
-  -webkit-user-select: none;
 }
 
 #hud {
   position: fixed;
-  top: calc(12px + env(safe-area-inset-top));
-  left: calc(16px + env(safe-area-inset-left));
+  inset: 0;
   font-size: 14px;
   line-height: 1.5;
   font-variant-numeric: tabular-nums;
   text-shadow: 0 1px 2px #000;
+  /* Only the store's buttons and the touch controls take input. */
   pointer-events: none;
 }
 
-#status:empty {
+#gauges {
+  position: absolute;
+  top: calc(12px + var(--inset-top));
+  left: calc(16px + var(--inset-left));
+  width: 190px;
+}
+
+.bar {
+  position: relative;
+  height: 18px;
+  margin-bottom: 5px;
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.bar .fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--hull);
+  opacity: 0.75;
+  transition: width 120ms linear;
+}
+
+#shield-fill {
+  background: var(--shield);
+}
+
+.bar span {
+  position: relative;
+  display: block;
+  padding: 0 7px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+#hull-bar.low .fill {
+  background: var(--bad);
+}
+
+#hull-bar.mid .fill {
+  background: var(--warn);
+}
+
+#timers {
+  color: var(--warn);
+}
+
+#corner {
+  position: absolute;
+  top: calc(12px + var(--inset-top));
+  right: calc(16px + var(--inset-right));
+  width: 160px;
+}
+
+#minimap {
+  display: block;
+  width: 160px;
+  height: 160px;
+  border: 1px solid var(--edge);
+  border-radius: 50%;
+  background: var(--panel);
+}
+
+#scoreboard {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+#scoreboard li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--dim);
+}
+
+#scoreboard li.me {
+  color: var(--ink);
+}
+
+#status,
+#warning {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 6px;
+  background: var(--panel);
+  text-align: center;
+  white-space: nowrap;
+}
+
+#status {
+  top: calc(12px + var(--inset-top));
+}
+
+#warning {
+  top: 22%;
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  font-weight: 600;
+}
+
+#status:empty,
+#warning:empty,
+#timers:empty,
+#help:empty {
+  display: none;
+}
+
+#feed {
+  position: absolute;
+  top: calc(52px + var(--inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  text-align: center;
+  color: var(--dim);
+}
+
+#labels span {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 0 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  color: #ffd0c8;
+  will-change: transform;
+}
+
+#labels span.far {
+  color: var(--dim);
+}
+
+#store,
+#death {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 16px;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  background: var(--panel);
+  text-align: center;
+}
+
+#store {
+  bottom: calc(40px + var(--inset-bottom));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: min(560px, 92vw);
+  pointer-events: auto;
+}
+
+#store[hidden],
+#death[hidden] {
+  display: none;
+}
+
+#store h2 {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dim);
+}
+
+#store button {
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: rgb(40 80 150 / 55%);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+#store button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#store button b {
+  margin-right: 6px;
+  color: var(--dim);
+}
+
+#store button i {
+  margin-left: 8px;
+  font-style: normal;
+  color: var(--warn);
+}
+
+#death {
+  top: 30%;
+  min-width: 240px;
+}
+
+#death h2 {
+  margin: 0 0 4px;
+  font-size: 22px;
+  color: var(--bad);
+}
+
+#death p {
+  margin: 2px 0;
+}
+
+#death-best,
+#death-respawn {
+  color: var(--dim);
+}
+
+#help {
+  position: absolute;
+  bottom: calc(10px + var(--inset-bottom));
+  left: calc(16px + var(--inset-left));
+  font-size: 12px;
+  color: var(--dim);
+}
+
+/* A phone held upright is too narrow to fly in. */
+#rotate {
   display: none;
 }

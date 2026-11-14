@@ -1,11 +1,11 @@
 import { Session } from '../net/session.ts';
 import { WebSocketTransport } from '../net/wsTransport.ts';
-import { SIM } from '../shared/constants.ts';
 import { REJECT_VERSION } from '../shared/protocol.ts';
 import type { GameEvent } from '../shared/protocol.ts';
 import { createDebugRecorder } from './debugHook.ts';
 import { InputDevices } from './input.ts';
 import { asteroidPosition, asteroidTouching } from '../shared/sim/belt.ts';
+import { Hud } from './hud.ts';
 import { GameScene, NEAR_MISS_SPARK } from './scene.ts';
 
 /** Set by the build. True only when VITE_TEST_HOOKS=1. */
@@ -18,12 +18,11 @@ function element<T extends HTMLElement>(id: string, type: new () => T): T {
 }
 
 const canvas = element('game', HTMLCanvasElement);
-const statusLine = element('status', HTMLDivElement);
-const hullLine = element('hull', HTMLDivElement);
-const speedLine = element('speed', HTMLDivElement);
-const killsLine = element('kills', HTMLDivElement);
 
 const scene = new GameScene(canvas);
+const hud = new Hud((item) => {
+  session.core.buy(item);
+});
 const devices = new InputDevices(canvas);
 const recorder = __ORBIT_TEST_HOOKS__ ? createDebugRecorder() : null;
 
@@ -39,6 +38,7 @@ function socketUrl(): string {
 
 function onGameEvent(event: GameEvent): void {
   recorder?.onGameEvent(event);
+  hud.onEvent(event, session.core, performance.now());
   // Damage shows when the server confirms it. A hit on this player's own
   // ship flashes at the ship; any other flashes at the target as drawn.
   if (event.kind !== 'hit') return;
@@ -88,7 +88,7 @@ function statusText(): string {
     case 'away':
       return 'Paused.';
     case 'playing':
-      return core.state?.alive === false ? 'Destroyed. Respawning…' : '';
+      return '';
   }
 }
 
@@ -112,14 +112,7 @@ function nearMiss(nowMs: number, x: number, y: number, z: number): void {
 }
 
 let lastFrameMs = performance.now();
-const shown = new Map<HTMLElement, string>();
-
-/** Touches the DOM only when the text changes. */
-function show(line: HTMLElement, text: string): void {
-  if (shown.get(line) === text) return;
-  shown.set(line, text);
-  line.textContent = text;
-}
+const project = scene.project.bind(scene);
 
 function frame(nowMs: number): void {
   const elapsedMs = nowMs - lastFrameMs;
@@ -128,8 +121,8 @@ function frame(nowMs: number): void {
   session.update();
   const core = session.core;
   const view = core.view();
+  const remotes = view ? core.remoteViews() : [];
   if (view) {
-    const remotes = core.remoteViews();
     const bullets = core.bulletViews();
     const world = core.world ? { world: core.world, tick: core.drawTick, state: core } : null;
     if (view.alive) nearMiss(nowMs, view.x, view.y, view.z);
@@ -137,15 +130,7 @@ function frame(nowMs: number): void {
     recorder?.frame(nowMs, elapsedMs, core, view, remotes, bullets.length);
   }
 
-  show(statusLine, statusText());
-  show(
-    hullLine,
-    view
-      ? `Hull ${view.hp} / ${SIM.maxHp}${view.shield > 0 ? `   Shield ${view.shield}` : ''}`
-      : '',
-  );
-  show(speedLine, view ? `${Math.round(view.speed)} u/s` : '');
-  show(killsLine, view ? `Kills ${core.kills}` : '');
+  hud.update(core, statusText(), view, remotes, project, nowMs);
 
   requestAnimationFrame(frame);
 }

@@ -9,11 +9,48 @@
   </head>
   <body>
     <canvas id="game" tabindex="0" aria-label="Orbit Runner"></canvas>
-    <div id="hud" aria-live="polite">
-      <div id="status"></div>
-      <div id="hull"></div>
-      <div id="speed"></div>
-      <div id="kills"></div>
+
+    <div id="hud">
+      <div id="gauges">
+        <div class="bar" id="hull-bar" role="meter" aria-label="Hull">
+          <div class="fill" id="hull-fill"></div>
+          <span id="hull"></span>
+        </div>
+        <div class="bar" id="shield-bar" role="meter" aria-label="Shield">
+          <div class="fill" id="shield-fill"></div>
+          <span id="shield"></span>
+        </div>
+        <div id="speed"></div>
+        <div id="points"></div>
+        <div id="kills"></div>
+        <div id="timers"></div>
+      </div>
+
+      <div id="corner">
+        <canvas id="minimap" width="160" height="160" aria-label="Map"></canvas>
+        <ol id="scoreboard" aria-label="Scoreboard"></ol>
+      </div>
+
+      <div id="status" role="status" aria-live="polite"></div>
+      <div id="warning" role="alert"></div>
+      <ul id="feed" aria-live="polite"></ul>
+      <div id="labels" aria-hidden="true"></div>
+
+      <div id="store" hidden>
+        <h2>Store <span id="store-time"></span></h2>
+        <button type="button" data-item="hp"><b>1</b> Repair hull <i>1,500</i></button>
+        <button type="button" data-item="shield"><b>2</b> Full shield <i>1,000</i></button>
+        <button type="button" data-item="fenix"><b>3</b> Fenix <i>2,000</i></button>
+      </div>
+
+      <div id="death" hidden>
+        <h2 id="death-title"></h2>
+        <p id="death-detail"></p>
+        <p id="death-best"></p>
+        <p id="death-respawn"></p>
+      </div>
+
+      <div id="help"></div>
     </div>
     <script type="module" src="/src/client/main.ts"></script>
   </body>
