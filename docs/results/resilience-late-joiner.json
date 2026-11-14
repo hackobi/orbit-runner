@@ -1,16 +1,16 @@
 {
-  "measuredAt": "2026-11-14T01:32:31.478Z",
+  "measuredAt": "2026-11-14T01:50:30.575Z",
   "data": {
     "client": "iPhone 15 (WebKit)",
-    "frames": 500,
+    "frames": 501,
     "framesPerSecond": 100,
-    "remoteSamples": 1000,
-    "remoteErrorP50": 0.0011506482133742703,
-    "remoteErrorP95": 0.002068749479486464,
-    "remoteErrorMax": 0.00267416099426132,
+    "remoteSamples": 1002,
+    "remoteErrorP50": 0.0011375298147711906,
+    "remoteErrorP95": 0.0020175058341524656,
+    "remoteErrorMax": 0.0026518037005941295,
     "extrapolatedShare": 0,
     "snaps": 0,
-    "worstSnapExcess": -1.1194166895133424,
+    "worstSnapExcess": -0.9597137309395024,
     "corrections": 0,
     "correctionP95": 0,
     "correctionMax": 0,
@@ -18,10 +18,10 @@
     "hitsConfirmed": 0,
     "hitAgreement": 1,
     "serverHitsNotSeen": 0,
-    "roundTripMs": 108.69126092207979,
-    "inputSlackTicks": 2.9178602479129117,
-    "viewDelayMs": 211.45833333333334,
-    "interpolationDelayMs": 70.33333333337212,
+    "roundTripMs": 107.10925571917899,
+    "inputSlackTicks": 3.135705666564025,
+    "viewDelayMs": 219.79166666666666,
+    "interpolationDelayMs": 71.66666666668607,
     "missedInputShare": 0
   }
 }

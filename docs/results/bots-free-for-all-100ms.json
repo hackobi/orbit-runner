@@ -1,13 +1,13 @@
 {
-  "measuredAt": "2026-11-14T01:08:20.669Z",
+  "measuredAt": "2026-11-14T01:39:57.203Z",
   "data": {
     "seconds": 60,
-    "hitsSeen": 153,
-    "hitsConfirmed": 146,
-    "hitAgreement": 0.954248366013072,
-    "unconfirmed": 7,
-    "unconfirmedOnDestroyedShip": 7,
-    "serverHitsNotSeen": 0,
-    "kills": 20
+    "hitsSeen": 123,
+    "hitsConfirmed": 117,
+    "hitAgreement": 0.9512195121951219,
+    "unconfirmed": 6,
+    "unconfirmedOnDestroyedShip": 6,
+    "serverHitsNotSeen": 2,
+    "kills": 16
   }
 }

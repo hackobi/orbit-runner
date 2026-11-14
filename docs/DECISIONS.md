@@ -12,7 +12,7 @@ Line numbers refer to v1 at `/Users/jacobo/Documents/Claude/orbit-runner`, branc
 
 ## 1. Decisions that need your answer
 
-Each has a default. If you approve the plan without comment, the defaults apply. **The user approved D1–D7 on 2026-11-13 and D8–D12 on 2026-11-14, all at their defaults.**
+Each has a default. If you approve the plan without comment, the defaults apply. **The user approved D1–D7 on 2026-11-13 and D8–D12 on 2026-11-14, all at their defaults.** D13–D20 are choices made while building Phase 3 that were not in the plan; each took the default shown and is listed so that it can be overruled.
 
 | # | Decision | Default | Alternative | Needed by |
 |---|---|---|---|---|
@@ -28,6 +28,14 @@ Each has a default. If you approve the plan without comment, the defaults apply.
 | D10 | Pitch direction | Keep v1: Up / I pushes the nose toward −Y. Add an invert option in settings | Flip it | Phase 3 |
 | D11 | World edge | Keep v1's Y clamp of ±500. Add a combat-zone radius of 9,000 in XZ; outside it the hull takes damage | No XZ limit, as v1 | Phase 3 |
 | D12 | Pointer steering direction (found in Phase 1) | Keep v1: while the pointer is held, the ship turns away from it, as if dragging the view. Pointer right of centre turns left; pointer below centre lifts the nose ([A.3](#a3-v1-behaviours-that-look-accidental)) | Steer toward the pointer, which is what v1's broken M-mode did | Phase 3 |
+| D13 | Points for destroying a player (taken in Phase 3) | 330, doubled over the belt and by the hunter orb, on top of 500 for the hit. v1 paid this only for its bots, so in a players-only room the hunter orb did nothing | No kill points, as v1's PvP | Taken; say if you want the other |
+| D14 | When a shot orb acts (taken in Phase 3) | Half a second after the hit, on a tick the server names, so the shooter's own client applies it at the same moment and is not corrected. v1 applied it at once | At once, accepting a visible correction for the shooter each time | Taken |
+| D15 | The store (taken in Phase 3) | One purchase per Zaphire orb, within 20 s, and nothing sold that would change nothing. v1 left it open until closed and charged for a full hull on a full hull | Open until closed; several purchases | Taken |
+| D16 | Idle players (taken in Phase 3) | Two minutes without a control moving destroys the ship until one moves; five minutes away or idle gives up the seat. An idle ship is worth 500 points a hit to anyone | Never time out, as v1 | Taken |
+| D17 | Points and death (taken in Phase 3) | Points are kept across lives for as long as the seat is held. v1 ended the round at death | Reset at death | Taken; Phase 5's "death = exit" rule would replace it for paid rooms |
+| D18 | Rocks and orbs coming back (taken in Phase 3) | 30 s after being destroyed or taken, in the same orbit or place. v1 never brought a rock back and topped orbs up around the solo player | A different delay; or never, with the room emptying over time | Taken |
+| D19 | Rocks outside the ring (taken in Phase 3) | None. v1 scattered 250 slow drifting rocks around the solo player's spawn point | A fixed scatter of static rocks between the planet and the zone's edge | Taken |
+| D20 | Who gets an orb that is shot (taken in Phase 3) | The owner of the bullet. In v1 any bullet on screen, anyone's, gave the pickup to the local player | n/a: v1's rule cannot be decided by a server | Taken |
 
 Kept from v1 without asking, because they read as intended feel: ring asteroids orbiting at 43 to 218 u/s (faster than the ship), Fenix obtained only by shooting its orb and lasting until death, +500 points per PvP hit.
 

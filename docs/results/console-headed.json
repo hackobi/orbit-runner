@@ -1,11 +1,11 @@
 {
-  "measuredAt": "2026-11-14T01:05:44.733Z",
+  "measuredAt": "2026-11-14T01:52:41.245Z",
   "data": {
     "browser": "Chromium 158.0.8127.18, headed",
     "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3 Ultra, Unspecified Version)",
     "webgl": "WebGL 2.0 (OpenGL ES 3.0 Chromium)",
     "softwareRendering": false,
-    "loadMs": 195,
+    "loadMs": 243,
     "playedSeconds": 30,
     "framesPerSecond": 100,
     "consoleMessages": 0,
