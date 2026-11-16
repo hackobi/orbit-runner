@@ -3,6 +3,7 @@ import { SeekerTracks } from '../../src/net/seekers.ts';
 import { SIM } from '../../src/shared/constants.ts';
 import { NO_PLAYER } from '../../src/shared/protocol.ts';
 import { Rng } from '../../src/shared/rng.ts';
+import { asteroidPosition } from '../../src/shared/sim/belt.ts';
 import { bulletHit, shipHitDistance } from '../../src/shared/sim/bullets.ts';
 import {
   SEEKER_STEP,
@@ -118,25 +119,32 @@ describe('what it locks on to', () => {
     for (let tick = 101; tick <= 160; tick++) seeker = stepSeeker(seeker, null);
     expect(seeker.x).toBeCloseTo(0, 9);
     expect(seeker.z).toBeCloseTo(4000 + SIM.muzzleOffset + SIM.seekerSpeed, 6);
-    expect(seekerExpired(seeker, 399)).toBe(false);
-    expect(seekerExpired(seeker, 400)).toBe(true);
+    expect(seekerExpired(seeker, 100 + SIM.seekerLifeTicks - 1)).toBe(false);
+    expect(seekerExpired(seeker, 100 + SIM.seekerLifeTicks)).toBe(true);
   });
 });
 
 /**
- * A homing shot is launched at a ship 400 units ahead that is flying at top
- * speed on `heading`. The ship turns as hard as it can from the moment the
- * shot is within `breakAt` units. Returns the tick of the hit, or null.
+ * A homing shot is launched at a ship `ahead` units in front that is flying
+ * at top speed on `heading`. The ship turns as hard as it can from the moment
+ * the shot is within `breakAt` units. Returns the tick of the hit, or null.
  */
-function chase(heading: number, breakAt: number): number | null {
+function chase(
+  heading: number,
+  breakAt: number,
+  ahead = 400,
+  flying: Partial<Controls> = {},
+  as: Partial<ShipState> = {},
+): number | null {
   const shooter = shipAt(0, 4000);
-  let target = shipAt(0, 4400, { yaw: heading });
+  let target = shipAt(0, 4000 + ahead, { yaw: heading, ...as });
   let seeker = launchSeeker(1, 0, shooter, [{ id: 2, ship: target }]);
+  expect(seeker.targetId).toBe(2);
   let breaking = false;
   for (let tick = 1; !seekerExpired(seeker, tick); tick++) {
     const gap = Math.hypot(target.x - seeker.x, target.y - seeker.y, target.z - seeker.z);
     breaking ||= gap < breakAt;
-    target = stepShip(target, controls({ yaw: breaking ? 1 : 0 }));
+    target = stepShip(target, controls({ yaw: breaking ? 1 : 0, ...flying }));
     seeker = stepSeeker(seeker, target);
     const path = seekerPath(seeker, tick);
     if (bulletHit(path, tick, target.x, target.y, target.z, shipHitDistance(path)) >= 0) {
@@ -150,34 +158,51 @@ describe('the dodge is a choice with a right moment', () => {
   const AWAY = 0;
   const ACROSS = Math.PI / 2;
   const TOWARD = Math.PI;
-
-  it.each([
+  const HEADINGS = [
     ['flying away', AWAY],
     ['crossing', ACROSS],
     ['head on', TOWARD],
-  ])('a ship that flies straight is hit: %s', (_name, heading) => {
-    expect(chase(heading, 0)).not.toBeNull();
-  });
+  ] as const;
 
-  it.each([
-    ['flying away', AWAY],
-    ['crossing', ACROSS],
-    ['head on', TOWARD],
-  ])('a hard turn with the shot 60 to 120 units off gets inside it: %s', (_name, heading) => {
-    for (const breakAt of [60, 75, 90, 105, 120]) {
-      // Head on, the two close at 200 u/s, so the turn has to start earlier.
-      if (heading === TOWARD && breakAt < 90) continue;
-      expect(chase(heading, breakAt), `turning at ${breakAt}`).toBeNull();
+  it('it catches a ship flying straight away from anywhere it can lock on', () => {
+    for (const ahead of [100, 200, 300, 400, 500, 590]) {
+      expect(chase(AWAY, 0, ahead), `from ${ahead}`).not.toBeNull();
     }
+    expect(SIM.seekerLockRange).toBe(600);
   });
 
-  it('turning at the last moment is too late', () => {
-    expect(chase(AWAY, 30)).not.toBeNull();
-    expect(chase(TOWARD, 30)).not.toBeNull();
+  it('and one flying straight at it, or across its path further out', () => {
+    for (const ahead of [300, 450, 590]) expect(chase(TOWARD, 0, ahead)).not.toBeNull();
+    for (const ahead of [450, 590]) expect(chase(ACROSS, 0, ahead)).not.toBeNull();
   });
 
-  it('it turns in a circle of 117 units, against a ship’s 30', () => {
-    expect(SIM.seekerSpeed / SIM.seekerTurnRate).toBeCloseTo(116.7, 1);
+  it('a ship crossing close in front is past before it can turn', () => {
+    expect(chase(ACROSS, 0, 300)).toBeNull();
+  });
+
+  it.each(HEADINGS)(
+    'a hard turn with the shot 85 to 165 units off escapes it for good: %s',
+    (_name, heading) => {
+      for (const ahead of [250, 400, 580]) {
+        for (let breakAt = 85; breakAt <= 165; breakAt += 10) {
+          expect(chase(heading, breakAt, ahead), `from ${ahead}, turning at ${breakAt}`).toBeNull();
+        }
+      }
+    },
+  );
+
+  it('turning later than that is too late', () => {
+    expect(chase(AWAY, 55)).not.toBeNull();
+    expect(chase(TOWARD, 75)).not.toBeNull();
+  });
+
+  it('the boost button does not outrun it; an orb boost does', () => {
+    expect(chase(AWAY, 0, 200, { boost: true })).not.toBeNull();
+    expect(chase(AWAY, 0, 200, {}, { boostTicks: 400 })).toBeNull();
+  });
+
+  it('it turns in a circle of 150 units, against a ship’s 30', () => {
+    expect(SIM.seekerSpeed / SIM.seekerTurnRate).toBe(150);
     expect(SIM.maxSpeed / SIM.yawRate).toBe(30);
     // A quarter turn takes it a quarter of that circle.
     let seeker = launchSeeker(1, 0, shipAt(0, 4000), [{ id: 2, ship: shipAt(0, 4100) }]);
@@ -256,6 +281,48 @@ describe('through the room', () => {
     expect(target.core.seekerViews()).toEqual([]);
     expect(shooter.core.seekerViews()).toEqual([]);
     expect(shooter.corrections.length).toBe(correctionsBefore);
+  });
+
+  it('a rock in the way stops it, and every client sees the rock go', () => {
+    const world = new TestWorld(43, SIM.asteroidCount, false);
+    const shooter = world.addClient({ controls: (): Controls => IDLE });
+    const other = world.addClient({ controls: (): Controls => IDLE });
+    world.run(600);
+    // The slowest big rock: it barely moves in the few ticks the shot needs.
+    const rocks = world.room.world.belt.asteroids;
+    const speedOf = (id: number): number =>
+      Math.abs(rocks[id]?.anglePerTick ?? 0) * (rocks[id]?.orbitRadius ?? 0);
+    const rockId = [...rocks.keys()]
+      .filter((id) => (rocks[id]?.radius ?? 0) > 6)
+      .reduce((a, b) => (speedOf(a) < speedOf(b) ? a : b));
+    const rock = rocks[rockId];
+    if (!rock) throw new Error('no rock');
+    const at = asteroidPosition(rock, world.room.tick + 4);
+    const scoreBefore = world.room.scoreOf(shooter.core.playerId);
+    // Twenty units short of it, aimed at it, with the charge already full
+    // and the button up: the shot leaves on the next tick.
+    world.place(other.core.playerId, { ...STILL, x: -at.x, y: 300, z: -at.z });
+    world.place(shooter.core.playerId, {
+      ...STILL,
+      x: at.x,
+      y: at.y,
+      z: at.z - rock.radius - 20,
+      yaw: 0,
+      charge: SIM.seekerChargeTicks,
+      crashTicks: 600,
+    });
+    world.run(50);
+    expect(world.room.seekersInFlight).toHaveLength(1);
+    world.run(500);
+
+    expect(world.room.seekersInFlight).toHaveLength(0);
+    expect(world.room.ledger.asteroidGone(rockId, world.room.tick)).toBe(true);
+    expect(world.room.scoreOf(shooter.core.playerId)).toBeGreaterThan(scoreBefore);
+    expect(world.hits).toEqual([]);
+    for (const client of [shooter, other]) {
+      expect(client.core.asteroidGone(rockId, client.core.tick)).toBe(true);
+      expect(client.core.seekerViews()).toEqual([]);
+    }
   });
 
   const IDLE: Controls = { yaw: 0, pitch: 0, throttle: 0, fire: false };

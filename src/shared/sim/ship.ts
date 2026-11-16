@@ -162,6 +162,8 @@ export interface ShipState {
   readonly energy: number;
   /** The boost button drove the ship on this tick. */
   readonly thrusting: boolean;
+  /** The brake button slowed the ship on this tick. */
+  readonly braking: boolean;
 }
 
 /** True while the ship flies above its top speed, by an orb or by the button. */
@@ -232,12 +234,16 @@ export function stepShip(s: ShipState, input: Input): ShipState {
   const orbBoost = s.boostTicks > 0;
   const boostTicks = orbBoost ? s.boostTicks - 1 : 0;
 
-  // The boost and brake buttons (decision D21). Each needs a tick's worth of
-  // energy. An orb's boost is the stronger, so the button adds nothing to it;
-  // boost wins over brake.
-  const canThrust = energyLeft >= SIM.thrustCost;
-  const thrusting = input.boost && !orbBoost && canThrust;
-  const braking = input.brake && !orbBoost && !thrusting && canThrust && s.speed > BRAKE_FLOOR;
+  // The boost and brake buttons (decision D21). Either runs for as long as
+  // there is a tick's worth of energy, but needs a tenth of a tank to start:
+  // held on a dry tank it would otherwise catch one tick in nine. An orb's
+  // boost is the stronger, so the button adds nothing to it; boost wins over
+  // brake.
+  const canThrust = (running: boolean): boolean =>
+    energyLeft >= (running ? SIM.thrustCost : SIM.thrustStartEnergy);
+  const thrusting = input.boost && !orbBoost && canThrust(s.thrusting);
+  const braking =
+    input.brake && !orbBoost && !thrusting && canThrust(s.braking) && s.speed > BRAKE_FLOOR;
   const energy =
     thrusting || braking
       ? energyLeft - SIM.thrustCost
@@ -306,6 +312,7 @@ export function stepShip(s: ShipState, input: Input): ShipState {
     seekerCooldown,
     energy,
     thrusting,
+    braking,
   };
   // The planet is at the origin and kills on contact (main.js:9620-9624).
   return x * x + y * y + z * z < KILL_RADIUS_SQ ? destroyed(moved) : moved;
@@ -334,6 +341,7 @@ function destroyed(s: ShipState): ShipState {
     seekerCooldown: 0,
     energy: 0,
     thrusting: false,
+    braking: false,
   };
 }
 
@@ -402,6 +410,7 @@ export function spawnShip(rng: Rng, spawnSeq: number): ShipState {
     seekerCooldown: 0,
     energy: SIM.maxEnergy,
     thrusting: false,
+    braking: false,
   };
 }
 
@@ -433,6 +442,7 @@ export function shipStatesEqual(a: ShipState, b: ShipState): boolean {
     a.charge === b.charge &&
     a.seekerCooldown === b.seekerCooldown &&
     a.energy === b.energy &&
-    a.thrusting === b.thrusting
+    a.thrusting === b.thrusting &&
+    a.braking === b.braking
   );
 }

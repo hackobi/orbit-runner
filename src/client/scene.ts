@@ -73,6 +73,9 @@ const MAX_PARTICLES = 1400;
 const EXHAUST_COLOR = 0x66ccff;
 const EXHAUST_BASE_RATE = 50;
 const EXHAUST_RATE_PER_SPEED = 4;
+/** Other ships leave a trail too, so that where one is heading can be read. v1 drew none. */
+const REMOTE_EXHAUST_RATE = 45; // puffs a second, doubled under boost
+const REMOTE_EXHAUST_COLOR = 0xffb070;
 /** Camera shake dies away at 6 units a second (main.js:8865). */
 const SHAKE_DECAY = 6;
 const SHAKE_MAX = 2.5;
@@ -556,7 +559,7 @@ export class GameScene {
       this.drawRocks(world);
       this.drawOrbs(world);
     }
-    this.drawRemotes(remotes);
+    this.drawRemotes(remotes, elapsedSeconds);
     this.drawBullets(bullets, ownId);
     this.drawSparks(effectSeconds);
 
@@ -790,7 +793,7 @@ export class GameScene {
     wormholes.instanceMatrix.needsUpdate = true;
   }
 
-  private drawRemotes(remotes: readonly RemoteView[]): void {
+  private drawRemotes(remotes: readonly RemoteView[], elapsedSeconds: number): void {
     const seen = new Set<number>();
     for (const remote of remotes) {
       seen.add(remote.id);
@@ -810,6 +813,24 @@ export class GameScene {
         this.euler.set(remote.pitch, remote.yaw, remote.roll, 'YXZ');
         mesh.quaternion.setFromEuler(this.euler);
         mesh.position.set(remote.x, remote.y, remote.z);
+        // Its trail: puffs left where its tail was, which the ship flies away from.
+        const rate = REMOTE_EXHAUST_RATE * (remote.boosting ? 2 : 1) * elapsedSeconds;
+        const puffs = Math.floor(rate + Math.random());
+        this.direction.set(0, 0, -2.4 * REMOTE_SHIP_SCALE).applyQuaternion(mesh.quaternion);
+        for (let i = 0; i < puffs; i++) {
+          const jitter = (): number => (Math.random() * 2 - 1) * 0.5;
+          this.particles.emit(
+            remote.x + this.direction.x + jitter(),
+            remote.y + this.direction.y + jitter(),
+            remote.z + this.direction.z + jitter(),
+            jitter(),
+            jitter(),
+            jitter(),
+            0.7 + Math.random() * 0.3,
+            0.3 * (0.6 + Math.random() * 0.5),
+            REMOTE_EXHAUST_COLOR,
+          );
+        }
       }
     }
     for (const [id, model] of this.remoteShips) {

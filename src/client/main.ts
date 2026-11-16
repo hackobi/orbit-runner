@@ -3,6 +3,7 @@ import { WebSocketTransport } from '../net/wsTransport.ts';
 import { SIM } from '../shared/constants.ts';
 import { REJECT_IDLE, REJECT_VERSION } from '../shared/protocol.ts';
 import type { GameEvent } from '../shared/protocol.ts';
+import type { BulletView } from '../net/client.ts';
 import { createDebugRecorder } from './debugHook.ts';
 import { InputDevices } from './input.ts';
 import { loadSettings, saveSettings } from './settings.ts';
@@ -290,11 +291,12 @@ function frame(nowMs: number): void {
   const view = core.view();
   const remotes = view ? core.remoteViews() : [];
   if (view) {
-    const bullets = core.bulletViews();
-    // Homing shots are drawn with the bullets, as one more kind of shot.
-    for (const seeker of core.seekerViews()) {
-      bullets.push({ ...seeker, spawnTick: 0, shot: 'seeker' });
-    }
+    // Homing shots are drawn with the bullets, as one more kind of shot, and
+    // come first: if there are ever too many to draw, they are not the ones left out.
+    const bullets: BulletView[] = core
+      .seekerViews()
+      .map((seeker) => ({ ...seeker, spawnTick: 0, shot: 'seeker' }));
+    bullets.push(...core.bulletViews());
     const world = core.world ? { world: core.world, tick: core.drawTick, state: core } : null;
     if (view.alive) nearMiss(nowMs, view.x, view.y, view.z);
     scene.render(view, remotes, bullets, core.playerId, elapsedMs / 1000, world);

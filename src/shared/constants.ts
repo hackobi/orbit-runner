@@ -31,6 +31,7 @@ export const SIM = {
   maxEnergy: 6000,
   energyRegen: 5, // a tick: empty to full in 20 s
   thrustCost: 40, // a tick of boost or brake: a full tank lasts 2.5 s
+  thrustStartEnergy: 600, // a tenth of a tank to start either, so a dry tank does not stutter
   thrustBoostMultiplier: 2, // the boost button: 120 u/s, under an orb boost's 185
   brakeRate: 88, // units/s² off the target speed, four times the throttle's
   shieldOrbEnergy: 1500, // a quarter of a tank
@@ -128,17 +129,17 @@ export const SIM = {
 
   // Homing shot (decision D23). Charged by holding its button, paid for in
   // energy, and steered by the server toward one ship. It turns in a circle
-  // of radius speed / turn rate, about 117 units against a ship's 30, so a
+  // of radius speed / turn rate, 150 units against a ship's 30, so a
   // hard turn close in gets inside it.
   seekerChargeTicks: 60, // 1 s held before it can be released
   seekerCost: 2400, // energy: two fifths of a tank
   seekerCooldownTicks: 300, // as long as it flies, so a ship has one out at a time
-  seekerSpeed: 140, // units/s: over the boost button's 120, under an orb boost's 185
+  seekerSpeed: 180, // units/s: over the boost button's 120, just under an orb boost's 185
   seekerTurnRate: 1.2, // rad/s
-  seekerLifeTicks: 300, // 5 s, 700 units
+  seekerLifeTicks: 300, // 5 s: it gains 120 u/s on a ship at top speed, so 600 units
   seekerRadius: 0.8,
   seekerDamage: 40,
-  seekerLockRange: 1500,
+  seekerLockRange: 600, // no further than it can catch a ship flying straight away
   seekerLockAngle: 0.5, // rad either side of the nose
 
   // Lag compensation (decision D2)

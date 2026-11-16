@@ -21,7 +21,7 @@ import type { StoreItem } from './scoring.ts';
 import { inputFromWire } from './sim/ship.ts';
 import type { Input, ShipState, ShotKind } from './sim/ship.ts';
 
-export const PROTOCOL_VERSION = 10;
+export const PROTOCOL_VERSION = 11;
 
 /** Inputs carried per message: the tick's own plus the ones before it. */
 export const INPUT_REDUNDANCY = 3;
@@ -393,7 +393,7 @@ class Reader {
 // --- Own ship, full precision -----------------------------------------------
 
 export const SHIP_STATE_BYTES =
-  8 * 8 + 2 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 2 + 2 + 1;
+  8 * 8 + 2 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 2 + 2 + 1 + 1;
 
 function writeShip(w: Writer, s: ShipState): void {
   w.f64(s.x);
@@ -422,6 +422,7 @@ function writeShip(w: Writer, s: ShipState): void {
   w.u16(s.seekerCooldown);
   w.u16(s.energy);
   w.u8(s.thrusting ? 1 : 0);
+  w.u8(s.braking ? 1 : 0);
 }
 
 function readShip(r: Reader): ShipState {
@@ -452,6 +453,7 @@ function readShip(r: Reader): ShipState {
     seekerCooldown: r.u16(),
     energy: r.u16(),
     thrusting: r.u8() === 1,
+    braking: r.u8() === 1,
   };
 }
 

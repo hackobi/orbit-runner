@@ -155,6 +155,22 @@ describe('energy, boost and brake (decision D21)', () => {
     expect(stepShip(empty, brake).targetSpeed).toBe(60);
   });
 
+  it('held on a dry tank, boost waits for a tenth of a tank instead of stuttering', () => {
+    let ship = fresh({ energy: 0, speed: 60, targetSpeed: 60 });
+    let starts = 0;
+    let boosted = 0;
+    for (let tick = 0; tick < 600; tick++) {
+      const next = stepShip(ship, boost);
+      if (next.thrusting && !ship.thrusting) starts++;
+      if (next.thrusting) boosted++;
+      ship = next;
+    }
+    // 10 s: it fills for 2 s, burns for a quarter of a second, and again.
+    expect(starts).toBeLessThanOrEqual(5);
+    expect(boosted / starts).toBeGreaterThan(12);
+    expect(SIM.thrustStartEnergy).toBe(600);
+  });
+
   it('a destroyed ship has no energy and respawns full', () => {
     const dead = run(fresh({ x: 0, y: 0, z: 1225, yaw: Math.PI }), NEUTRAL_INPUT, 30);
     expect(dead.alive).toBe(false);
@@ -249,7 +265,7 @@ describe('determinism', () => {
     // If this fails on another CPU with no change to the simulation, the
     // simulation is not portable and prediction will not match the server.
     // If the simulation or a constant changed on purpose, update the number.
-    expect(runTrace(20261113, 10_000).hash).toBe(2128846202);
+    expect(runTrace(20261113, 10_000).hash).toBe(3638788936);
   });
 
   it('never fuses a multiply and an add, even in optimised code', () => {
