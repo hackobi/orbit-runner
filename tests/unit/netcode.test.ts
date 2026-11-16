@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { wanderer } from '../../src/net/behaviours.ts';
-import { TICK_MS } from '../../src/shared/constants.ts';
+import { SIM, TICK_MS } from '../../src/shared/constants.ts';
 import { decodeClientMessage } from '../../src/shared/protocol.ts';
 import { shipStatesEqual } from '../../src/shared/sim/ship.ts';
 import type { ShipView } from '../../src/net/client.ts';
@@ -57,6 +57,50 @@ describe('prediction on a clean link', () => {
     expect(late).toEqual([]);
     expect(expectPredictionMatchesTruth(world, client)).toBeGreaterThan(400);
   });
+});
+
+describe('boost and brake are predicted (decision D21)', () => {
+  /** Boost on two thirds of a tank, brake on the rest, coast while it fills, and again. */
+  const thruster = (tick: number): Controls => {
+    const phase = tick % 1500;
+    return {
+      yaw: phase < 750 ? 0.4 : -0.4,
+      pitch: 0,
+      throttle: phase < 100 ? 1 : 0,
+      fire: false,
+      boost: phase < 100,
+      brake: phase >= 100 && phase < 200,
+    };
+  };
+
+  it.each([
+    ['a clean link', 0, 0],
+    ['100 ms ± 20 ms round trip', 50, 10],
+  ])(
+    '%s: zero corrections, and the energy the server holds is the energy predicted',
+    (_name, oneWayMs, jitterMs) => {
+      const world = new TestWorld(17);
+      const client = world.addClient(
+        oneWayMs
+          ? {
+              controls: thruster,
+              link: { up: delay(oneWayMs, jitterMs, 31), down: delay(oneWayMs, jitterMs, 32) },
+            }
+          : { controls: thruster },
+      );
+      world.run(WARM_UP_MS);
+      world.run(60_000);
+
+      expect(client.corrections.filter((c) => c.timeMs > WARM_UP_MS)).toEqual([]);
+      expect(expectPredictionMatchesTruth(world, client)).toBeGreaterThan(400);
+      // The buttons really did something: the ship flew above top speed, spent
+      // most of the tank and braked to a crawl.
+      const truth = [...(world.truth.get(client.core.playerId)?.values() ?? [])];
+      expect(Math.max(...truth.map((s) => s.speed))).toBeGreaterThan(110);
+      expect(Math.min(...truth.map((s) => s.energy))).toBeLessThan(SIM.maxEnergy / 4);
+      expect(truth.some((s) => s.alive && s.speed < 10)).toBe(true);
+    },
+  );
 });
 
 describe('prediction with latency and jitter', () => {

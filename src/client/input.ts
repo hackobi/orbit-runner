@@ -2,14 +2,16 @@
 // axes and a throttle, clamped to ±1, so no device turns faster than another.
 //
 // Keys are v1's (main.js:6256-6264): A / D or the arrows turn, I / K or the
-// arrows pitch, W / S change speed, Space fires. The mouse control is v1's
+// arrows pitch, W / S change speed, Space fires. New in v2: Shift boosts
+// and X brakes (decision D21). The mouse control is v1's
 // too (main.js:8762-8763): hold the button down and the pointer's position
 // steers, at up to 0.6 of the full rate. v1 added keys and pointer together
 // to as much as 1.6; here the sum is clamped.
 //
 // Touch: a stick appears under the first finger put down on the left of the
 // screen; fire and speed are buttons on the right. Each control follows one
-// finger by its pointer id, so they work together.
+// finger by its pointer id, so they work together. The speed buttons carry
+// boost and brake too: ▲ held at top speed boosts, and ▼ brakes.
 
 import type { Controls } from '../shared/sim/ship.ts';
 import type { Settings } from './settings.ts';
@@ -204,8 +206,11 @@ export class InputDevices {
     if (matchMedia('(pointer: coarse)').matches) this.touchLayer.hidden = false;
   }
 
-  /** The controls as they stand right now. */
-  read(): Controls {
+  /**
+   * The controls as they stand right now. `atTopSpeed` says the ship's
+   * throttle is fully open, which is when a held ▲ becomes the boost.
+   */
+  read(atTopSpeed = false): Controls {
     const key = (code: string): number => (this.held.has(code) ? 1 : 0);
     const left = key('ArrowLeft') + key('KeyA') > 0 ? 1 : 0;
     const right = key('ArrowRight') + key('KeyD') > 0 ? 1 : 0;
@@ -222,6 +227,11 @@ export class InputDevices {
       pitch: clampAxis(this.settings.invertPitch ? -pitch : pitch),
       throttle: key('KeyW') - key('KeyS') + (this.faster.down ? 1 : 0) - (this.slower.down ? 1 : 0),
       fire: this.held.has('Space') || this.fire.down,
+      boost:
+        this.held.has('ShiftLeft') ||
+        this.held.has('ShiftRight') ||
+        (this.faster.down && atTopSpeed),
+      brake: this.held.has('KeyX') || this.slower.down,
     };
   }
 
@@ -292,5 +302,8 @@ const KEYS = new Set([
   'KeyS',
   'KeyI',
   'KeyK',
+  'KeyX',
+  'ShiftLeft',
+  'ShiftRight',
   'Space',
 ]);

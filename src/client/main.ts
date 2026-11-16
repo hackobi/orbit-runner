@@ -1,5 +1,6 @@
 import { Session } from '../net/session.ts';
 import { WebSocketTransport } from '../net/wsTransport.ts';
+import { SIM } from '../shared/constants.ts';
 import { REJECT_IDLE, REJECT_VERSION } from '../shared/protocol.ts';
 import type { GameEvent } from '../shared/protocol.ts';
 import { createDebugRecorder } from './debugHook.ts';
@@ -134,12 +135,18 @@ const updates = window.orbitApp
   ? { ready: false, apply: (): void => undefined }
   : watchForUpdates();
 
+/** True once the ship's throttle is fully open: from there a held ▲ is the boost. */
+function throttleOpen(): boolean {
+  const ship = session.core.state;
+  return !!ship && ship.targetSpeed >= (ship.fenix ? SIM.fenixMaxSpeed : SIM.maxSpeed);
+}
+
 const session: Session = new Session({
   connect: () => new WebSocketTransport(new WebSocket(socketUrl())),
   sessionToken: keptToken(),
   onSessionToken: keepToken,
   now: () => performance.now(),
-  controls: (tick) => recorder?.controls(tick, session.core) ?? devices.read(),
+  controls: (tick) => recorder?.controls(tick, session.core) ?? devices.read(throttleOpen()),
   onGameEvent,
   // This player's own shots flash the moment they meet a ship on this screen.
   onViewHit: (hit) => {

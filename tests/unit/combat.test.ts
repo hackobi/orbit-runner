@@ -9,7 +9,12 @@ import {
   encodeInput,
 } from '../../src/shared/protocol.ts';
 import { Rng } from '../../src/shared/rng.ts';
-import { inputFromWire, maxSpeedOf, shipStatesEqual } from '../../src/shared/sim/ship.ts';
+import {
+  inputFromWire,
+  isBoosting,
+  maxSpeedOf,
+  shipStatesEqual,
+} from '../../src/shared/sim/ship.ts';
 import type { Controls, ShipState } from '../../src/shared/sim/ship.ts';
 import type { ClientCore } from '../../src/net/client.ts';
 import { AWAY_GRACE_TICKS, SEAT_TICKS } from '../../src/server/room.ts';
@@ -62,7 +67,7 @@ function crossingShot(aimDelayTicks: number, claimedViewDelay: number): TestWorl
 
   world.clock.every(TICK_MS, () => {
     const tick = world.room.tick + 3;
-    const input = inputFromWire(0, 0, 0, tick === fireTick, 0);
+    const input = inputFromWire(0, 0, 0, tick === fireTick, false, false, 0);
     if (!input) throw new Error('bad input');
     const bytes = Uint8Array.from(encodeInput(tick, [input]));
     // Write the claimed view delay straight into the message, so a claim
@@ -196,7 +201,7 @@ describe('two players', () => {
           const truth = world.truthAt(view.id, view.viewTick);
           if (truth) errors.push(distance(view, truth));
           if (previous && previous.spawnSeq === view.spawnSeq && truth) {
-            const limit = Math.max(maxSpeedOf(truth.boostTicks > 0), truth.speed);
+            const limit = Math.max(maxSpeedOf(isBoosting(truth)), truth.speed);
             worstSnap = Math.max(
               worstSnap,
               snapExcess(

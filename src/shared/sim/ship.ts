@@ -24,6 +24,10 @@ export interface Input {
   readonly pitch: number;
   readonly throttle: -1 | 0 | 1;
   readonly fire: boolean;
+  /** Held: fly faster than top speed while the energy lasts. */
+  readonly boost: boolean;
+  /** Held: shed speed fast while the energy lasts. */
+  readonly brake: boolean;
   /**
    * How far behind this tick the player was seeing the other ships, in
    * sixteenths of a tick. The server rewinds targets by this much when it
@@ -42,6 +46,8 @@ export interface Controls {
   pitch: number;
   throttle: number;
   fire: boolean;
+  boost?: boolean;
+  brake?: boolean;
 }
 
 /**
@@ -54,13 +60,23 @@ export function inputFromWire(
   pitch: number,
   throttle: number,
   fire: boolean,
+  boost: boolean,
+  brake: boolean,
   viewDelay: number,
 ): Input | null {
   if (!Number.isInteger(yaw) || yaw < -AXIS_MAX || yaw > AXIS_MAX) return null;
   if (!Number.isInteger(pitch) || pitch < -AXIS_MAX || pitch > AXIS_MAX) return null;
   if (throttle !== -1 && throttle !== 0 && throttle !== 1) return null;
   if (!Number.isInteger(viewDelay) || viewDelay < 0) return null;
-  return { yaw, pitch, throttle, fire, viewDelay: Math.min(viewDelay, MAX_VIEW_DELAY) } as Input;
+  return {
+    yaw,
+    pitch,
+    throttle,
+    fire,
+    boost,
+    brake,
+    viewDelay: Math.min(viewDelay, MAX_VIEW_DELAY),
+  } as Input;
 }
 
 function quantiseAxis(value: number): number {
@@ -77,6 +93,8 @@ export function quantiseControls(controls: Controls, viewDelayTicks = 0): Input 
     pitch: quantiseAxis(controls.pitch),
     throttle,
     fire: controls.fire,
+    boost: controls.boost === true,
+    brake: controls.brake === true,
     viewDelay: Math.round(clamp(delay, 0, SIM.maxViewDelayTicks) * VIEW_DELAY_STEPS_PER_TICK),
   } as Input;
 }
@@ -116,7 +134,14 @@ export interface ShipState {
    * takes half from a crash. It lasts until the ship is destroyed.
    */
   readonly fenix: boolean;
+  /** 0 to SIM.maxEnergy. Fills by itself; the boost and brake buttons spend it. */
+  readonly energy: number;
+  /** The boost button drove the ship on this tick. */
+  readonly thrusting: boolean;
 }
+
+/** True while the ship flies above its top speed, by an orb or by the button. */
+export const isBoosting = (s: ShipState): boolean => s.boostTicks > 0 || s.thrusting;
 
 export const SPAWN_SEQ_MODULO = 256;
 
@@ -128,6 +153,9 @@ const SPEED_FOLLOW = Math.min(1, SIM.speedFollow * TICK_DT);
 const SPEED_FOLLOW_BOOST = Math.min(1, SIM.speedFollowBoost * TICK_DT);
 const BANK_FOLLOW = Math.min(1, SIM.bankFollow * TICK_DT);
 const THROTTLE_STEP = SIM.throttleRate * TICK_DT;
+const BRAKE_STEP = SIM.brakeRate * TICK_DT;
+/** Braking costs nothing once the ship is this close to its lowest speed. */
+const BRAKE_FLOOR = SIM.minSpeed + 1;
 const YAW_STEP = SIM.yawRate * TICK_DT;
 const PITCH_STEP = SIM.pitchRate * TICK_DT;
 
@@ -151,19 +179,38 @@ export function stepShip(s: ShipState, input: Input): ShipState {
   const crashTicks = s.crashTicks > 0 ? s.crashTicks - 1 : 0;
 
   // Boost timer (main.js:8690).
-  const boosting = s.boostTicks > 0;
-  const boostTicks = boosting ? s.boostTicks - 1 : 0;
+  const orbBoost = s.boostTicks > 0;
+  const boostTicks = orbBoost ? s.boostTicks - 1 : 0;
+
+  // The boost and brake buttons (decision D21). Each needs a tick's worth of
+  // energy. An orb's boost is the stronger, so the button adds nothing to it;
+  // boost wins over brake.
+  const canThrust = s.energy >= SIM.thrustCost;
+  const thrusting = input.boost && !orbBoost && canThrust;
+  const braking = input.brake && !orbBoost && !thrusting && canThrust && s.speed > BRAKE_FLOOR;
+  const energy =
+    thrusting || braking
+      ? s.energy - SIM.thrustCost
+      : Math.min(SIM.maxEnergy, s.energy + SIM.energyRegen);
+  const boosting = orbBoost || thrusting;
 
   // Target speed (main.js:8697-8721).
-  const maxSpeed = maxSpeedOf(boosting, s.fenix);
+  const topSpeed = s.fenix ? SIM.fenixMaxSpeed : SIM.maxSpeed;
+  const maxSpeed = orbBoost
+    ? topSpeed * SIM.boostMultiplier
+    : thrusting
+      ? topSpeed * SIM.thrustBoostMultiplier
+      : topSpeed;
   let targetSpeed = s.targetSpeed;
   if (!boosting) targetSpeed = Math.min(targetSpeed, maxSpeed);
   if (input.throttle > 0) targetSpeed = Math.min(maxSpeed, targetSpeed + THROTTLE_STEP);
   if (input.throttle < 0) targetSpeed = Math.max(SIM.minSpeed, targetSpeed - THROTTLE_STEP);
+  if (braking) targetSpeed = Math.max(SIM.minSpeed, targetSpeed - BRAKE_STEP);
   if (boosting) targetSpeed = maxSpeed;
 
-  // Speed follows the target (main.js:8723).
-  const speed = s.speed + (targetSpeed - s.speed) * (boosting ? SPEED_FOLLOW_BOOST : SPEED_FOLLOW);
+  // Speed follows the target (main.js:8723), faster under boost or brake.
+  const speed =
+    s.speed + (targetSpeed - s.speed) * (boosting || braking ? SPEED_FOLLOW_BOOST : SPEED_FOLLOW);
 
   // Turning (main.js:8769-8774).
   const yawAxis = input.yaw / AXIS_MAX;
@@ -201,6 +248,8 @@ export function stepShip(s: ShipState, input: Input): ShipState {
     fireCooldown,
     crashTicks,
     fenix: s.fenix,
+    energy,
+    thrusting,
   };
   // The planet is at the origin and kills on contact (main.js:9620-9624).
   return x * x + y * y + z * z < KILL_RADIUS_SQ ? destroyed(moved) : moved;
@@ -221,6 +270,8 @@ function destroyed(s: ShipState): ShipState {
     fireCooldown: 0,
     crashTicks: 0,
     fenix: false,
+    energy: 0,
+    thrusting: false,
   };
 }
 
@@ -273,6 +324,8 @@ export function spawnShip(rng: Rng, spawnSeq: number): ShipState {
     fireCooldown: 0,
     crashTicks: 0,
     fenix: false,
+    energy: SIM.maxEnergy,
+    thrusting: false,
   };
 }
 
@@ -296,6 +349,8 @@ export function shipStatesEqual(a: ShipState, b: ShipState): boolean {
     a.invulnTicks === b.invulnTicks &&
     a.fireCooldown === b.fireCooldown &&
     a.crashTicks === b.crashTicks &&
-    a.fenix === b.fenix
+    a.fenix === b.fenix &&
+    a.energy === b.energy &&
+    a.thrusting === b.thrusting
   );
 }

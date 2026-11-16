@@ -102,6 +102,8 @@ export class Hud {
   private readonly hull = element('hull', HTMLSpanElement);
   private readonly shieldFill = element('shield-fill', HTMLDivElement);
   private readonly shield = element('shield', HTMLSpanElement);
+  private readonly energyFill = element('energy-fill', HTMLDivElement);
+  private readonly energy = element('energy', HTMLSpanElement);
   private readonly speed = element('speed', HTMLDivElement);
   private readonly points = element('points', HTMLDivElement);
   private readonly kills = element('kills', HTMLDivElement);
@@ -147,7 +149,7 @@ export class Hud {
     this.scoreboardOn = !touch;
     if (!touch) {
       this.help.textContent =
-        'A / D turn · I / K pitch · W / S speed · Space fire · 1 2 3 store · P players';
+        'A / D turn · I / K pitch · W / S speed · Shift boost · X brake · Space fire · 1 2 3 store · P players';
     }
     window.addEventListener('keydown', (event) => {
       if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
@@ -195,6 +197,9 @@ export class Hud {
     shown.text(this.hull, `Hull ${view.hp}`);
     shown.style(this.shieldFill, 'width', `${(view.shield / SIM.maxShield) * 100}%`);
     shown.text(this.shield, `Shield ${view.shield}`);
+    const energy = Math.round((view.energy / SIM.maxEnergy) * 100);
+    shown.style(this.energyFill, 'width', `${energy}%`);
+    shown.text(this.energy, `Energy ${energy}`);
     shown.text(
       this.speed,
       `${Math.round(view.speed)} u/s${view.boosting ? '  BOOST' : ''}${view.fenix ? '  FENIX' : ''}`,

@@ -21,7 +21,7 @@ import type { StoreItem } from './scoring.ts';
 import { inputFromWire } from './sim/ship.ts';
 import type { Input, ShipState } from './sim/ship.ts';
 
-export const PROTOCOL_VERSION = 6;
+export const PROTOCOL_VERSION = 7;
 
 /** Inputs carried per message: the tick's own plus the ones before it. */
 export const INPUT_REDUNDANCY = 3;
@@ -378,7 +378,7 @@ class Reader {
 
 // --- Own ship, full precision -----------------------------------------------
 
-export const SHIP_STATE_BYTES = 8 * 8 + 2 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1;
+export const SHIP_STATE_BYTES = 8 * 8 + 2 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 2 + 1;
 
 function writeShip(w: Writer, s: ShipState): void {
   w.f64(s.x);
@@ -399,6 +399,8 @@ function writeShip(w: Writer, s: ShipState): void {
   w.u8(s.fireCooldown);
   w.u8(s.crashTicks);
   w.u8(s.fenix ? 1 : 0);
+  w.u16(s.energy);
+  w.u8(s.thrusting ? 1 : 0);
 }
 
 function readShip(r: Reader): ShipState {
@@ -421,6 +423,8 @@ function readShip(r: Reader): ShipState {
     fireCooldown: r.u8(),
     crashTicks: r.u8(),
     fenix: r.u8() === 1,
+    energy: r.u16(),
+    thrusting: r.u8() === 1,
   };
 }
 
@@ -521,8 +525,12 @@ export function encodeHello(message: Omit<HelloMessage, 'type'>): Uint8Array {
 }
 
 const BUTTON_FIRE = 4;
+const BUTTON_BOOST = 8;
+const BUTTON_BRAKE = 16;
+const BUTTONS_MAX = 3 | BUTTON_FIRE | BUTTON_BOOST | BUTTON_BRAKE;
 
-// One byte of buttons: throttle −1, 0, +1 as 0, 1, 2 in the low bits, then fire.
+// One byte of buttons: throttle −1, 0, +1 as 0, 1, 2 in the low bits, then
+// fire, boost and brake.
 export function encodeInput(tick: number, inputs: readonly Input[]): Uint8Array {
   const count = Math.min(inputs.length, INPUT_REDUNDANCY);
   const w = new Writer(1 + 4 + 1 + count * 5);
@@ -534,7 +542,12 @@ export function encodeInput(tick: number, inputs: readonly Input[]): Uint8Array 
     if (!input) break;
     w.i8(input.yaw);
     w.i8(input.pitch);
-    w.u8((input.throttle + 1) | (input.fire ? BUTTON_FIRE : 0));
+    w.u8(
+      (input.throttle + 1) |
+        (input.fire ? BUTTON_FIRE : 0) |
+        (input.boost ? BUTTON_BOOST : 0) |
+        (input.brake ? BUTTON_BRAKE : 0),
+    );
     w.u16(input.viewDelay);
   }
   return w.finish();
@@ -579,12 +592,14 @@ export function decodeClientMessage(data: Uint8Array): ClientMessage | null {
         const yaw = r.i8();
         const pitch = r.i8();
         const buttons = r.u8();
-        if (buttons > (BUTTON_FIRE | 3)) return null;
+        if (buttons > BUTTONS_MAX) return null;
         const input = inputFromWire(
           yaw,
           pitch,
           (buttons & 3) - 1,
           (buttons & BUTTON_FIRE) !== 0,
+          (buttons & BUTTON_BOOST) !== 0,
+          (buttons & BUTTON_BRAKE) !== 0,
           r.u16(),
         );
         if (!input) return null;

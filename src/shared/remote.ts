@@ -5,6 +5,7 @@
 // and "the server says it was a hit" the same question.
 
 import { PI, TWO_PI } from './math.ts';
+import { isBoosting } from './sim/ship.ts';
 import type { ShipState } from './sim/ship.ts';
 
 /** One ship at one snapshot tick, already rounded to what the wire can carry. */
@@ -55,7 +56,7 @@ export function sampleOf(tick: number, ship: ShipState): RemoteSample {
     shield: ship.shield,
     spawnSeq: ship.spawnSeq,
     alive: ship.alive,
-    boosting: ship.boostTicks > 0,
+    boosting: isBoosting(ship),
     invulnerable: ship.invulnTicks > 0,
     fenix: ship.fenix,
     full: true,

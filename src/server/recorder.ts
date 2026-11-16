@@ -2,7 +2,7 @@
 // on every tick, and every hit and death it decided. The end-to-end tests
 // compare what browsers drew against this.
 
-import { maxSpeedOf } from '../shared/sim/ship.ts';
+import { isBoosting, maxSpeedOf } from '../shared/sim/ship.ts';
 import type { DeathRecord, HitRecord, Room, RoomListener } from './room.ts';
 
 /** One ship on one tick: x, y, z, speed, top speed in its state, alive (1 or 0), spawn number. */
@@ -44,7 +44,7 @@ export class Recorder {
         ship.y,
         ship.z,
         ship.speed,
-        maxSpeedOf(ship.boostTicks > 0),
+        maxSpeedOf(isBoosting(ship)),
         ship.alive ? 1 : 0,
         ship.spawnSeq,
       ];

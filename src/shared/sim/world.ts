@@ -93,7 +93,11 @@ export function applyOrb(ship: ShipState, orbId: number, tick: number, world: Wo
   if (!orb || !ship.alive) return ship;
   switch (orb.kind) {
     case 'shield': // main.js:9099
-      return { ...ship, shield: Math.min(SIM.maxShield, ship.shield + SIM.shieldOrbGain) };
+      return {
+        ...ship,
+        shield: Math.min(SIM.maxShield, ship.shield + SIM.shieldOrbGain),
+        energy: Math.min(SIM.maxEnergy, ship.energy + SIM.shieldOrbEnergy),
+      };
     case 'boost': // main.js:9331. A second boost replaces the first.
       return { ...ship, boostTicks: boostTicksFrom(world.seed, orbId, tick) };
     case 'fenix': // main.js:5095-5106. Nothing for a ship that is one already.

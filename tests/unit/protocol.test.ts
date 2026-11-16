@@ -60,13 +60,15 @@ describe('client messages', () => {
     });
   });
 
-  it('input round-trips with its redundant copies, fire and view delay', () => {
+  it('input round-trips with its redundant copies, buttons and view delay', () => {
     const inputs = [
       quantiseControls({ yaw: 1, pitch: -1, throttle: 1, fire: true }, 14.25),
-      quantiseControls({ yaw: -0.3, pitch: 0.2, throttle: -1, fire: false }, 3),
-      neutral,
+      quantiseControls({ yaw: -0.3, pitch: 0.2, throttle: -1, fire: false, boost: true }, 3),
+      quantiseControls({ yaw: 0, pitch: 0, throttle: 0, fire: false, brake: true }),
     ];
-    expect(inputs[0]).toMatchObject({ fire: true, viewDelay: 228 });
+    expect(inputs[0]).toMatchObject({ fire: true, boost: false, brake: false, viewDelay: 228 });
+    expect(inputs[1]).toMatchObject({ boost: true, brake: false });
+    expect(inputs[2]).toMatchObject({ boost: false, brake: true });
     const decoded = decodeClientMessage(encodeInput(4_000_000_000, inputs));
     expect(decoded).toEqual({ type: 'input', tick: 4_000_000_000, inputs });
   });
@@ -226,8 +228,8 @@ describe('server messages', () => {
     expect(none?.type === 'snapshot' && Number.isNaN(none.inputLead)).toBe(true);
   });
 
-  it('a snapshot is 99 bytes plus 21 per nearby ship', () => {
-    expect(SNAPSHOT_HEADER_BYTES).toBe(99);
+  it('a snapshot is 102 bytes plus 21 per nearby ship', () => {
+    expect(SNAPSHOT_HEADER_BYTES).toBe(102);
     expect(NEAR_ENTRY_BYTES).toBe(21);
     expect(FAR_ENTRY_BYTES).toBe(13);
   });

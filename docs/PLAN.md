@@ -11,9 +11,10 @@ This file is the running checkpoint. A new session should read it first, then `d
 | 2. Multiplayer | **Done 2026-11-13, approved 2026-11-14.** Every acceptance check passes; numbers below | STOP, with measured numbers |
 | 3. Content and mobile | **Built and tested 2026-11-14, except what needs a real phone.** The device checklist (`docs/DEVICE-TESTING.md`) and the LAN HTTPS server are waiting for the user | |
 | 4. Mac app | **Built and tested 2026-11-14 on this Mac.** Other Macs and a 120 Hz display: UNVERIFIED | |
+| Dogfight feel (user request, 2026-11-15) | **In progress on branch `feature/dogfight`.** Energy, boost and brake are built; tasks in [Dogfight feel](#dogfight-feel-before-phase-5) | The user approves before it is merged to `feature/v2-rebuild`, which deploys |
 | 5. Demos integration | Not started. Direction from the user recorded under Phase 5 (reuse v1's payment flow; King of the Hill) | Separate approval, and a payment proposal first |
 
-**Next action:** wait for the user. Phases 1 to 4 are built. Phase 5 (Demos) needs separate approval and starts with a written payment proposal, not code. Open items that need the user: `npm run dev:lan` (it changes the Mac's keychain) and the phone checklist in `docs/DEVICE-TESTING.md`; opening the Mac app themselves.
+**Next action:** continue [Dogfight feel](#dogfight-feel-before-phase-5) at its first task not marked Done. Phases 1 to 4 are built. Phase 5 (Demos) needs separate approval and starts with a written payment proposal, not code. Open items that need the user: `npm run dev:lan` (it changes the Mac's keychain) and the phone checklist in `docs/DEVICE-TESTING.md`; opening the Mac app themselves.
 
 ## How to run it
 
@@ -450,6 +451,24 @@ Changing where the packaged app connects: `config.json` is sealed inside the app
 
 Manual checks for the user, when convenient: open `release/Orbit Runner-darwin-arm64/Orbit Runner.app` with `npm run server` running; fly; fullscreen and back; quit.
 
+## Dogfight feel (before Phase 5)
+
+Asked for by the user on 2026-11-15 and approved to come before Phase 5: fights should be about readable choices. Built in three steps; this section is step 1, in the free-for-all room that exists. Step 2 is a match around it (3-minute rounds, a score to reach, 1v1 and 2v2 with team colours); step 3 is zone control and the other modes. The user's first mode is a 3-minute 2v2 "Belt Duel".
+
+Work is on `feature/dogfight`, one commit a task. Nothing here is on the live site until the user approves a merge into `feature/v2-rebuild`. Each task changes the wire format, so the Mac app must be rebuilt after a merge.
+
+The rule for every task: anything that changes how the ship moves or what it can do lives in the shared ship state and step, or arrives on a named tick, so the client predicts it with zero corrections as it does everything else.
+
+| # | Task | State |
+|---|---|---|
+| 1 | Energy; boost and brake buttons that spend it (D21) | Done. Predicted with zero corrections on the clean and 100 ms links (`tests/unit/netcode.test.ts`) |
+| 2 | Heavy shot: slow, fat, straight, limited per life | Not started |
+| 3 | Charged homing shot: the server steers it; a hard break evades it; the target is warned | Not started |
+| 4 | Fenix orb keeps the transformation and adds a timed weapon upgrade (user's choice, 2026-11-15) | Not started |
+| 5 | Feedback on the client: shield-coloured flash, smoke on a low hull, a short slow-motion camera on a kill. Shake and exhaust exist | Not started |
+
+Turn speed is one number, `SIM.yawRate`: a half turn takes 1.57 s (`tests/unit/ship.test.ts`). Unchanged so far.
+
 ## Phase 5: Demos integration (separate approval)
 
 Before any code: a written proposal for how phone and Mac-app players pay or play free (`DECISIONS.md` section 10), and a review of the economy rules against Appendix B. Known constraints: `@kynesyslabs/demosdk` >= 4.0.5 (4.0.21 is current), ESM only, Node >= 22.15; on-chain amounts in OS units (1 DEM = 1e9 OS).
@@ -541,3 +560,9 @@ Blockers: none. Waiting for the user: Phase 5 needs separate approval.
 - The phone checklist was run on an iPhone through Tailscale: 16 of 18 passed. Fixed since: double-tap zoom (#6), and a dropped connection now keeps its seat and points for five minutes instead of losing them after 10 s (#13, decision D6). #13 is waiting for the user to check again.
 - The default port moved from 8787 to 8790; another local service held 8787.
 - The server can now serve the built client itself (`ORBIT_CLIENT_DIR`) and listens on `PORT`, so one container holds the whole game. `Dockerfile` and `railway.json` deploy it to Railway as a new `orbit-runner-v2` service in the `delightful-radiance` project, beside v1, which is left as it was.
+
+### 2026-11-15: stars, hull colour, and the start of dogfight feel
+
+- On a phone the stars read bigger than the belt's rocks, and the player's own near-black hull vanished against space. Stars are now 1 pixel and mostly faint; the own ship has the light hull other players have. Deployed.
+- Bombs: v1 has them (`main.js:357`), paid in DEM. Left out of v2 on purpose until Phase 5.
+- Dogfight feel, task 1: energy with boost and brake (D21). Wire format 6 to 7; the pinned trace hash is now 4204857823, and Chromium, WebKit and Firefox agree with Node on it. The full browser suite passes, 22 of 22.

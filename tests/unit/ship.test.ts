@@ -81,6 +81,13 @@ describe('flight model (v1 main.js:8690-8809)', () => {
     expect(after.targetSpeed).toBe(60);
   });
 
+  it('a half turn takes 1.57 s: the number to tune if dogfights need it', () => {
+    const ticks = Math.ceil(Math.PI / (SIM.yawRate * TICK_DT));
+    expect(ticks / SIM.tickRate).toBeCloseTo(1.57, 1);
+    const turned = run(fresh(), controls(1, 0, 0), ticks);
+    expect(Math.abs(turned.yaw)).toBeGreaterThan(Math.PI - 0.05);
+  });
+
   it('clamps Y at ±500', () => {
     const s = run(fresh({ y: 490 }), controls(0, -1, 1), 1200);
     expect(s.y).toBe(SIM.maxY);
@@ -93,6 +100,65 @@ describe('flight model (v1 main.js:8690-8809)', () => {
       expect(s.yaw).toBeGreaterThan(-Math.PI);
       expect(s.yaw).toBeLessThanOrEqual(Math.PI);
     }
+  });
+});
+
+describe('energy, boost and brake (decision D21)', () => {
+  const boost = quantiseControls({ yaw: 0, pitch: 0, throttle: 0, fire: false, boost: true });
+  const brake = quantiseControls({ yaw: 0, pitch: 0, throttle: 0, fire: false, brake: true });
+
+  it('a ship spawns with a full tank, and an empty one fills in 20 s', () => {
+    expect(fresh().energy).toBe(SIM.maxEnergy);
+    const filling = run(fresh({ energy: 0 }), NEUTRAL_INPUT, 20 * SIM.tickRate - 1);
+    expect(filling.energy).toBeLessThan(SIM.maxEnergy);
+    expect(stepShip(filling, NEUTRAL_INPUT).energy).toBe(SIM.maxEnergy);
+    expect(run(filling, NEUTRAL_INPUT, 100).energy).toBe(SIM.maxEnergy);
+  });
+
+  it('the boost button reaches 120 u/s and a full tank lasts 2.5 s', () => {
+    const ticks = SIM.maxEnergy / SIM.thrustCost;
+    expect(ticks / SIM.tickRate).toBe(2.5);
+    const boosted = run(fresh({ speed: 60, targetSpeed: 60 }), boost, ticks);
+    expect(boosted.thrusting).toBe(true);
+    expect(boosted.energy).toBe(0);
+    expect(boosted.targetSpeed).toBe(120);
+    expect(boosted.speed).toBeGreaterThan(115);
+    // Out of energy: the boost stops and the target falls back to top speed.
+    const after = stepShip(boosted, boost);
+    expect(after.thrusting).toBe(false);
+    expect(after.targetSpeed).toBe(60);
+    expect(after.energy).toBe(SIM.energyRegen);
+  });
+
+  it('the button adds nothing to an orb boost and costs nothing during one', () => {
+    const s = stepShip(fresh({ boostTicks: 100 }), boost);
+    expect(s.thrusting).toBe(false);
+    expect(s.energy).toBe(SIM.maxEnergy);
+    expect(s.targetSpeed).toBeCloseTo(60 * 3.08, 9);
+  });
+
+  it('the brake sheds speed far faster than the throttle, and is free once slow', () => {
+    const fast = fresh({ speed: 60, targetSpeed: 60 });
+    const braked = run(fast, brake, 60);
+    const throttled = run(fast, controls(0, 0, -1), 60);
+    expect(braked.speed).toBeLessThan(7);
+    expect(throttled.speed).toBeGreaterThan(35);
+    expect(braked.energy).toBeLessThan(SIM.maxEnergy);
+    // At its lowest speed the brake has nothing to do, so the tank fills.
+    const slow = run(braked, brake, 300);
+    expect(slow.energy).toBeGreaterThan(braked.energy);
+  });
+
+  it('with an empty tank the buttons do nothing', () => {
+    const empty = fresh({ energy: 0, speed: 60, targetSpeed: 60 });
+    expect(stepShip(empty, boost).targetSpeed).toBe(60);
+    expect(stepShip(empty, brake).targetSpeed).toBe(60);
+  });
+
+  it('a destroyed ship has no energy and respawns full', () => {
+    const dead = run(fresh({ x: 0, y: 0, z: 1225, yaw: Math.PI }), NEUTRAL_INPUT, 30);
+    expect(dead.alive).toBe(false);
+    expect(dead.energy).toBe(0);
   });
 });
 
@@ -140,13 +206,13 @@ describe('inputs', () => {
   });
 
   it('wire values out of range are refused', () => {
-    expect(inputFromWire(128, 0, 0, false, 0)).toBeNull();
-    expect(inputFromWire(0, -128, 0, false, 0)).toBeNull();
-    expect(inputFromWire(0.5, 0, 0, false, 0)).toBeNull();
-    expect(inputFromWire(0, 0, 2, false, 0)).toBeNull();
-    expect(inputFromWire(0, 0, 0, true, -1)).toBeNull();
-    expect(inputFromWire(0, 0, 0, true, 1.5)).toBeNull();
-    expect(inputFromWire(127, -127, -1, true, 100)).not.toBeNull();
+    expect(inputFromWire(128, 0, 0, false, false, false, 0)).toBeNull();
+    expect(inputFromWire(0, -128, 0, false, false, false, 0)).toBeNull();
+    expect(inputFromWire(0.5, 0, 0, false, false, false, 0)).toBeNull();
+    expect(inputFromWire(0, 0, 2, false, false, false, 0)).toBeNull();
+    expect(inputFromWire(0, 0, 0, true, false, false, -1)).toBeNull();
+    expect(inputFromWire(0, 0, 0, true, false, false, 1.5)).toBeNull();
+    expect(inputFromWire(127, -127, -1, true, false, false, 100)).not.toBeNull();
   });
 });
 
@@ -183,7 +249,7 @@ describe('determinism', () => {
     // If this fails on another CPU with no change to the simulation, the
     // simulation is not portable and prediction will not match the server.
     // If the simulation or a constant changed on purpose, update the number.
-    expect(runTrace(20261113, 10_000).hash).toBe(1339382450);
+    expect(runTrace(20261113, 10_000).hash).toBe(4204857823);
   });
 
   it('never fuses a multiply and an add, even in optimised code', () => {

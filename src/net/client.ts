@@ -43,6 +43,7 @@ import {
   NEUTRAL_INPUT,
   VIEW_DELAY_STEPS_PER_TICK,
   firedThisTick,
+  isBoosting,
   quantiseControls,
   shipStatesEqual,
 } from '../shared/sim/ship.ts';
@@ -163,6 +164,8 @@ export interface ShipView {
   speed: number;
   hp: number;
   shield: number;
+  /** 0 to SIM.maxEnergy. */
+  energy: number;
   boosting: boolean;
   invulnerable: boolean;
   fenix: boolean;
@@ -475,7 +478,8 @@ export class ClientCore implements WorldState {
       speed: from.speed + (current.speed - from.speed) * alpha,
       hp: current.hp,
       shield: current.shield,
-      boosting: current.boostTicks > 0,
+      energy: current.energy,
+      boosting: isBoosting(current),
       invulnerable: current.invulnTicks > 0,
       fenix: current.fenix,
       alive: current.alive,

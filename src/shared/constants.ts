@@ -26,6 +26,15 @@ export const SIM = {
   bankLimit: 0.7, // rad, main.js:8788
   bankFollow: 8, // per second, main.js:8791
 
+  // Energy (decision D21). Whole units, so the wire carries it exactly. It
+  // pays for the boost and brake buttons; a shield orb tops it up.
+  maxEnergy: 6000,
+  energyRegen: 5, // a tick: empty to full in 20 s
+  thrustCost: 40, // a tick of boost or brake: a full tank lasts 2.5 s
+  thrustBoostMultiplier: 2, // the boost button: 120 u/s, under an orb boost's 185
+  brakeRate: 88, // units/s² off the target speed, four times the throttle's
+  shieldOrbEnergy: 1500, // a quarter of a tank
+
   // World
   maxY: 500, // main.js:8808
   planetRadius: 1200, // main.js:4524

@@ -12,7 +12,7 @@ Line numbers refer to v1 at `/Users/jacobo/Documents/Claude/orbit-runner`, branc
 
 ## 1. Decisions that need your answer
 
-Each has a default. If you approve the plan without comment, the defaults apply. **The user approved D1–D7 on 2026-11-13 and D8–D12 on 2026-11-14, all at their defaults.** D13–D20 are choices made while building Phase 3 that were not in the plan; each took the default shown and is listed so that it can be overruled.
+Each has a default. If you approve the plan without comment, the defaults apply. **The user approved D1–D7 on 2026-11-13 and D8–D12 on 2026-11-14, all at their defaults.** D13–D20 are choices made while building Phase 3 that were not in the plan; each took the default shown and is listed so that it can be overruled. D21 onward belong to the dogfight work the user asked for on 2026-11-15.
 
 | # | Decision | Default | Alternative | Needed by |
 |---|---|---|---|---|
@@ -36,6 +36,7 @@ Each has a default. If you approve the plan without comment, the defaults apply.
 | D18 | Rocks and orbs coming back (taken in Phase 3) | 30 s after being destroyed or taken, in the same orbit or place. v1 never brought a rock back and topped orbs up around the solo player | A different delay; or never, with the room emptying over time | Taken |
 | D19 | Rocks outside the ring (taken in Phase 3) | None. v1 scattered 250 slow drifting rocks around the solo player's spawn point | A fixed scatter of static rocks between the planet and the zone's edge | Taken |
 | D20 | Who gets an orb that is shot (taken in Phase 3) | The owner of the bullet. In v1 any bullet on screen, anyone's, gave the pickup to the local player | n/a: v1's rule cannot be decided by a server | Taken |
+| D21 | Energy, boost and brake (dogfight feel, 2026-11-15) | A tank of energy that fills in 20 s. Holding boost flies at twice top speed (120 u/s) and holding brake sheds speed four times faster than the throttle; either empties a full tank in 2.5 s. A shield orb adds a quarter of a tank. An orb's boost (185 u/s) is stronger and free. Keys: Shift and X. On a phone ▲ held at top speed boosts and ▼ brakes, so there are no new buttons | Separate boost and brake buttons on the phone; a boost as fast as the orb's | Taken; the numbers are for tuning by play |
 
 Kept from v1 without asking, because they read as intended feel: ring asteroids orbiting at 43 to 218 u/s (faster than the ship), Fenix obtained only by shooting its orb and lasting until death, +500 points per PvP hit.
 

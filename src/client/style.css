@@ -5,6 +5,7 @@
   --edge: rgb(120 170 255 / 28%);
   --hull: #5fe08a;
   --shield: #5ab8ff;
+  --energy: #f0c24b;
   --warn: #ffb347;
   --bad: #ff6a5c;
   --inset-top: env(safe-area-inset-top, 0px);
@@ -83,6 +84,10 @@ body {
 
 #shield-fill {
   background: var(--shield);
+}
+
+#energy-fill {
+  background: var(--energy);
 }
 
 .bar span {
