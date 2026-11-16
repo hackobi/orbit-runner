@@ -15,8 +15,9 @@ import {
   wormholeExit,
 } from '../../src/shared/sim/orbs.ts';
 import type { OrbKind, OrbsGoneView } from '../../src/shared/sim/orbs.ts';
+import { spawnShip } from '../../src/shared/sim/ship.ts';
 import type { Controls, ShipState } from '../../src/shared/sim/ship.ts';
-import { boostTicksFrom, crashDamage } from '../../src/shared/sim/world.ts';
+import { applyOrb, boostTicksFrom, crashDamage, createWorld } from '../../src/shared/sim/world.ts';
 import { TestWorld, profileLink } from '../support/harness.ts';
 import type { TestClient } from '../support/harness.ts';
 
@@ -409,6 +410,10 @@ describe('shooting an orb', () => {
       expect(ship).toMatchObject({ fenix: true, hp: 100, alive: true });
       expect(shooter.core.state).toMatchObject({ fenix: true, hp: 100 });
       expect(shooter.core.view()?.fenix).toBe(true);
+      // And its gun fires faster for 15 s (decision D24), which the client
+      // counts down in step with the server.
+      expect(ship?.rapidTicks).toBeGreaterThan(SIM.rapidTicks - 200);
+      expect(shooter.core.predictedAt(world.room.tick)?.rapidTicks).toBe(ship?.rapidTicks);
 
       // Full throttle: a Fenix tops out at 80, not 60.
       world.clock.every(1, () => {
@@ -420,6 +425,16 @@ describe('shooting an orb', () => {
       expect(speed).toBeLessThanOrEqual(80);
     },
   );
+
+  it('a second Fenix orb renews the rapid fire and nothing else (decision D24)', () => {
+    const world = createWorld(7, 0, true);
+    const orbId = world.orbs.orbs.findIndex((orb) => orb.kind === 'fenix');
+    const plain = { ...spawnShip(new Rng(1), 0), hp: 40 };
+    const first = applyOrb(plain, orbId, 100, world);
+    expect(first).toMatchObject({ fenix: true, hp: SIM.maxHp, rapidTicks: 900 });
+    const worn = { ...first, hp: 55, rapidTicks: 10 };
+    expect(applyOrb(worn, orbId, 200, world)).toEqual({ ...worn, rapidTicks: 900 });
+  });
 
   it('a Fenix fires beams, and the other players are told so', () => {
     const world = new TestWorld(31, SPARSE, false);

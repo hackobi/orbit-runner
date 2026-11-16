@@ -92,6 +92,11 @@ export const SIM = {
   beamRadius: 0.45, // main.js:6031
   beamDamage: 30, // main.js:9872
 
+  // The Fenix orb's weapon upgrade (decision D24): on top of the
+  // transformation, the gun fires faster for a while.
+  rapidTicks: 900, // 15 s
+  rapidCooldownTicks: 4, // against the gun's 7
+
   // World edge (decision D11)
   combatZoneRadius: 9000, // from the planet's axis
   edgeDamage: 5, // off the ship every edgeDamageEveryTicks while outside

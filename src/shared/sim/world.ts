@@ -100,8 +100,15 @@ export function applyOrb(ship: ShipState, orbId: number, tick: number, world: Wo
       };
     case 'boost': // main.js:9331. A second boost replaces the first.
       return { ...ship, boostTicks: boostTicksFrom(world.seed, orbId, tick) };
-    case 'fenix': // main.js:5095-5106. Nothing for a ship that is one already.
-      return ship.fenix ? ship : { ...ship, fenix: true, hp: SIM.maxHp };
+    case 'fenix':
+      // The transformation (main.js:5095-5106), which a ship has only once a
+      // life, and rapid fire for a while (decision D24), which every orb renews.
+      return {
+        ...ship,
+        fenix: true,
+        hp: ship.fenix ? ship.hp : SIM.maxHp,
+        rapidTicks: SIM.rapidTicks,
+      };
     case 'wormhole': {
       const exit = wormholeExit(world.orbs, world.seed, orbId, tick);
       if (!exit) return ship;

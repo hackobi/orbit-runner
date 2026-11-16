@@ -237,8 +237,8 @@ describe('server messages', () => {
     expect(none?.type === 'snapshot' && Number.isNaN(none.inputLead)).toBe(true);
   });
 
-  it('a snapshot is 108 bytes plus 21 per nearby ship and 12 per homing shot', () => {
-    expect(SNAPSHOT_HEADER_BYTES).toBe(108);
+  it('a snapshot is 111 bytes plus 21 per nearby ship and 12 per homing shot', () => {
+    expect(SNAPSHOT_HEADER_BYTES).toBe(111);
     expect(SEEKER_ENTRY_BYTES).toBe(12);
     expect(NEAR_ENTRY_BYTES).toBe(21);
     expect(FAR_ENTRY_BYTES).toBe(13);

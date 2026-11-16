@@ -146,6 +146,10 @@ export interface ShipState {
    * takes half from a crash. It lasts until the ship is destroyed.
    */
   readonly fenix: boolean;
+  /** Ticks of rapid fire left, from a Fenix orb (decision D24). */
+  readonly rapidTicks: number;
+  /** The gun fired on this tick. */
+  readonly gunFired: boolean;
   /** Heavy shots left in this life. */
   readonly heavyAmmo: number;
   /** Ticks until the next heavy shot can be fired. */
@@ -217,10 +221,11 @@ export function stepShip(s: ShipState, input: Input): ShipState {
   // Gun (main.js:8837-8841): the cooldown runs down, and holding fire shoots
   // the moment it reaches zero. A ship fires one thing a tick, so the gun
   // waits for a heavy shot.
+  // Under a Fenix orb's upgrade it comes round sooner (decision D24).
+  const rapidTicks = s.rapidTicks > 0 ? s.rapidTicks - 1 : 0;
   let fireCooldown = s.fireCooldown > 0 ? s.fireCooldown - 1 : 0;
-  if (input.fire && fireCooldown === 0 && !heavyFired && !seekerFired) {
-    fireCooldown = SIM.fireCooldownTicks;
-  }
+  const gunFired = input.fire && fireCooldown === 0 && !heavyFired && !seekerFired;
+  if (gunFired) fireCooldown = s.rapidTicks > 0 ? SIM.rapidCooldownTicks : SIM.fireCooldownTicks;
   const crashTicks = s.crashTicks > 0 ? s.crashTicks - 1 : 0;
 
   // Boost timer (main.js:8690).
@@ -293,6 +298,8 @@ export function stepShip(s: ShipState, input: Input): ShipState {
     fireCooldown,
     crashTicks,
     fenix: s.fenix,
+    rapidTicks,
+    gunFired,
     heavyAmmo,
     heavyCooldown,
     charge,
@@ -319,6 +326,8 @@ function destroyed(s: ShipState): ShipState {
     fireCooldown: 0,
     crashTicks: 0,
     fenix: false,
+    rapidTicks: 0,
+    gunFired: false,
     heavyAmmo: 0,
     heavyCooldown: 0,
     charge: 0,
@@ -334,10 +343,11 @@ export type ShotKind = 'bullet' | 'beam' | 'heavy' | 'seeker';
 /** What the step that produced `after` fired, or null. Never two things in a tick. */
 export function shotThisTick(after: ShipState): ShotKind | null {
   if (!after.alive) return null;
-  // A cooldown holds its full value only on the tick it was set.
+  // These two cooldowns hold their full value only on the tick they were set.
   if (after.seekerCooldown === SIM.seekerCooldownTicks) return 'seeker';
   if (after.heavyCooldown === SIM.heavyCooldownTicks) return 'heavy';
-  if (after.fireCooldown === SIM.fireCooldownTicks) return after.fenix ? 'beam' : 'bullet';
+  // The gun's cooldown has two lengths, so the ship says outright that it fired.
+  if (after.gunFired) return after.fenix ? 'beam' : 'bullet';
   return null;
 }
 
@@ -384,6 +394,8 @@ export function spawnShip(rng: Rng, spawnSeq: number): ShipState {
     fireCooldown: 0,
     crashTicks: 0,
     fenix: false,
+    rapidTicks: 0,
+    gunFired: false,
     heavyAmmo: SIM.heavyAmmo,
     heavyCooldown: 0,
     charge: 0,
@@ -414,6 +426,8 @@ export function shipStatesEqual(a: ShipState, b: ShipState): boolean {
     a.fireCooldown === b.fireCooldown &&
     a.crashTicks === b.crashTicks &&
     a.fenix === b.fenix &&
+    a.rapidTicks === b.rapidTicks &&
+    a.gunFired === b.gunFired &&
     a.heavyAmmo === b.heavyAmmo &&
     a.heavyCooldown === b.heavyCooldown &&
     a.charge === b.charge &&

@@ -44,6 +44,19 @@ describe('the gun (v1 main.js:8837-8841, 6014-6050)', () => {
     expect(fired).toEqual([1, 8, 15, 22, 29, 36, 43, 50, 57, 64]);
   });
 
+  it('under a Fenix orb’s rapid fire it fires every 4 ticks, then every 7 again (decision D24)', () => {
+    let ship = shipAt(4000, { rapidTicks: 10 });
+    const fired: number[] = [];
+    for (let tick = 1; tick <= 30; tick++) {
+      ship = stepShip(ship, FIRE);
+      if (shotThisTick(ship)) fired.push(tick);
+    }
+    // The shot at tick 9 is the last with the short wait; the upgrade ends at tick 10.
+    expect(fired).toEqual([1, 5, 9, 13, 20, 27]);
+    expect(ship.rapidTicks).toBe(0);
+    expect(destroyShip(shipAt(4000, { rapidTicks: 500 })).rapidTicks).toBe(0);
+  });
+
   it('does not fire without the button, and a tap fires once', () => {
     let ship = shipAt(4000);
     let shots = 0;

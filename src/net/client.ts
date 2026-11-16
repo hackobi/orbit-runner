@@ -169,6 +169,8 @@ export interface ShipView {
   /** 0 to SIM.maxEnergy. */
   energy: number;
   heavyAmmo: number;
+  /** Ticks of rapid fire left. */
+  rapidTicks: number;
   /** Ticks the homing shot has charged, and ticks until it can be charged again. */
   charge: number;
   seekerCooldown: number;
@@ -488,6 +490,7 @@ export class ClientCore implements WorldState {
       shield: current.shield,
       energy: current.energy,
       heavyAmmo: current.heavyAmmo,
+      rapidTicks: current.rapidTicks,
       charge: current.charge,
       seekerCooldown: current.seekerCooldown,
       boosting: isBoosting(current),

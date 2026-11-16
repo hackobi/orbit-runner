@@ -222,6 +222,9 @@ export class Hud {
     shown.text(this.points, `Points ${number(core.score)}`);
     shown.text(this.kills, `Kills ${core.kills}`);
     const timers: string[] = [];
+    if (view.rapidTicks > 0) {
+      timers.push(`Rapid fire  ${Math.ceil(view.rapidTicks / SIM.tickRate)} s`);
+    }
     if (core.asteroidMultTicks > 0) {
       timers.push(`Rocks and orbs ×2  ${Math.ceil(core.asteroidMultTicks / SIM.tickRate)} s`);
     }
