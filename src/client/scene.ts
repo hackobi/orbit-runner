@@ -79,6 +79,17 @@ const SHAKE_MAX = 2.5;
 const SPARK_SECONDS = 0.3;
 
 const HIT_SPARK = 0xff6644;
+/** A hit the shield took flashes in the shield's colour, so the two read apart. */
+export const SHIELD_SPARK = 0x5ab8ff;
+/** A ship breaking up. */
+export const DEATH_SPARK = 0xffc070;
+/** A hull at or under this trails smoke: two bullets from the end. */
+const SMOKE_BELOW_HP = 35;
+const SMOKE_COLOR = 0x6b6b6b;
+const SMOKE_RATE = 30; // puffs a second
+/** After a kill, sparks and debris play at this fraction of their speed for a moment. */
+const SLOW_MOTION_RATE = 0.2;
+const SLOW_MOTION_ZOOM = 9; // degrees the view closes in by
 /** v1's burst when a rock breaks up (main.js:8998). */
 const ROCK_SPARK = 0xffaa66;
 /** v1's burst when a rock passes close (main.js:8951). */
@@ -341,6 +352,7 @@ export class GameScene {
   private nextSpark = 0;
   readonly particles = new Particles(MAX_PARTICLES);
   private exhaustOwed = 0;
+  private slowMotionSeconds = 0;
   private shakeAmount = 0;
   private wormholes: InstancedMesh | null = null;
   private wormholeIds: number[] = [];
@@ -470,6 +482,22 @@ export class GameScene {
     this.particles.burst(x, y, z, color, Math.round(10 + 4 * Math.min(4, size)), 20);
   }
 
+  /**
+   * A kill, drawn out: for `seconds` the debris and sparks move slowly and
+   * the view closes in. Only the effects slow down. The game itself is
+   * shared with every player and keeps its pace.
+   */
+  slowMotion(seconds: number): void {
+    this.slowMotionSeconds = Math.max(this.slowMotionSeconds, seconds);
+  }
+
+  /** Smoke from a ship whose hull is nearly gone. */
+  private emitSmoke(x: number, y: number, z: number, hp: number, elapsedSeconds: number): void {
+    if (hp > SMOKE_BELOW_HP || Math.random() > SMOKE_RATE * elapsedSeconds) return;
+    const drift = (): number => (Math.random() * 2 - 1) * 1.5;
+    this.particles.emit(x, y + 0.6, z, drift(), 2 + drift(), drift(), 1.1, 0.9, SMOKE_COLOR);
+  }
+
   /** Jolts the camera (main.js:8865-8869). Amounts are v1's, 0.08 to 1.2. */
   shake(amount: number): void {
     this.shakeAmount = Math.min(SHAKE_MAX, this.shakeAmount + amount);
@@ -509,8 +537,20 @@ export class GameScene {
     this.camera.lookAt(this.lookAt);
     this.seconds.value += elapsedSeconds;
 
-    if (view.alive) this.emitExhaust(view, elapsedSeconds);
-    this.particles.update(elapsedSeconds);
+    const slow = this.slowMotionSeconds > 0;
+    this.slowMotionSeconds = Math.max(0, this.slowMotionSeconds - elapsedSeconds);
+    const effectSeconds = slow ? elapsedSeconds * SLOW_MOTION_RATE : elapsedSeconds;
+
+    if (view.alive) {
+      this.emitExhaust(view, elapsedSeconds);
+      this.emitSmoke(view.x, view.y, view.z, view.hp, elapsedSeconds);
+    }
+    for (const remote of remotes) {
+      if (remote.alive && remote.full) {
+        this.emitSmoke(remote.x, remote.y, remote.z, remote.hp, elapsedSeconds);
+      }
+    }
+    this.particles.update(effectSeconds);
 
     if (world) {
       this.drawRocks(world);
@@ -518,13 +558,14 @@ export class GameScene {
     }
     this.drawRemotes(remotes);
     this.drawBullets(bullets, ownId);
-    this.drawSparks(elapsedSeconds);
+    this.drawSparks(effectSeconds);
 
     // Field of view widens with speed (main.js:8726-8730). v1 moved 6·dt of
     // the way each frame; this is the same response at any frame rate.
     const extra =
       (view.speed - FOV_SPEED_FLOOR) * FOV_PER_SPEED + (view.boosting ? FOV_BOOST_KICK : 0);
-    const target = BASE_FOV + Math.max(0, Math.min(FOV_MAX_EXTRA, extra));
+    const target =
+      BASE_FOV + Math.max(0, Math.min(FOV_MAX_EXTRA, extra)) - (slow ? SLOW_MOTION_ZOOM : 0);
     this.camera.fov += (target - this.camera.fov) * (1 - Math.exp(-FOV_FOLLOW * elapsedSeconds));
     this.camera.updateProjectionMatrix();
 

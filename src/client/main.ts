@@ -11,7 +11,7 @@ import { shouldApplyUpdate } from './updatePolicy.ts';
 import { asteroidPosition, asteroidTouching } from '../shared/sim/belt.ts';
 import { Hud } from './hud.ts';
 import { QualityController, TIERS } from './quality.ts';
-import { GameScene, NEAR_MISS_SPARK } from './scene.ts';
+import { DEATH_SPARK, GameScene, NEAR_MISS_SPARK, SHIELD_SPARK } from './scene.ts';
 
 /** Set by the build. True only when VITE_TEST_HOOKS=1. */
 declare const __ORBIT_TEST_HOOKS__: boolean;
@@ -57,6 +57,9 @@ function socketUrl(): string {
 }
 
 /** v1 jolts the camera when things happen to the player's own ship. Amounts are v1's. */
+/** How long a kill is drawn out for. */
+const SLOW_MOTION_SECONDS = 0.6;
+
 function shakeFor(event: GameEvent): void {
   const me = session.core.playerId;
   switch (event.kind) {
@@ -91,17 +94,32 @@ function onGameEvent(event: GameEvent): void {
   recorder?.onGameEvent(event);
   hud.onEvent(event, session.core, performance.now());
   shakeFor(event);
+  const core = session.core;
+  if (event.kind === 'death') {
+    // A ship breaks up in a big flash. A kill this player made or suffered
+    // is drawn out for a moment.
+    const mine = event.victimId === core.playerId;
+    const at = mine
+      ? core.view()
+      : core.remoteViews().find((remote) => remote.id === event.victimId);
+    if (at) scene.spark(at.x, at.y, at.z, DEATH_SPARK, 2);
+    if (mine || event.killerId === core.playerId) scene.slowMotion(SLOW_MOTION_SECONDS);
+    return;
+  }
   // Damage shows when the server confirms it. A hit on this player's own
   // ship flashes at the ship; any other flashes at the target as drawn.
+  // While any shield is left the flash is the shield's colour.
   if (event.kind !== 'hit') return;
-  const core = session.core;
+  const color = event.shield > 0 ? SHIELD_SPARK : undefined;
   if (event.targetId === core.playerId) {
     const view = core.view();
-    if (view) scene.spark(view.x, view.y, view.z);
+    if (view) scene.spark(view.x, view.y, view.z, color);
     return;
   }
   const target = core.remoteViews().find((remote) => remote.id === event.targetId);
-  if (target && event.ownerId !== core.playerId) scene.spark(target.x, target.y, target.z);
+  if (target && event.ownerId !== core.playerId) {
+    scene.spark(target.x, target.y, target.z, color);
+  }
 }
 
 // The server's token for this player's seat is kept for the life of the tab,
@@ -152,7 +170,9 @@ const session: Session = new Session({
   onViewHit: (hit) => {
     recorder?.onViewHit(hit);
     const target = session.core.remoteViews().find((remote) => remote.id === hit.targetId);
-    if (target) scene.spark(target.x, target.y, target.z);
+    if (target) {
+      scene.spark(target.x, target.y, target.z, target.shield > 0 ? SHIELD_SPARK : undefined);
+    }
   },
   ...(recorder ? { onCorrection: recorder.onCorrection, onSnapshot: recorder.onSnapshot } : {}),
 });
