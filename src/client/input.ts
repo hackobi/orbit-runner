@@ -3,7 +3,7 @@
 //
 // Keys are v1's (main.js:6256-6264): A / D or the arrows turn, I / K or the
 // arrows pitch, W / S change speed, Space fires. New in v2: Shift boosts
-// and X brakes (decision D21). The mouse control is v1's
+// and X brakes (decision D21), and E fires a heavy shot (D22). The mouse control is v1's
 // too (main.js:8762-8763): hold the button down and the pointer's position
 // steers, at up to 0.6 of the full rate. v1 added keys and pointer together
 // to as much as 1.6; here the sum is clamped.
@@ -122,6 +122,7 @@ export class InputDevices {
   private readonly stick = element('stick', HTMLDivElement);
   private readonly knob = element('knob', HTMLDivElement);
   private readonly fire = new HeldButton(element('fire', HTMLButtonElement));
+  private readonly heavy = new HeldButton(element('heavy', HTMLButtonElement));
   private readonly faster = new HeldButton(element('faster', HTMLButtonElement));
   private readonly slower = new HeldButton(element('slower', HTMLButtonElement));
 
@@ -227,6 +228,7 @@ export class InputDevices {
       pitch: clampAxis(this.settings.invertPitch ? -pitch : pitch),
       throttle: key('KeyW') - key('KeyS') + (this.faster.down ? 1 : 0) - (this.slower.down ? 1 : 0),
       fire: this.held.has('Space') || this.fire.down,
+      heavy: this.held.has('KeyE') || this.heavy.down,
       boost:
         this.held.has('ShiftLeft') ||
         this.held.has('ShiftRight') ||
@@ -286,6 +288,7 @@ export class InputDevices {
     this.mouseDown = false;
     this.releaseStick();
     this.fire.release();
+    this.heavy.release();
     this.faster.release();
     this.slower.release();
   }
@@ -298,6 +301,7 @@ const KEYS = new Set([
   'ArrowDown',
   'KeyA',
   'KeyD',
+  'KeyE',
   'KeyW',
   'KeyS',
   'KeyI',

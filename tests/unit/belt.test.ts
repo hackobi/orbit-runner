@@ -128,7 +128,7 @@ describe('the belt', () => {
         at.z + (rng.next() - 0.5) * 30,
         (rng.next() - 0.5) * 6,
         (rng.next() - 0.5) * 0.4,
-        i % 3 === 0,
+        (['bullet', 'beam', 'heavy'] as const)[i % 3] ?? 'bullet',
       );
       const expected = bruteForce(bullet, tick);
       expect(bulletAsteroidHit(belt, NOTHING_GONE, bullet, tick)).toEqual(expected);

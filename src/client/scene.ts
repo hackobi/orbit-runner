@@ -88,6 +88,8 @@ const OWN_BULLET_COLOR = new Color(0xfff2a8);
 const OTHER_BULLET_COLOR = new Color(0xff7a4d);
 /** v1's Fenix beam is red, thin and 12 long (main.js:6027). */
 const BEAM_COLOR = new Color(0xff2222);
+/** A heavy shot is a fat ball, the same colour whoever fired it: it is the thing to dodge. */
+const HEAVY_COLOR = new Color(0xffa040);
 
 /** v1's orb colours (main.js:5126-5845). */
 const ORB_COLORS: Record<OrbKind, number> = {
@@ -362,6 +364,7 @@ export class GameScene {
   private readonly bulletScale = new Vector3(1, 1, 7);
   /** A beam is 12 long and thin (main.js:6027); the shape it is drawn from has radius 0.25. */
   private readonly beamScale = new Vector3(0.5, 0.5, 24);
+  private readonly heavyScale = new Vector3().setScalar(SIM.heavyRadius / SIM.bulletRadius);
   private readonly zAxis = new Vector3(0, 0, 1);
 
   constructor(canvas: HTMLCanvasElement) {
@@ -783,12 +786,22 @@ export class GameScene {
       this.matrix.compose(
         this.position,
         this.orientation,
-        bullet.beam ? this.beamScale : this.bulletScale,
+        bullet.shot === 'beam'
+          ? this.beamScale
+          : bullet.shot === 'heavy'
+            ? this.heavyScale
+            : this.bulletScale,
       );
       this.bullets.setMatrixAt(i, this.matrix);
       this.bullets.setColorAt(
         i,
-        bullet.beam ? BEAM_COLOR : bullet.ownerId === ownId ? OWN_BULLET_COLOR : OTHER_BULLET_COLOR,
+        bullet.shot === 'beam'
+          ? BEAM_COLOR
+          : bullet.shot === 'heavy'
+            ? HEAVY_COLOR
+            : bullet.ownerId === ownId
+              ? OWN_BULLET_COLOR
+              : OTHER_BULLET_COLOR,
       );
     }
     this.bullets.count = count;

@@ -105,6 +105,7 @@ export class Hud {
   private readonly energyFill = element('energy-fill', HTMLDivElement);
   private readonly energy = element('energy', HTMLSpanElement);
   private readonly speed = element('speed', HTMLDivElement);
+  private readonly ammo = element('ammo', HTMLDivElement);
   private readonly points = element('points', HTMLDivElement);
   private readonly kills = element('kills', HTMLDivElement);
   private readonly timers = element('timers', HTMLDivElement);
@@ -149,7 +150,7 @@ export class Hud {
     this.scoreboardOn = !touch;
     if (!touch) {
       this.help.textContent =
-        'A / D turn · I / K pitch · W / S speed · Shift boost · X brake · Space fire · 1 2 3 store · P players';
+        'A / D turn · I / K pitch · W / S speed · Shift boost · X brake · Space fire · E heavy · 1 2 3 store · P players';
     }
     window.addEventListener('keydown', (event) => {
       if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
@@ -204,6 +205,7 @@ export class Hud {
       this.speed,
       `${Math.round(view.speed)} u/s${view.boosting ? '  BOOST' : ''}${view.fenix ? '  FENIX' : ''}`,
     );
+    shown.text(this.ammo, `Heavy ${view.heavyAmmo}`);
     shown.text(this.points, `Points ${number(core.score)}`);
     shown.text(this.kills, `Kills ${core.kills}`);
     const timers: string[] = [];

@@ -24,6 +24,8 @@ export interface Input {
   readonly pitch: number;
   readonly throttle: -1 | 0 | 1;
   readonly fire: boolean;
+  /** Fires a heavy shot if one is left and the launcher is ready. */
+  readonly heavy: boolean;
   /** Held: fly faster than top speed while the energy lasts. */
   readonly boost: boolean;
   /** Held: shed speed fast while the energy lasts. */
@@ -46,6 +48,7 @@ export interface Controls {
   pitch: number;
   throttle: number;
   fire: boolean;
+  heavy?: boolean;
   boost?: boolean;
   brake?: boolean;
 }
@@ -60,6 +63,7 @@ export function inputFromWire(
   pitch: number,
   throttle: number,
   fire: boolean,
+  heavy: boolean,
   boost: boolean,
   brake: boolean,
   viewDelay: number,
@@ -73,6 +77,7 @@ export function inputFromWire(
     pitch,
     throttle,
     fire,
+    heavy,
     boost,
     brake,
     viewDelay: Math.min(viewDelay, MAX_VIEW_DELAY),
@@ -93,6 +98,7 @@ export function quantiseControls(controls: Controls, viewDelayTicks = 0): Input 
     pitch: quantiseAxis(controls.pitch),
     throttle,
     fire: controls.fire,
+    heavy: controls.heavy === true,
     boost: controls.boost === true,
     brake: controls.brake === true,
     viewDelay: Math.round(clamp(delay, 0, SIM.maxViewDelayTicks) * VIEW_DELAY_STEPS_PER_TICK),
@@ -134,6 +140,10 @@ export interface ShipState {
    * takes half from a crash. It lasts until the ship is destroyed.
    */
   readonly fenix: boolean;
+  /** Heavy shots left in this life. */
+  readonly heavyAmmo: number;
+  /** Ticks until the next heavy shot can be fired. */
+  readonly heavyCooldown: number;
   /** 0 to SIM.maxEnergy. Fills by itself; the boost and brake buttons spend it. */
   readonly energy: number;
   /** The boost button drove the ship on this tick. */
@@ -172,10 +182,20 @@ export function stepShip(s: ShipState, input: Input): ShipState {
 
   const invulnTicks = s.invulnTicks > 0 ? s.invulnTicks - 1 : 0;
 
+  // Heavy shot (decision D22). The caller spawns it; see shotThisTick.
+  let heavyAmmo = s.heavyAmmo;
+  let heavyCooldown = s.heavyCooldown > 0 ? s.heavyCooldown - 1 : 0;
+  const heavyFired = input.heavy && heavyAmmo > 0 && heavyCooldown === 0;
+  if (heavyFired) {
+    heavyAmmo -= 1;
+    heavyCooldown = SIM.heavyCooldownTicks;
+  }
+
   // Gun (main.js:8837-8841): the cooldown runs down, and holding fire shoots
-  // the moment it reaches zero. The caller spawns the bullet; see firedThisTick.
+  // the moment it reaches zero. A ship fires one thing a tick, so the gun
+  // waits for a heavy shot.
   let fireCooldown = s.fireCooldown > 0 ? s.fireCooldown - 1 : 0;
-  if (input.fire && fireCooldown === 0) fireCooldown = SIM.fireCooldownTicks;
+  if (input.fire && fireCooldown === 0 && !heavyFired) fireCooldown = SIM.fireCooldownTicks;
   const crashTicks = s.crashTicks > 0 ? s.crashTicks - 1 : 0;
 
   // Boost timer (main.js:8690).
@@ -248,6 +268,8 @@ export function stepShip(s: ShipState, input: Input): ShipState {
     fireCooldown,
     crashTicks,
     fenix: s.fenix,
+    heavyAmmo,
+    heavyCooldown,
     energy,
     thrusting,
   };
@@ -270,15 +292,23 @@ function destroyed(s: ShipState): ShipState {
     fireCooldown: 0,
     crashTicks: 0,
     fenix: false,
+    heavyAmmo: 0,
+    heavyCooldown: 0,
     energy: 0,
     thrusting: false,
   };
 }
 
-/** True if the step that produced `after` fired the gun. */
-export function firedThisTick(after: ShipState): boolean {
-  // The cooldown holds its full value only on the tick it was set.
-  return after.alive && after.fireCooldown === SIM.fireCooldownTicks;
+/** What a ship can fire: the gun's bullet, a Fenix's beam, or a heavy shot. */
+export type ShotKind = 'bullet' | 'beam' | 'heavy';
+
+/** What the step that produced `after` fired, or null. Never two things in a tick. */
+export function shotThisTick(after: ShipState): ShotKind | null {
+  if (!after.alive) return null;
+  // A cooldown holds its full value only on the tick it was set.
+  if (after.heavyCooldown === SIM.heavyCooldownTicks) return 'heavy';
+  if (after.fireCooldown === SIM.fireCooldownTicks) return after.fenix ? 'beam' : 'bullet';
+  return null;
 }
 
 /**
@@ -324,6 +354,8 @@ export function spawnShip(rng: Rng, spawnSeq: number): ShipState {
     fireCooldown: 0,
     crashTicks: 0,
     fenix: false,
+    heavyAmmo: SIM.heavyAmmo,
+    heavyCooldown: 0,
     energy: SIM.maxEnergy,
     thrusting: false,
   };
@@ -350,6 +382,8 @@ export function shipStatesEqual(a: ShipState, b: ShipState): boolean {
     a.fireCooldown === b.fireCooldown &&
     a.crashTicks === b.crashTicks &&
     a.fenix === b.fenix &&
+    a.heavyAmmo === b.heavyAmmo &&
+    a.heavyCooldown === b.heavyCooldown &&
     a.energy === b.energy &&
     a.thrusting === b.thrusting
   );

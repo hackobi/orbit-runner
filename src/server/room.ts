@@ -61,10 +61,10 @@ import {
   VIEW_DELAY_STEPS_PER_TICK,
   damageShip,
   destroyShip,
-  firedThisTick,
+  shotThisTick,
   spawnShip,
 } from '../shared/sim/ship.ts';
-import type { Input, ShipState } from '../shared/sim/ship.ts';
+import type { Input, ShipState, ShotKind } from '../shared/sim/ship.ts';
 import { bulletOrbHit } from '../shared/sim/orbs.ts';
 import {
   WorldLedger,
@@ -570,7 +570,8 @@ export class Room {
           player.score += 1;
         }
       }
-      if (firedThisTick(player.ship)) this.fire(player);
+      const shot = shotThisTick(player.ship);
+      if (shot) this.fire(player, shot);
     }
   }
 
@@ -600,11 +601,11 @@ export class Room {
     player.outbox.push({ kind: 'grant', item, applyTick });
   }
 
-  private fire(player: Player): void {
+  private fire(player: Player, shot: ShotKind): void {
     player.lastFireTick = this.tick;
     const ship = player.ship;
     const live: LiveBullet = {
-      bullet: spawnBullet(player.id, this.tick, ship),
+      bullet: spawnBullet(player.id, this.tick, ship, shot),
       announcement: {
         kind: 'bullet',
         ownerId: player.id,
@@ -614,7 +615,7 @@ export class Room {
         z: ship.z,
         yaw: ship.yaw,
         pitch: ship.pitch,
-        beam: ship.fenix,
+        shot,
       },
     };
     this.bullets.push(live);

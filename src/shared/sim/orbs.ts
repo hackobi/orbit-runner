@@ -9,7 +9,13 @@
 import { SIM } from '../constants.ts';
 import { TWO_PI, cos, hash3, sin } from '../math.ts';
 import { Rng } from '../rng.ts';
-import { BULLET_STEP_MAX, bulletHit, bulletRadius, bulletStep } from './bullets.ts';
+import {
+  BULLET_RADIUS_MAX,
+  BULLET_STEP_MAX,
+  bulletHit,
+  bulletRadius,
+  bulletStep,
+} from './bullets.ts';
 import type { Bullet } from './bullets.ts';
 
 export const ORB_KINDS = [
@@ -181,7 +187,7 @@ export function bulletOrbHit(
   const travel = (tick - bullet.spawnTick) * bulletStep(bullet);
   const x = bullet.ox + bullet.dx * travel;
   const z = bullet.oz + bullet.dz * travel;
-  const reachMax = MAX_ORB_RADIUS + SIM.beamRadius + BULLET_STEP_MAX;
+  const reachMax = MAX_ORB_RADIUS + BULLET_RADIUS_MAX + BULLET_STEP_MAX;
   const hitRadius = bulletRadius(bullet);
   let hit: OrbHit | null = null;
   for (let cx = cellOf(x - reachMax); cx <= cellOf(x + reachMax); cx++) {

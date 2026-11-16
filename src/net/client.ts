@@ -42,12 +42,12 @@ import { SIM_FINGERPRINT } from '../shared/sim/fingerprint.ts';
 import {
   NEUTRAL_INPUT,
   VIEW_DELAY_STEPS_PER_TICK,
-  firedThisTick,
+  shotThisTick,
   isBoosting,
   quantiseControls,
   shipStatesEqual,
 } from '../shared/sim/ship.ts';
-import type { Controls, Input, ShipState } from '../shared/sim/ship.ts';
+import type { Controls, Input, ShipState, ShotKind } from '../shared/sim/ship.ts';
 import { bulletOrbHit } from '../shared/sim/orbs.ts';
 import { applyGrant, applyOrb, createWorld, stepPlayer } from '../shared/sim/world.ts';
 import type { World, WorldEffect, WorldState } from '../shared/sim/world.ts';
@@ -149,7 +149,7 @@ export interface ViewHit {
   spawnTick: number;
   targetId: number;
   tick: number;
-  /** What the hit takes off the target: 15 for a bullet, 30 for a Fenix beam. */
+  /** What the hit takes off the target: 15 for a bullet, 30 for a Fenix beam, 60 for a heavy shot. */
   damage: number;
 }
 
@@ -166,6 +166,7 @@ export interface ShipView {
   shield: number;
   /** 0 to SIM.maxEnergy. */
   energy: number;
+  heavyAmmo: number;
   boosting: boolean;
   invulnerable: boolean;
   fenix: boolean;
@@ -182,8 +183,7 @@ export interface BulletView {
   dx: number;
   dy: number;
   dz: number;
-  /** A Fenix beam rather than a bullet. */
-  beam: boolean;
+  shot: ShotKind;
 }
 
 export interface ClientOptions {
@@ -239,6 +239,7 @@ type Scheduled =
 
 function sameBullet(a: Bullet, b: Bullet): boolean {
   return (
+    a.shot === b.shot &&
     a.ox === b.ox &&
     a.oy === b.oy &&
     a.oz === b.oz &&
@@ -256,6 +257,7 @@ function sameBullet(a: Bullet, b: Bullet): boolean {
 function matchesAnnouncement(predicted: Bullet, announced: Bullet): boolean {
   const near = (a: number, b: number, limit: number): boolean => a - b < limit && b - a < limit;
   return (
+    predicted.shot === announced.shot &&
     near(predicted.ox, announced.ox, 0.01) &&
     near(predicted.oy, announced.oy, 0.01) &&
     near(predicted.oz, announced.oz, 0.01) &&
@@ -479,6 +481,7 @@ export class ClientCore implements WorldState {
       hp: current.hp,
       shield: current.shield,
       energy: current.energy,
+      heavyAmmo: current.heavyAmmo,
       boosting: isBoosting(current),
       invulnerable: current.invulnTicks > 0,
       fenix: current.fenix,
@@ -529,7 +532,7 @@ export class ClientCore implements WorldState {
         dx: bullet.dx,
         dy: bullet.dy,
         dz: bullet.dz,
-        beam: bullet.beam,
+        shot: bullet.shot,
       });
     };
     const ownTick = this.drawTick;
@@ -679,9 +682,10 @@ export class ClientCore implements WorldState {
     this.previousState = state;
     this.state = this.stepOwnShip(state, input, this.tick, world);
     this.store(this.tick, input, this.state, send ? nowMs : NOT_SENT);
-    if (firedThisTick(this.state)) {
+    const shot = shotThisTick(this.state);
+    if (shot) {
       this.ownBullets.push({
-        bullet: spawnBullet(this.playerId, this.tick, this.state),
+        bullet: spawnBullet(this.playerId, this.tick, this.state, shot),
         confirmed: false,
         spent: false,
         pendingHit: null,
@@ -975,9 +979,10 @@ export class ClientCore implements WorldState {
       previous = state;
       state = this.stepOwnShip(state, this.historyInput[replaySlot] ?? NEUTRAL_INPUT, tick, world);
       this.historyState[replaySlot] = state;
-      if (!firedThisTick(state)) continue;
+      const shot = shotThisTick(state);
+      if (!shot) continue;
       refired.add(tick);
-      const bullet = spawnBullet(this.playerId, tick, state);
+      const bullet = spawnBullet(this.playerId, tick, state, shot);
       const index = this.ownBullets.findIndex((own) => own.bullet.spawnTick === tick);
       const existing = this.ownBullets[index];
       if (existing && (existing.confirmed || sameBullet(existing.bullet, bullet))) continue;
@@ -1023,7 +1028,7 @@ export class ClientCore implements WorldState {
           event.z,
           event.yaw,
           event.pitch,
-          event.beam,
+          event.shot,
         );
         if (event.ownerId !== this.playerId) {
           this.remoteBullets.push({ bullet: announced, hitTick: Infinity });

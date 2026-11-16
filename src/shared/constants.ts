@@ -112,6 +112,15 @@ export const SIM = {
   bulletDamage: 15, // main.js:9872
   fireCooldownTicks: 7, // v1 fired every 0.11 s, which is every 7th frame at 60 fps (main.js:8840)
 
+  // Heavy shot (decision D22): slow enough to dodge when seen, so it rewards
+  // an ambush. A ship carries a few a life.
+  heavySpeed: 150, // units/s: under a bullet's 230, over the boost button's 120
+  heavyLifeTicks: 200, // 3.3 s, 500 units
+  heavyRadius: 1.5,
+  heavyDamage: 60,
+  heavyAmmo: 2, // a life
+  heavyCooldownTicks: 60, // 1 s between the two
+
   // Lag compensation (decision D2)
   maxViewDelayTicks: 21, // 350 ms: the furthest back a shooter's view is honoured
 } as const;

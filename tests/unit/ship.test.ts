@@ -206,13 +206,13 @@ describe('inputs', () => {
   });
 
   it('wire values out of range are refused', () => {
-    expect(inputFromWire(128, 0, 0, false, false, false, 0)).toBeNull();
-    expect(inputFromWire(0, -128, 0, false, false, false, 0)).toBeNull();
-    expect(inputFromWire(0.5, 0, 0, false, false, false, 0)).toBeNull();
-    expect(inputFromWire(0, 0, 2, false, false, false, 0)).toBeNull();
-    expect(inputFromWire(0, 0, 0, true, false, false, -1)).toBeNull();
-    expect(inputFromWire(0, 0, 0, true, false, false, 1.5)).toBeNull();
-    expect(inputFromWire(127, -127, -1, true, false, false, 100)).not.toBeNull();
+    expect(inputFromWire(128, 0, 0, false, false, false, false, 0)).toBeNull();
+    expect(inputFromWire(0, -128, 0, false, false, false, false, 0)).toBeNull();
+    expect(inputFromWire(0.5, 0, 0, false, false, false, false, 0)).toBeNull();
+    expect(inputFromWire(0, 0, 2, false, false, false, false, 0)).toBeNull();
+    expect(inputFromWire(0, 0, 0, true, false, false, false, -1)).toBeNull();
+    expect(inputFromWire(0, 0, 0, true, false, false, false, 1.5)).toBeNull();
+    expect(inputFromWire(127, -127, -1, true, false, false, false, 100)).not.toBeNull();
   });
 });
 
@@ -249,7 +249,7 @@ describe('determinism', () => {
     // If this fails on another CPU with no change to the simulation, the
     // simulation is not portable and prediction will not match the server.
     // If the simulation or a constant changed on purpose, update the number.
-    expect(runTrace(20261113, 10_000).hash).toBe(4204857823);
+    expect(runTrace(20261113, 10_000).hash).toBe(3094701666);
   });
 
   it('never fuses a multiply and an add, even in optimised code', () => {

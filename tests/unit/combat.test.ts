@@ -67,7 +67,7 @@ function crossingShot(aimDelayTicks: number, claimedViewDelay: number): TestWorl
 
   world.clock.every(TICK_MS, () => {
     const tick = world.room.tick + 3;
-    const input = inputFromWire(0, 0, 0, tick === fireTick, false, false, 0);
+    const input = inputFromWire(0, 0, 0, tick === fireTick, false, false, false, 0);
     if (!input) throw new Error('bad input');
     const bytes = Uint8Array.from(encodeInput(tick, [input]));
     // Write the claimed view delay straight into the message, so a claim
@@ -101,6 +101,44 @@ describe('lag compensation', () => {
     expect(crossingShot(SIM.maxViewDelayTicks, 0xffff)).toHaveLength(1);
     expect(crossingShot(40, 0xffff)).toEqual([]);
     expect(crossingShot(40, 40 * 16)).toEqual([]);
+  });
+});
+
+// --- The heavy shot, through the room ------------------------------------------
+
+describe('the heavy shot is fired, predicted and decided like any other (decision D22)', () => {
+  it('two shots take 120 off a shielded target, with no correction for the shooter', () => {
+    const world = new TestWorld(31, 0, false);
+    let armed = false;
+    const shooter = world.addClient({
+      controls: (): Controls => ({ yaw: 0, pitch: 0, throttle: 0, fire: false, heavy: armed }),
+    });
+    const target = world.addClient({
+      controls: (): Controls => ({ yaw: 0, pitch: 0, throttle: 0, fire: false }),
+    });
+    world.run(600);
+    world.place(shooter.core.playerId, { ...STILL, x: 0, z: 4000, yaw: 0 });
+    world.place(target.core.playerId, { ...STILL, x: 0, z: 4150, yaw: 0, shield: 50 });
+    world.run(1000);
+    const correctionsBefore = shooter.corrections.length;
+    const hitsBefore = world.hits.length;
+
+    armed = true;
+    let sawHeavy = false;
+    for (let i = 0; i < 40; i++) {
+      world.run(100);
+      sawHeavy ||= target.core.bulletViews().some((b) => b.shot === 'heavy');
+    }
+
+    expect(world.hits.length - hitsBefore).toBe(2);
+    const struck = world.room.shipOf(target.core.playerId);
+    // 60 and 60: the shield's 50 goes first, then 70 of the hull.
+    expect(struck).toMatchObject({ alive: true, shield: 0, hp: 30 });
+    expect(world.room.shipOf(shooter.core.playerId)?.heavyAmmo).toBe(0);
+    expect(shooter.core.state?.heavyAmmo).toBe(0);
+    expect(shooter.corrections.length).toBe(correctionsBefore);
+    // The target's client was told of the shot and drew it coming.
+    expect(sawHeavy).toBe(true);
   });
 });
 

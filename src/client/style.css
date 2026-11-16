@@ -358,6 +358,14 @@ body {
   height: 92px;
 }
 
+#heavy {
+  right: calc(36px + var(--inset-right));
+  bottom: calc(138px + var(--inset-bottom));
+  width: 56px;
+  height: 56px;
+  font-size: 13px;
+}
+
 #faster,
 #slower {
   right: calc(140px + var(--inset-right));

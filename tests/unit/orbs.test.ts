@@ -103,7 +103,7 @@ describe('the orb field', () => {
         orb.z + (rng.next() - 0.5) * 40,
         (rng.next() - 0.5) * 6,
         (rng.next() - 0.5) * 0.3,
-        i % 2 === 0,
+        (['bullet', 'beam', 'heavy'] as const)[i % 3] ?? 'bullet',
       );
       const expected = bruteForce(bullet, 1000);
       expect(bulletOrbHit(field, NOTHING_GONE, bullet, 1000)).toEqual(expected);
@@ -433,8 +433,8 @@ describe('shooting an orb', () => {
     world.run(1000);
     const bullets = other.events.filter((e): e is BulletEvent => e.kind === 'bullet');
     expect(bullets.length).toBeGreaterThan(5);
-    expect(bullets.every((b) => b.beam)).toBe(true);
-    expect(other.core.bulletViews().every((b) => b.beam)).toBe(true);
+    expect(bullets.every((b) => b.shot === 'beam')).toBe(true);
+    expect(other.core.bulletViews().every((b) => b.shot === 'beam')).toBe(true);
   });
 
   it('an orb in the way takes the bullet: the ship behind it is not hit', () => {

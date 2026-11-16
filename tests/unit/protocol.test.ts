@@ -64,11 +64,12 @@ describe('client messages', () => {
     const inputs = [
       quantiseControls({ yaw: 1, pitch: -1, throttle: 1, fire: true }, 14.25),
       quantiseControls({ yaw: -0.3, pitch: 0.2, throttle: -1, fire: false, boost: true }, 3),
-      quantiseControls({ yaw: 0, pitch: 0, throttle: 0, fire: false, brake: true }),
+      quantiseControls({ yaw: 0, pitch: 0, throttle: 0, fire: false, brake: true, heavy: true }),
     ];
     expect(inputs[0]).toMatchObject({ fire: true, boost: false, brake: false, viewDelay: 228 });
     expect(inputs[1]).toMatchObject({ boost: true, brake: false });
-    expect(inputs[2]).toMatchObject({ boost: false, brake: true });
+    expect(inputs[2]).toMatchObject({ boost: false, brake: true, heavy: true });
+    expect(inputs[0]?.heavy).toBe(false);
     const decoded = decodeClientMessage(encodeInput(4_000_000_000, inputs));
     expect(decoded).toEqual({ type: 'input', tick: 4_000_000_000, inputs });
   });
@@ -228,8 +229,8 @@ describe('server messages', () => {
     expect(none?.type === 'snapshot' && Number.isNaN(none.inputLead)).toBe(true);
   });
 
-  it('a snapshot is 102 bytes plus 21 per nearby ship', () => {
-    expect(SNAPSHOT_HEADER_BYTES).toBe(102);
+  it('a snapshot is 104 bytes plus 21 per nearby ship', () => {
+    expect(SNAPSHOT_HEADER_BYTES).toBe(104);
     expect(NEAR_ENTRY_BYTES).toBe(21);
     expect(FAR_ENTRY_BYTES).toBe(13);
   });
@@ -253,7 +254,7 @@ describe('server messages', () => {
         z: 4000.5,
         yaw: 0.5,
         pitch: -0.25,
-        beam: true,
+        shot: 'beam',
       },
       { kind: 'hit', ownerId: 2, spawnTick: 1000, targetId: 5, tick: 1012, hp: 70, shield: 25 },
       {

@@ -19,9 +19,9 @@ import type { RemoteSample } from './remote.ts';
 import { STORE_ITEMS } from './scoring.ts';
 import type { StoreItem } from './scoring.ts';
 import { inputFromWire } from './sim/ship.ts';
-import type { Input, ShipState } from './sim/ship.ts';
+import type { Input, ShipState, ShotKind } from './sim/ship.ts';
 
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 
 /** Inputs carried per message: the tick's own plus the ones before it. */
 export const INPUT_REDUNDANCY = 3;
@@ -159,8 +159,7 @@ export interface BulletEvent {
   readonly z: number;
   readonly yaw: number;
   readonly pitch: number;
-  /** A Fenix beam rather than a bullet. */
-  readonly beam: boolean;
+  readonly shot: ShotKind;
 }
 
 export interface HitEvent {
@@ -378,7 +377,7 @@ class Reader {
 
 // --- Own ship, full precision -----------------------------------------------
 
-export const SHIP_STATE_BYTES = 8 * 8 + 2 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 2 + 1;
+export const SHIP_STATE_BYTES = 8 * 8 + 2 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 2 + 1;
 
 function writeShip(w: Writer, s: ShipState): void {
   w.f64(s.x);
@@ -399,6 +398,8 @@ function writeShip(w: Writer, s: ShipState): void {
   w.u8(s.fireCooldown);
   w.u8(s.crashTicks);
   w.u8(s.fenix ? 1 : 0);
+  w.u8(s.heavyAmmo);
+  w.u8(s.heavyCooldown);
   w.u16(s.energy);
   w.u8(s.thrusting ? 1 : 0);
 }
@@ -423,6 +424,8 @@ function readShip(r: Reader): ShipState {
     fireCooldown: r.u8(),
     crashTicks: r.u8(),
     fenix: r.u8() === 1,
+    heavyAmmo: r.u8(),
+    heavyCooldown: r.u8(),
     energy: r.u16(),
     thrusting: r.u8() === 1,
   };
@@ -527,10 +530,11 @@ export function encodeHello(message: Omit<HelloMessage, 'type'>): Uint8Array {
 const BUTTON_FIRE = 4;
 const BUTTON_BOOST = 8;
 const BUTTON_BRAKE = 16;
-const BUTTONS_MAX = 3 | BUTTON_FIRE | BUTTON_BOOST | BUTTON_BRAKE;
+const BUTTON_HEAVY = 32;
+const BUTTONS_MAX = 3 | BUTTON_FIRE | BUTTON_BOOST | BUTTON_BRAKE | BUTTON_HEAVY;
 
 // One byte of buttons: throttle −1, 0, +1 as 0, 1, 2 in the low bits, then
-// fire, boost and brake.
+// fire, boost, brake and the heavy shot.
 export function encodeInput(tick: number, inputs: readonly Input[]): Uint8Array {
   const count = Math.min(inputs.length, INPUT_REDUNDANCY);
   const w = new Writer(1 + 4 + 1 + count * 5);
@@ -546,7 +550,8 @@ export function encodeInput(tick: number, inputs: readonly Input[]): Uint8Array 
       (input.throttle + 1) |
         (input.fire ? BUTTON_FIRE : 0) |
         (input.boost ? BUTTON_BOOST : 0) |
-        (input.brake ? BUTTON_BRAKE : 0),
+        (input.brake ? BUTTON_BRAKE : 0) |
+        (input.heavy ? BUTTON_HEAVY : 0),
     );
     w.u16(input.viewDelay);
   }
@@ -598,6 +603,7 @@ export function decodeClientMessage(data: Uint8Array): ClientMessage | null {
           pitch,
           (buttons & 3) - 1,
           (buttons & BUTTON_FIRE) !== 0,
+          (buttons & BUTTON_HEAVY) !== 0,
           (buttons & BUTTON_BOOST) !== 0,
           (buttons & BUTTON_BRAKE) !== 0,
           r.u16(),
@@ -683,6 +689,9 @@ export function encodeScores(entries: readonly ScoreEntry[]): Uint8Array {
   return w.finish();
 }
 
+/** The kinds of shot, in the order of their numbers on the wire. */
+const SHOT_KINDS: readonly ShotKind[] = ['bullet', 'beam', 'heavy'];
+
 const EVENT_BULLET = 1;
 const EVENT_HIT = 2;
 const EVENT_DEATH = 3;
@@ -711,7 +720,7 @@ export function encodeEvents(events: readonly GameEvent[]): Uint8Array {
         w.f32(event.z);
         w.f32(event.yaw);
         w.f32(event.pitch);
-        w.u8(event.beam ? 1 : 0);
+        w.u8(SHOT_KINDS.indexOf(event.shot));
         break;
       case 'hit':
         w.u8(EVENT_HIT);
@@ -763,17 +772,15 @@ export function encodeEvents(events: readonly GameEvent[]): Uint8Array {
 function readEvent(r: Reader): GameEvent | null {
   const kind = r.u8();
   if (kind === EVENT_BULLET) {
-    return {
-      kind: 'bullet',
-      ownerId: r.u8(),
-      spawnTick: r.u32(),
-      x: r.f32(),
-      y: r.f32(),
-      z: r.f32(),
-      yaw: r.f32(),
-      pitch: r.f32(),
-      beam: r.u8() === 1,
-    };
+    const ownerId = r.u8();
+    const spawnTick = r.u32();
+    const x = r.f32();
+    const y = r.f32();
+    const z = r.f32();
+    const yaw = r.f32();
+    const pitch = r.f32();
+    const shot = SHOT_KINDS[r.u8()];
+    return shot ? { kind: 'bullet', ownerId, spawnTick, x, y, z, yaw, pitch, shot } : null;
   }
   if (kind === EVENT_HIT) {
     return {

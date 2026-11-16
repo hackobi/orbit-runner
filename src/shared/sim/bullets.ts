@@ -7,7 +7,7 @@
 
 import { SIM, TICK_DT } from '../constants.ts';
 import { cos, sin } from '../math.ts';
-import type { ShipState } from './ship.ts';
+import type { ShipState, ShotKind } from './ship.ts';
 
 export interface Bullet {
   readonly ownerId: number;
@@ -22,33 +22,65 @@ export interface Bullet {
   readonly dy: number;
   readonly dz: number;
   /**
-   * A Fenix beam (main.js:6023-6039): faster, fatter, shorter-lived, and
-   * twice the damage. A Fenix fires these instead of bullets.
+   * A Fenix beam (main.js:6023-6039) is faster, fatter, shorter-lived and
+   * twice the damage; a Fenix fires these instead of bullets. A heavy shot
+   * (decision D22) is slow and fat and does four times the damage.
    */
-  readonly beam: boolean;
+  readonly shot: ShotKind;
 }
 
+interface ShotSpec {
+  /** Distance covered in one tick. */
+  readonly step: number;
+  readonly radius: number;
+  readonly damage: number;
+  readonly lifeTicks: number;
+}
+
+const SHOTS: Record<ShotKind, ShotSpec> = {
+  bullet: {
+    step: SIM.bulletSpeed * TICK_DT,
+    radius: SIM.bulletRadius,
+    damage: SIM.bulletDamage,
+    lifeTicks: SIM.bulletLifeTicks,
+  },
+  beam: {
+    step: SIM.beamSpeed * TICK_DT,
+    radius: SIM.beamRadius,
+    damage: SIM.beamDamage,
+    lifeTicks: SIM.beamLifeTicks,
+  },
+  heavy: {
+    step: SIM.heavySpeed * TICK_DT,
+    radius: SIM.heavyRadius,
+    damage: SIM.heavyDamage,
+    lifeTicks: SIM.heavyLifeTicks,
+  },
+};
+
 /** Distance an ordinary bullet covers in one tick. */
-export const BULLET_STEP = SIM.bulletSpeed * TICK_DT;
-const BEAM_STEP = SIM.beamSpeed * TICK_DT;
-/** The longest step of any kind of bullet. */
-export const BULLET_STEP_MAX = Math.max(BULLET_STEP, BEAM_STEP);
+export const BULLET_STEP = SHOTS.bullet.step;
+/** The longest step and the widest radius of any kind of shot. */
+export const BULLET_STEP_MAX = Math.max(SHOTS.bullet.step, SHOTS.beam.step, SHOTS.heavy.step);
+export const BULLET_RADIUS_MAX = Math.max(SIM.bulletRadius, SIM.beamRadius, SIM.heavyRadius);
 
 /** An ordinary bullet hits a ship when their centres are this close. */
 export const BULLET_HIT_DISTANCE = SIM.shipHitRadius + SIM.bulletRadius;
 
 /** Distance this bullet covers in one tick. */
-export const bulletStep = (bullet: Bullet): number => (bullet.beam ? BEAM_STEP : BULLET_STEP);
-export const bulletRadius = (bullet: Bullet): number =>
-  bullet.beam ? SIM.beamRadius : SIM.bulletRadius;
-export const bulletDamage = (bullet: Bullet): number =>
-  bullet.beam ? SIM.beamDamage : SIM.bulletDamage;
-export const bulletLifeTicks = (bullet: Bullet): number =>
-  bullet.beam ? SIM.beamLifeTicks : SIM.bulletLifeTicks;
+export const bulletStep = (bullet: Bullet): number => SHOTS[bullet.shot].step;
+export const bulletRadius = (bullet: Bullet): number => SHOTS[bullet.shot].radius;
+export const bulletDamage = (bullet: Bullet): number => SHOTS[bullet.shot].damage;
+export const bulletLifeTicks = (bullet: Bullet): number => SHOTS[bullet.shot].lifeTicks;
 
-/** A bullet leaving the nose of `ship` at `tick` (main.js:6014-6021). Roll does not aim. */
-export function spawnBullet(ownerId: number, tick: number, ship: ShipState): Bullet {
-  return bulletFrom(ownerId, tick, ship.x, ship.y, ship.z, ship.yaw, ship.pitch, ship.fenix);
+/** A shot leaving the nose of `ship` at `tick` (main.js:6014-6021). Roll does not aim. */
+export function spawnBullet(
+  ownerId: number,
+  tick: number,
+  ship: ShipState,
+  shot: ShotKind,
+): Bullet {
+  return bulletFrom(ownerId, tick, ship.x, ship.y, ship.z, ship.yaw, ship.pitch, shot);
 }
 
 /** The same, from the ship's position and heading. Used for bullets received from the server. */
@@ -60,7 +92,7 @@ export function bulletFrom(
   shipZ: number,
   yaw: number,
   pitch: number,
-  beam: boolean,
+  shot: ShotKind,
 ): Bullet {
   const cosPitch = cos(pitch);
   const dx = sin(yaw) * cosPitch;
@@ -75,7 +107,7 @@ export function bulletFrom(
     dx,
     dy,
     dz,
-    beam,
+    shot,
   };
 }
 
