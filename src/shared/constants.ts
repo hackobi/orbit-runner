@@ -121,6 +121,21 @@ export const SIM = {
   heavyAmmo: 2, // a life
   heavyCooldownTicks: 60, // 1 s between the two
 
+  // Homing shot (decision D23). Charged by holding its button, paid for in
+  // energy, and steered by the server toward one ship. It turns in a circle
+  // of radius speed / turn rate, about 117 units against a ship's 30, so a
+  // hard turn close in gets inside it.
+  seekerChargeTicks: 60, // 1 s held before it can be released
+  seekerCost: 2400, // energy: two fifths of a tank
+  seekerCooldownTicks: 300, // as long as it flies, so a ship has one out at a time
+  seekerSpeed: 140, // units/s: over the boost button's 120, under an orb boost's 185
+  seekerTurnRate: 1.2, // rad/s
+  seekerLifeTicks: 300, // 5 s, 700 units
+  seekerRadius: 0.8,
+  seekerDamage: 40,
+  seekerLockRange: 1500,
+  seekerLockAngle: 0.5, // rad either side of the nose
+
   // Lag compensation (decision D2)
   maxViewDelayTicks: 21, // 350 ms: the furthest back a shooter's view is honoured
 } as const;

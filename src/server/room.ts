@@ -33,6 +33,7 @@ import type {
   HelloMessage,
   InputMessage,
   RemoteEntry,
+  SeekerEntry,
 } from '../shared/protocol.ts';
 import { distantSampleOf, sampleOf, sampleTrack } from '../shared/remote.ts';
 import type { RemoteSample } from '../shared/remote.ts';
@@ -55,6 +56,8 @@ import {
   spawnBullet,
 } from '../shared/sim/bullets.ts';
 import type { Bullet } from '../shared/sim/bullets.ts';
+import { launchSeeker, seekerExpired, seekerPath, stepSeeker } from '../shared/sim/seeker.ts';
+import type { Seeker } from '../shared/sim/seeker.ts';
 import { SIM_FINGERPRINT } from '../shared/sim/fingerprint.ts';
 import {
   NEUTRAL_INPUT,
@@ -330,6 +333,7 @@ export class Room {
   private readonly connections = new Set<Connection>();
   private readonly players = new Map<number, Player>();
   private bullets: LiveBullet[] = [];
+  private seekers: Seeker[] = [];
   private nextDeathId = 1;
   private snapshotsSent = 0;
   /** The moment the current tick was due. Null until the first advance. */
@@ -351,6 +355,11 @@ export class Room {
 
   get playerCount(): number {
     return this.players.size;
+  }
+
+  /** Every homing shot in flight. */
+  get seekersInFlight(): readonly Seeker[] {
+    return this.seekers;
   }
 
   get bulletCount(): number {
@@ -462,6 +471,7 @@ export class Room {
     this.tick += 1;
     this.stepShips();
     this.stepBullets();
+    this.stepSeekers();
     this.stepAwayAndRespawn();
     this.flushEvents();
     this.onTick?.(this.tick, this);
@@ -604,6 +614,11 @@ export class Room {
   private fire(player: Player, shot: ShotKind): void {
     player.lastFireTick = this.tick;
     const ship = player.ship;
+    if (shot === 'seeker') {
+      const others = [...this.players.values()];
+      this.seekers.push(launchSeeker(player.id, this.tick, ship, others));
+      return;
+    }
     const live: LiveBullet = {
       bullet: spawnBullet(player.id, this.tick, ship, shot),
       announcement: {
@@ -703,39 +718,88 @@ export class Room {
         survivors.push(live);
         continue;
       }
-      hitTarget.ship = damageShip(hitTarget.ship, bulletDamage(bullet));
-      this.stats.hits += 1;
-      owner.score += SCORE.pvpHit;
-      this.listener.hit?.({
-        ownerId: owner.id,
-        spawnTick: bullet.spawnTick,
-        targetId: hitTarget.id,
-        tick: this.tick,
-      });
-      this.announce(
-        {
-          kind: 'hit',
-          ownerId: owner.id,
-          spawnTick: bullet.spawnTick,
-          targetId: hitTarget.id,
-          tick: this.tick,
-          hp: hitTarget.ship.hp,
-          shield: hitTarget.ship.shield,
-        },
-        hitTarget.ship.x,
-        hitTarget.ship.y,
-        hitTarget.ship.z,
-        owner.id,
-        hitTarget.id,
-      );
-      if (!hitTarget.ship.alive) {
-        owner.kills += 1;
-        owner.killsThisLife += 1;
-        owner.score += killScore(hitTarget.ship.x, hitTarget.ship.z, owner.killMultTicks > 0);
-        this.recordDeath(hitTarget, owner, CAUSE_PLAYER);
-      }
+      this.landHit(owner, hitTarget, bulletDamage(bullet), bullet.spawnTick);
     }
     this.bullets = survivors;
+  }
+
+  /** A shot of `owner`'s, fired at `spawnTick`, takes `damage` off `target`. */
+  private landHit(owner: Player, target: Player, damage: number, spawnTick: number): void {
+    target.ship = damageShip(target.ship, damage);
+    this.stats.hits += 1;
+    owner.score += SCORE.pvpHit;
+    this.listener.hit?.({ ownerId: owner.id, spawnTick, targetId: target.id, tick: this.tick });
+    this.announce(
+      {
+        kind: 'hit',
+        ownerId: owner.id,
+        spawnTick,
+        targetId: target.id,
+        tick: this.tick,
+        hp: target.ship.hp,
+        shield: target.ship.shield,
+      },
+      target.ship.x,
+      target.ship.y,
+      target.ship.z,
+      owner.id,
+      target.id,
+    );
+    if (!target.ship.alive) {
+      owner.kills += 1;
+      owner.killsThisLife += 1;
+      owner.score += killScore(target.ship.x, target.ship.z, owner.killMultTicks > 0);
+      this.recordDeath(target, owner, CAUSE_PLAYER);
+    }
+  }
+
+  /**
+   * Moves every homing shot one tick (decision D23). Each turns toward its
+   * target where that ship really is now, not where its owner was seeing it:
+   * the shot is the server's from the moment it leaves, and a dodge has to
+   * count for the ship that makes it. It ends on the first ship or rock on
+   * its path, or when its time is up.
+   */
+  private stepSeekers(): void {
+    const survivors: Seeker[] = [];
+    for (const before of this.seekers) {
+      const owner = this.players.get(before.ownerId);
+      if (!owner || seekerExpired(before, this.tick)) continue;
+      const followed = before.targetId === null ? undefined : this.players.get(before.targetId);
+      const seeker = stepSeeker(before, followed?.ship ?? null);
+      const path = seekerPath(seeker, this.tick);
+
+      const hitDistance = shipHitDistance(path);
+      let hitTarget: Player | null = null;
+      let hitAt = Infinity;
+      for (const target of this.players.values()) {
+        if (target === owner || !target.ship.alive || target.ship.invulnTicks > 0) continue;
+        const ship = target.ship;
+        const at = bulletHit(path, this.tick, ship.x, ship.y, ship.z, hitDistance);
+        if (at >= 0 && at < hitAt) {
+          hitAt = at;
+          hitTarget = target;
+        }
+      }
+      const rock = bulletAsteroidHit(this.world.belt, this.ledger, path, this.tick);
+      if (rock && rock.at < hitAt) {
+        this.ledger.asteroids.remove(rock.id, this.tick);
+        this.stats.asteroidsShot += 1;
+        owner.score += asteroidScore(owner.asteroidMultTicks > 0);
+        this.broadcast({
+          kind: 'asteroid',
+          asteroidId: rock.id,
+          tick: this.tick,
+          playerId: owner.id,
+          spawnTick: seeker.spawnTick,
+          byBullet: true,
+        });
+        continue;
+      }
+      if (hitTarget) this.landHit(owner, hitTarget, bulletDamage(path), seeker.spawnTick);
+      else survivors.push(seeker);
+    }
+    this.seekers = survivors;
   }
 
   private stepAwayAndRespawn(): void {
@@ -885,6 +949,25 @@ export class Room {
       }
       player.fullStateDue = false;
 
+      // Homing shots: its own, any aimed at it, and any near enough to see.
+      const seekers: SeekerEntry[] = [];
+      for (const seeker of this.seekers) {
+        if (seekers.length === 255) break;
+        if (
+          seeker.ownerId === player.id ||
+          seeker.targetId === player.id ||
+          distanceSq(player.ship, seeker.x, seeker.y, seeker.z) <= NEAR_RADIUS * NEAR_RADIUS
+        ) {
+          seekers.push({
+            ownerId: seeker.ownerId,
+            targetId: seeker.targetId ?? NO_PLAYER,
+            x: seeker.x,
+            y: seeker.y,
+            z: seeker.z,
+          });
+        }
+      }
+
       this.send(
         connection,
         encodeSnapshot({
@@ -898,6 +981,7 @@ export class Room {
           killMultTicks: player.killMultTicks,
           storeTicks: player.storeTicks,
           remotes,
+          seekers,
         }),
         'droppable',
       );
@@ -1205,6 +1289,7 @@ export class Room {
   private remove(player: Player): void {
     this.players.delete(player.id);
     this.bullets = this.bullets.filter((live) => live.bullet.ownerId !== player.id);
+    this.seekers = this.seekers.filter((seeker) => seeker.ownerId !== player.id);
     this.listener.playerLeft?.(player.id, this.tick);
     for (const other of this.players.values()) {
       other.near.delete(player.id);

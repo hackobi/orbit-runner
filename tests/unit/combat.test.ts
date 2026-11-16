@@ -67,7 +67,7 @@ function crossingShot(aimDelayTicks: number, claimedViewDelay: number): TestWorl
 
   world.clock.every(TICK_MS, () => {
     const tick = world.room.tick + 3;
-    const input = inputFromWire(0, 0, 0, tick === fireTick, false, false, false, 0);
+    const input = inputFromWire(0, 0, 0, tick === fireTick, false, false, false, false, 0);
     if (!input) throw new Error('bad input');
     const bytes = Uint8Array.from(encodeInput(tick, [input]));
     // Write the claimed view delay straight into the message, so a claim

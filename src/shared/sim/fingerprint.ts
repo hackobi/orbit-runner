@@ -51,7 +51,7 @@ function mix(hash: number, bytes: Uint8Array): number {
 
 /**
  * A fixed, seeded flight. It covers turning, pitching against the clamp,
- * throttle, boost, the boost and brake buttons and their energy, firing, the heavy shot, damage, death on the planet and by damage,
+ * throttle, boost, the boost and brake buttons and their energy, firing, the heavy shot, the homing shot's charge, damage, death on the planet and by damage,
  * respawn with its protection, the orbits of the belt far into a room's
  * life, crashes into its rocks, every kind of orb, a wormhole jump, flight
  * as a Fenix, and the edge of the combat zone.
@@ -90,6 +90,7 @@ export function runTrace(seed: number, ticks: number): TraceResult {
         throttle: Math.floor(rng.next() * 3) - 1,
         fire: rng.next() < 0.5,
         heavy: rng.next() < 0.2,
+        seek: rng.next() < 0.4,
         boost: rng.next() < 0.25,
         brake: rng.next() < 0.25,
       });

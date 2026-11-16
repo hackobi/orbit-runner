@@ -90,6 +90,9 @@ const OTHER_BULLET_COLOR = new Color(0xff7a4d);
 const BEAM_COLOR = new Color(0xff2222);
 /** A heavy shot is a fat ball, the same colour whoever fired it: it is the thing to dodge. */
 const HEAVY_COLOR = new Color(0xffa040);
+/** A homing shot: a magenta dart that leaves a trail, so its turn can be read. */
+const SEEKER_COLOR = new Color(0xff40e0);
+const SEEKER_TRAIL = 0xff80f0;
 
 /** v1's orb colours (main.js:5126-5845). */
 const ORB_COLORS: Record<OrbKind, number> = {
@@ -365,6 +368,7 @@ export class GameScene {
   /** A beam is 12 long and thin (main.js:6027); the shape it is drawn from has radius 0.25. */
   private readonly beamScale = new Vector3(0.5, 0.5, 24);
   private readonly heavyScale = new Vector3().setScalar(SIM.heavyRadius / SIM.bulletRadius);
+  private readonly seekerScale = new Vector3(3.2, 3.2, 12);
   private readonly zAxis = new Vector3(0, 0, 1);
 
   constructor(canvas: HTMLCanvasElement) {
@@ -781,8 +785,13 @@ export class GameScene {
       if (!bullet) break;
       // A stretched dot pointing along its flight.
       this.position.set(bullet.x, bullet.y, bullet.z);
-      this.direction.set(bullet.dx, bullet.dy, bullet.dz);
+      // A homing shot seen only once has no direction yet.
+      if (bullet.dx === 0 && bullet.dy === 0 && bullet.dz === 0) this.direction.copy(this.zAxis);
+      else this.direction.set(bullet.dx, bullet.dy, bullet.dz);
       this.orientation.setFromUnitVectors(this.zAxis, this.direction);
+      if (bullet.shot === 'seeker') {
+        this.particles.emit(bullet.x, bullet.y, bullet.z, 0, 0, 0, 0.5, 0.5, SEEKER_TRAIL);
+      }
       this.matrix.compose(
         this.position,
         this.orientation,
@@ -790,7 +799,9 @@ export class GameScene {
           ? this.beamScale
           : bullet.shot === 'heavy'
             ? this.heavyScale
-            : this.bulletScale,
+            : bullet.shot === 'seeker'
+              ? this.seekerScale
+              : this.bulletScale,
       );
       this.bullets.setMatrixAt(i, this.matrix);
       this.bullets.setColorAt(
@@ -799,9 +810,11 @@ export class GameScene {
           ? BEAM_COLOR
           : bullet.shot === 'heavy'
             ? HEAVY_COLOR
-            : bullet.ownerId === ownId
-              ? OWN_BULLET_COLOR
-              : OTHER_BULLET_COLOR,
+            : bullet.shot === 'seeker'
+              ? SEEKER_COLOR
+              : bullet.ownerId === ownId
+                ? OWN_BULLET_COLOR
+                : OTHER_BULLET_COLOR,
       );
     }
     this.bullets.count = count;

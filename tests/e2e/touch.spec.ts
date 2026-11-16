@@ -138,6 +138,12 @@ test('three fingers at once: steering, firing and speeding up', async ({ page, c
   await touch(cdp, 'touchEnd', []);
   await expect.poll(() => controls(page)).toMatchObject({ heavy: false });
 
+  const seek: Finger = { id: 6, ...(await centreOf(page, '#seek')) };
+  await touch(cdp, 'touchStart', [seek]);
+  await expect.poll(() => controls(page)).toMatchObject({ seek: true, heavy: false, fire: false });
+  await touch(cdp, 'touchEnd', []);
+  await expect.poll(() => controls(page)).toMatchObject({ seek: false });
+
   // And the ship really did what the fingers asked: it fired and turned.
   const status = await page.evaluate(() => window.__orbit?.status());
   expect(status?.counters.shotsFired).toBeGreaterThan(0);

@@ -56,12 +56,26 @@ const SHOTS: Record<ShotKind, ShotSpec> = {
     damage: SIM.heavyDamage,
     lifeTicks: SIM.heavyLifeTicks,
   },
+  // A homing shot does not fly a straight line, so it is not a Bullet for
+  // longer than a tick: sim/seeker.ts makes one of each tick's path to test
+  // it against ships and rocks with the functions here.
+  seeker: {
+    step: SIM.seekerSpeed * TICK_DT,
+    radius: SIM.seekerRadius,
+    damage: SIM.seekerDamage,
+    lifeTicks: SIM.seekerLifeTicks,
+  },
 };
 
 /** Distance an ordinary bullet covers in one tick. */
 export const BULLET_STEP = SHOTS.bullet.step;
 /** The longest step and the widest radius of any kind of shot. */
-export const BULLET_STEP_MAX = Math.max(SHOTS.bullet.step, SHOTS.beam.step, SHOTS.heavy.step);
+export const BULLET_STEP_MAX = Math.max(
+  SHOTS.bullet.step,
+  SHOTS.beam.step,
+  SHOTS.heavy.step,
+  SHOTS.seeker.step,
+);
 export const BULLET_RADIUS_MAX = Math.max(SIM.bulletRadius, SIM.beamRadius, SIM.heavyRadius);
 
 /** An ordinary bullet hits a ship when their centres are this close. */

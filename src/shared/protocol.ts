@@ -21,7 +21,7 @@ import type { StoreItem } from './scoring.ts';
 import { inputFromWire } from './sim/ship.ts';
 import type { Input, ShipState, ShotKind } from './sim/ship.ts';
 
-export const PROTOCOL_VERSION = 8;
+export const PROTOCOL_VERSION = 9;
 
 /** Inputs carried per message: the tick's own plus the ones before it. */
 export const INPUT_REDUNDANCY = 3;
@@ -126,6 +126,19 @@ export interface RemoteEntry {
   readonly sample: RemoteSample;
 }
 
+/** A homing shot in flight, as a snapshot carries it (decision D23). */
+export interface SeekerEntry {
+  readonly ownerId: number;
+  /** The ship it is following, or NO_PLAYER. */
+  readonly targetId: number;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}
+
+/** 1 owner + 1 target + 10 position. */
+export const SEEKER_ENTRY_BYTES = 12;
+
 export interface SnapshotMessage {
   readonly type: 'snapshot';
   readonly serverTick: number;
@@ -147,6 +160,8 @@ export interface SnapshotMessage {
   readonly storeTicks: number;
   /** Every other ship this client is told about at this tick, near ones in full. */
   readonly remotes: readonly RemoteEntry[];
+  /** Every homing shot near this client, or aimed at it, or its own. */
+  readonly seekers: readonly SeekerEntry[];
 }
 
 export interface BulletEvent {
@@ -377,7 +392,8 @@ class Reader {
 
 // --- Own ship, full precision -----------------------------------------------
 
-export const SHIP_STATE_BYTES = 8 * 8 + 2 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 2 + 1;
+export const SHIP_STATE_BYTES =
+  8 * 8 + 2 + 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 2 + 2 + 1;
 
 function writeShip(w: Writer, s: ShipState): void {
   w.f64(s.x);
@@ -400,6 +416,8 @@ function writeShip(w: Writer, s: ShipState): void {
   w.u8(s.fenix ? 1 : 0);
   w.u8(s.heavyAmmo);
   w.u8(s.heavyCooldown);
+  w.u8(s.charge);
+  w.u16(s.seekerCooldown);
   w.u16(s.energy);
   w.u8(s.thrusting ? 1 : 0);
 }
@@ -426,6 +444,8 @@ function readShip(r: Reader): ShipState {
     fenix: r.u8() === 1,
     heavyAmmo: r.u8(),
     heavyCooldown: r.u8(),
+    charge: r.u8(),
+    seekerCooldown: r.u16(),
     energy: r.u16(),
     thrusting: r.u8() === 1,
   };
@@ -531,10 +551,11 @@ const BUTTON_FIRE = 4;
 const BUTTON_BOOST = 8;
 const BUTTON_BRAKE = 16;
 const BUTTON_HEAVY = 32;
-const BUTTONS_MAX = 3 | BUTTON_FIRE | BUTTON_BOOST | BUTTON_BRAKE | BUTTON_HEAVY;
+const BUTTON_SEEK = 64;
+const BUTTONS_MAX = 3 | BUTTON_FIRE | BUTTON_BOOST | BUTTON_BRAKE | BUTTON_HEAVY | BUTTON_SEEK;
 
 // One byte of buttons: throttle −1, 0, +1 as 0, 1, 2 in the low bits, then
-// fire, boost, brake and the heavy shot.
+// fire, boost, brake, the heavy shot and the homing shot's charge.
 export function encodeInput(tick: number, inputs: readonly Input[]): Uint8Array {
   const count = Math.min(inputs.length, INPUT_REDUNDANCY);
   const w = new Writer(1 + 4 + 1 + count * 5);
@@ -551,7 +572,8 @@ export function encodeInput(tick: number, inputs: readonly Input[]): Uint8Array 
         (input.fire ? BUTTON_FIRE : 0) |
         (input.boost ? BUTTON_BOOST : 0) |
         (input.brake ? BUTTON_BRAKE : 0) |
-        (input.heavy ? BUTTON_HEAVY : 0),
+        (input.heavy ? BUTTON_HEAVY : 0) |
+        (input.seek ? BUTTON_SEEK : 0),
     );
     w.u16(input.viewDelay);
   }
@@ -604,6 +626,7 @@ export function decodeClientMessage(data: Uint8Array): ClientMessage | null {
           (buttons & 3) - 1,
           (buttons & BUTTON_FIRE) !== 0,
           (buttons & BUTTON_HEAVY) !== 0,
+          (buttons & BUTTON_SEEK) !== 0,
           (buttons & BUTTON_BOOST) !== 0,
           (buttons & BUTTON_BRAKE) !== 0,
           r.u16(),
@@ -654,11 +677,15 @@ export function encodeReject(reason: RejectReason): Uint8Array {
   return w.finish();
 }
 
-/** Everything in a snapshot before the list of other ships. */
-export const SNAPSHOT_HEADER_BYTES = 1 + 4 + 4 + 1 + SHIP_STATE_BYTES + 2 + 4 + 2 + 2 + 2 + 1;
+/** Everything in a snapshot but the entries of its two lists: other ships and homing shots. */
+export const SNAPSHOT_HEADER_BYTES = 1 + 4 + 4 + 1 + SHIP_STATE_BYTES + 2 + 4 + 2 + 2 + 2 + 1 + 1;
 
 export function encodeSnapshot(message: Omit<SnapshotMessage, 'type'>): Uint8Array {
-  const w = new Writer(SNAPSHOT_HEADER_BYTES + message.remotes.length * NEAR_ENTRY_BYTES);
+  const w = new Writer(
+    SNAPSHOT_HEADER_BYTES +
+      message.remotes.length * NEAR_ENTRY_BYTES +
+      message.seekers.length * SEEKER_ENTRY_BYTES,
+  );
   w.u8(SERVER_SNAPSHOT);
   w.u32(message.serverTick);
   w.f32(message.inputLead);
@@ -671,6 +698,14 @@ export function encodeSnapshot(message: Omit<SnapshotMessage, 'type'>): Uint8Arr
   w.u16(Math.min(65535, message.storeTicks));
   w.u8(message.remotes.length);
   for (const entry of message.remotes) writeRemote(w, entry);
+  w.u8(message.seekers.length);
+  for (const seeker of message.seekers) {
+    w.u8(seeker.ownerId);
+    w.u8(seeker.targetId);
+    w.i32(quantisePosition(seeker.x));
+    w.i16(quantiseHeight(seeker.y));
+    w.i32(quantisePosition(seeker.z));
+  }
   return w.finish();
 }
 
@@ -690,7 +725,7 @@ export function encodeScores(entries: readonly ScoreEntry[]): Uint8Array {
 }
 
 /** The kinds of shot, in the order of their numbers on the wire. */
-const SHOT_KINDS: readonly ShotKind[] = ['bullet', 'beam', 'heavy'];
+const SHOT_KINDS: readonly ShotKind[] = ['bullet', 'beam', 'heavy', 'seeker'];
 
 const EVENT_BULLET = 1;
 const EVENT_HIT = 2;
@@ -888,6 +923,17 @@ export function decodeServerMessage(data: Uint8Array): ServerMessage | null {
       const count = r.u8();
       const remotes: RemoteEntry[] = [];
       for (let i = 0; i < count; i++) remotes.push(readRemote(r, serverTick));
+      const seekerCount = r.u8();
+      const seekers: SeekerEntry[] = [];
+      for (let i = 0; i < seekerCount; i++) {
+        seekers.push({
+          ownerId: r.u8(),
+          targetId: r.u8(),
+          x: r.i32() / POSITION_SCALE,
+          y: r.i16() / HEIGHT_SCALE,
+          z: r.i32() / POSITION_SCALE,
+        });
+      }
       if (!r.atEnd()) return null;
       return {
         type: 'snapshot',
@@ -901,6 +947,7 @@ export function decodeServerMessage(data: Uint8Array): ServerMessage | null {
         killMultTicks,
         storeTicks,
         remotes,
+        seekers,
       };
     }
     if (type === SERVER_EVENTS) {

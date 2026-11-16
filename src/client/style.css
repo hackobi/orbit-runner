@@ -366,6 +366,14 @@ body {
   font-size: 13px;
 }
 
+#seek {
+  right: calc(104px + var(--inset-right));
+  bottom: calc(162px + var(--inset-bottom));
+  width: 56px;
+  height: 56px;
+  font-size: 13px;
+}
+
 #faster,
 #slower {
   right: calc(140px + var(--inset-right));

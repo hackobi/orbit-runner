@@ -11,7 +11,7 @@ This file is the running checkpoint. A new session should read it first, then `d
 | 2. Multiplayer | **Done 2026-11-13, approved 2026-11-14.** Every acceptance check passes; numbers below | STOP, with measured numbers |
 | 3. Content and mobile | **Built and tested 2026-11-14, except what needs a real phone.** The device checklist (`docs/DEVICE-TESTING.md`) and the LAN HTTPS server are waiting for the user | |
 | 4. Mac app | **Built and tested 2026-11-14 on this Mac.** Other Macs and a 120 Hz display: UNVERIFIED | |
-| Dogfight feel (user request, 2026-11-15) | **In progress on branch `feature/dogfight`.** Energy, boost, brake and the heavy shot are built; tasks in [Dogfight feel](#dogfight-feel-before-phase-5) | The user approves before it is merged to `feature/v2-rebuild`, which deploys |
+| Dogfight feel (user request, 2026-11-15) | **In progress on branch `feature/dogfight`.** Energy, boost, brake, the heavy shot and the homing shot are built; tasks in [Dogfight feel](#dogfight-feel-before-phase-5) | The user approves before it is merged to `feature/v2-rebuild`, which deploys |
 | 5. Demos integration | Not started. Direction from the user recorded under Phase 5 (reuse v1's payment flow; King of the Hill) | Separate approval, and a payment proposal first |
 
 **Next action:** continue [Dogfight feel](#dogfight-feel-before-phase-5) at its first task not marked Done. Phases 1 to 4 are built. Phase 5 (Demos) needs separate approval and starts with a written payment proposal, not code. Open items that need the user: `npm run dev:lan` (it changes the Mac's keychain) and the phone checklist in `docs/DEVICE-TESTING.md`; opening the Mac app themselves.
@@ -463,7 +463,7 @@ The rule for every task: anything that changes how the ship moves or what it can
 |---|---|---|
 | 1 | Energy; boost and brake buttons that spend it (D21) | Done. Predicted with zero corrections on the clean and 100 ms links (`tests/unit/netcode.test.ts`) |
 | 2 | Heavy shot: slow, fat, straight, two a life (D22) | Done. Fired, predicted and decided through the room with no correction (`tests/unit/combat.test.ts`) |
-| 3 | Charged homing shot: the server steers it; a hard break evades it; the target is warned | Not started |
+| 3 | Charged homing shot: the server steers it; a hard break evades it; the target is warned (D23) | Done. A straight flyer is hit from any side; a hard turn with the shot 60 to 120 units off escapes; at 30 it is too late (`tests/unit/seeker.test.ts`) |
 | 4 | Fenix orb keeps the transformation and adds a timed weapon upgrade (user's choice, 2026-11-15) | Not started |
 | 5 | Feedback on the client: shield-coloured flash, smoke on a low hull, a short slow-motion camera on a kill. Shake and exhaust exist | Not started |
 
@@ -567,3 +567,5 @@ Blockers: none. Waiting for the user: Phase 5 needs separate approval.
 - Bombs: v1 has them (`main.js:357`), paid in DEM. Left out of v2 on purpose until Phase 5.
 - Dogfight feel, task 1: energy with boost and brake (D21). Wire format 6 to 7; the pinned trace hash is now 4204857823, and Chromium, WebKit and Firefox agree with Node on it. The full browser suite passes, 22 of 22.
 - Dogfight feel, task 2: the heavy shot (D22). A bullet's `beam` flag became a kind of shot (bullet, beam, heavy), so the straight-line maths, lag compensation and events are shared. A ship fires one thing a tick. Wire format 8; trace hash 3094701666.
+- Dogfight feel, task 3: the homing shot (D23). It is the one projectile with no formula, so the server flies it (`src/shared/sim/seeker.ts`) and snapshots carry it; clients draw it between samples as they draw other ships (`src/net/seekers.ts`). It is tested against the target's true position, not the shooter's rewound view. The charge, its cost and its cooldown are in the ship state, so the shooter is not corrected. Wire format 9; trace hash 3028214356.
+- Known and left: a ship that circles without stopping is never hit by a homing shot. It is an easy target for the gun and the heavy shot while it does.

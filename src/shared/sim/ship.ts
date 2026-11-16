@@ -26,6 +26,8 @@ export interface Input {
   readonly fire: boolean;
   /** Fires a heavy shot if one is left and the launcher is ready. */
   readonly heavy: boolean;
+  /** Held to charge the homing shot; letting go of a full charge fires it. */
+  readonly seek: boolean;
   /** Held: fly faster than top speed while the energy lasts. */
   readonly boost: boolean;
   /** Held: shed speed fast while the energy lasts. */
@@ -49,6 +51,7 @@ export interface Controls {
   throttle: number;
   fire: boolean;
   heavy?: boolean;
+  seek?: boolean;
   boost?: boolean;
   brake?: boolean;
 }
@@ -64,6 +67,7 @@ export function inputFromWire(
   throttle: number,
   fire: boolean,
   heavy: boolean,
+  seek: boolean,
   boost: boolean,
   brake: boolean,
   viewDelay: number,
@@ -78,6 +82,7 @@ export function inputFromWire(
     throttle,
     fire,
     heavy,
+    seek,
     boost,
     brake,
     viewDelay: Math.min(viewDelay, MAX_VIEW_DELAY),
@@ -99,6 +104,7 @@ export function quantiseControls(controls: Controls, viewDelayTicks = 0): Input 
     throttle,
     fire: controls.fire,
     heavy: controls.heavy === true,
+    seek: controls.seek === true,
     boost: controls.boost === true,
     brake: controls.brake === true,
     viewDelay: Math.round(clamp(delay, 0, SIM.maxViewDelayTicks) * VIEW_DELAY_STEPS_PER_TICK),
@@ -144,6 +150,10 @@ export interface ShipState {
   readonly heavyAmmo: number;
   /** Ticks until the next heavy shot can be fired. */
   readonly heavyCooldown: number;
+  /** Ticks the homing shot has been charging, up to SIM.seekerChargeTicks. */
+  readonly charge: number;
+  /** Ticks until another homing shot can be charged. */
+  readonly seekerCooldown: number;
   /** 0 to SIM.maxEnergy. Fills by itself; the boost and brake buttons spend it. */
   readonly energy: number;
   /** The boost button drove the ship on this tick. */
@@ -182,10 +192,23 @@ export function stepShip(s: ShipState, input: Input): ShipState {
 
   const invulnTicks = s.invulnTicks > 0 ? s.invulnTicks - 1 : 0;
 
-  // Heavy shot (decision D22). The caller spawns it; see shotThisTick.
+  // Homing shot (decision D23): the button charges it, and letting go of a
+  // full charge fires it if the energy is there. The caller launches it; see
+  // shotThisTick. A ship fires one thing a tick, and this comes first.
+  let seekerCooldown = s.seekerCooldown > 0 ? s.seekerCooldown - 1 : 0;
+  let charge = 0;
+  let seekerFired = false;
+  if (seekerCooldown === 0) {
+    if (input.seek) charge = Math.min(SIM.seekerChargeTicks, s.charge + 1);
+    else seekerFired = s.charge >= SIM.seekerChargeTicks && s.energy >= SIM.seekerCost;
+  }
+  if (seekerFired) seekerCooldown = SIM.seekerCooldownTicks;
+  const energyLeft = seekerFired ? s.energy - SIM.seekerCost : s.energy;
+
+  // Heavy shot (decision D22).
   let heavyAmmo = s.heavyAmmo;
   let heavyCooldown = s.heavyCooldown > 0 ? s.heavyCooldown - 1 : 0;
-  const heavyFired = input.heavy && heavyAmmo > 0 && heavyCooldown === 0;
+  const heavyFired = !seekerFired && input.heavy && heavyAmmo > 0 && heavyCooldown === 0;
   if (heavyFired) {
     heavyAmmo -= 1;
     heavyCooldown = SIM.heavyCooldownTicks;
@@ -195,7 +218,9 @@ export function stepShip(s: ShipState, input: Input): ShipState {
   // the moment it reaches zero. A ship fires one thing a tick, so the gun
   // waits for a heavy shot.
   let fireCooldown = s.fireCooldown > 0 ? s.fireCooldown - 1 : 0;
-  if (input.fire && fireCooldown === 0 && !heavyFired) fireCooldown = SIM.fireCooldownTicks;
+  if (input.fire && fireCooldown === 0 && !heavyFired && !seekerFired) {
+    fireCooldown = SIM.fireCooldownTicks;
+  }
   const crashTicks = s.crashTicks > 0 ? s.crashTicks - 1 : 0;
 
   // Boost timer (main.js:8690).
@@ -205,13 +230,13 @@ export function stepShip(s: ShipState, input: Input): ShipState {
   // The boost and brake buttons (decision D21). Each needs a tick's worth of
   // energy. An orb's boost is the stronger, so the button adds nothing to it;
   // boost wins over brake.
-  const canThrust = s.energy >= SIM.thrustCost;
+  const canThrust = energyLeft >= SIM.thrustCost;
   const thrusting = input.boost && !orbBoost && canThrust;
   const braking = input.brake && !orbBoost && !thrusting && canThrust && s.speed > BRAKE_FLOOR;
   const energy =
     thrusting || braking
-      ? s.energy - SIM.thrustCost
-      : Math.min(SIM.maxEnergy, s.energy + SIM.energyRegen);
+      ? energyLeft - SIM.thrustCost
+      : Math.min(SIM.maxEnergy, energyLeft + SIM.energyRegen);
   const boosting = orbBoost || thrusting;
 
   // Target speed (main.js:8697-8721).
@@ -270,6 +295,8 @@ export function stepShip(s: ShipState, input: Input): ShipState {
     fenix: s.fenix,
     heavyAmmo,
     heavyCooldown,
+    charge,
+    seekerCooldown,
     energy,
     thrusting,
   };
@@ -294,18 +321,21 @@ function destroyed(s: ShipState): ShipState {
     fenix: false,
     heavyAmmo: 0,
     heavyCooldown: 0,
+    charge: 0,
+    seekerCooldown: 0,
     energy: 0,
     thrusting: false,
   };
 }
 
-/** What a ship can fire: the gun's bullet, a Fenix's beam, or a heavy shot. */
-export type ShotKind = 'bullet' | 'beam' | 'heavy';
+/** What a ship can fire: the gun's bullet, a Fenix's beam, a heavy shot, or a homing shot. */
+export type ShotKind = 'bullet' | 'beam' | 'heavy' | 'seeker';
 
 /** What the step that produced `after` fired, or null. Never two things in a tick. */
 export function shotThisTick(after: ShipState): ShotKind | null {
   if (!after.alive) return null;
   // A cooldown holds its full value only on the tick it was set.
+  if (after.seekerCooldown === SIM.seekerCooldownTicks) return 'seeker';
   if (after.heavyCooldown === SIM.heavyCooldownTicks) return 'heavy';
   if (after.fireCooldown === SIM.fireCooldownTicks) return after.fenix ? 'beam' : 'bullet';
   return null;
@@ -356,6 +386,8 @@ export function spawnShip(rng: Rng, spawnSeq: number): ShipState {
     fenix: false,
     heavyAmmo: SIM.heavyAmmo,
     heavyCooldown: 0,
+    charge: 0,
+    seekerCooldown: 0,
     energy: SIM.maxEnergy,
     thrusting: false,
   };
@@ -384,6 +416,8 @@ export function shipStatesEqual(a: ShipState, b: ShipState): boolean {
     a.fenix === b.fenix &&
     a.heavyAmmo === b.heavyAmmo &&
     a.heavyCooldown === b.heavyCooldown &&
+    a.charge === b.charge &&
+    a.seekerCooldown === b.seekerCooldown &&
     a.energy === b.energy &&
     a.thrusting === b.thrusting
   );

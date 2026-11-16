@@ -93,6 +93,17 @@ class Shown {
   }
 }
 
+/** Where the homing shot stands: cooling, charging, ready to let go, or waiting for energy. */
+function homingLine(view: ShipView): string {
+  if (view.seekerCooldown > 0) return `Homing ${Math.ceil(view.seekerCooldown / SIM.tickRate)} s`;
+  if (view.energy < SIM.seekerCost) return 'Homing needs energy';
+  if (view.charge >= SIM.seekerChargeTicks) return 'Homing READY: let go';
+  if (view.charge > 0) {
+    return `Homing ${Math.round((view.charge / SIM.seekerChargeTicks) * 100)}%`;
+  }
+  return 'Homing: hold';
+}
+
 export class Hud {
   private readonly shown = new Shown();
   private readonly statusLine = element('status', HTMLDivElement);
@@ -106,6 +117,7 @@ export class Hud {
   private readonly energy = element('energy', HTMLSpanElement);
   private readonly speed = element('speed', HTMLDivElement);
   private readonly ammo = element('ammo', HTMLDivElement);
+  private readonly homing = element('homing', HTMLDivElement);
   private readonly points = element('points', HTMLDivElement);
   private readonly kills = element('kills', HTMLDivElement);
   private readonly timers = element('timers', HTMLDivElement);
@@ -150,7 +162,7 @@ export class Hud {
     this.scoreboardOn = !touch;
     if (!touch) {
       this.help.textContent =
-        'A / D turn · I / K pitch · W / S speed · Shift boost · X brake · Space fire · E heavy · 1 2 3 store · P players';
+        'A / D turn · I / K pitch · W / S speed · Shift boost · X brake · Space fire · E heavy · hold Q homing · 1 2 3 store · P players';
     }
     window.addEventListener('keydown', (event) => {
       if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
@@ -206,6 +218,7 @@ export class Hud {
       `${Math.round(view.speed)} u/s${view.boosting ? '  BOOST' : ''}${view.fenix ? '  FENIX' : ''}`,
     );
     shown.text(this.ammo, `Heavy ${view.heavyAmmo}`);
+    shown.text(this.homing, homingLine(view));
     shown.text(this.points, `Points ${number(core.score)}`);
     shown.text(this.kills, `Kills ${core.kills}`);
     const timers: string[] = [];
@@ -222,7 +235,9 @@ export class Hud {
       this.warning,
       view.alive && state && outsideCombatZone(state)
         ? 'Outside the combat zone. The hull is failing: turn back.'
-        : '',
+        : view.alive && core.seekerViews().some((seeker) => seeker.targetId === core.playerId)
+          ? 'Homing shot on you: turn hard, or get behind a rock.'
+          : '',
     );
 
     this.updateLife(core, view, nowMs);

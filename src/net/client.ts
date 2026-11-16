@@ -38,6 +38,8 @@ import {
   spawnBullet,
 } from '../shared/sim/bullets.ts';
 import type { Bullet } from '../shared/sim/bullets.ts';
+import { SeekerTracks } from './seekers.ts';
+import type { SeekerView } from './seekers.ts';
 import { SIM_FINGERPRINT } from '../shared/sim/fingerprint.ts';
 import {
   NEUTRAL_INPUT,
@@ -167,6 +169,9 @@ export interface ShipView {
   /** 0 to SIM.maxEnergy. */
   energy: number;
   heavyAmmo: number;
+  /** Ticks the homing shot has charged, and ticks until it can be charged again. */
+  charge: number;
+  seekerCooldown: number;
   boosting: boolean;
   invulnerable: boolean;
   fenix: boolean;
@@ -383,6 +388,7 @@ export class ClientCore implements WorldState {
   private scheduled: Scheduled[] = [];
 
   private ownBullets: OwnBullet[] = [];
+  private readonly seekers = new SeekerTracks();
   private remoteBullets: RemoteBullet[] = [];
   /**
    * Recent damage to other ships that their drawn samples may not show yet:
@@ -482,6 +488,8 @@ export class ClientCore implements WorldState {
       shield: current.shield,
       energy: current.energy,
       heavyAmmo: current.heavyAmmo,
+      charge: current.charge,
+      seekerCooldown: current.seekerCooldown,
       boosting: isBoosting(current),
       invulnerable: current.invulnTicks > 0,
       fenix: current.fenix,
@@ -544,6 +552,11 @@ export class ClientCore implements WorldState {
     return views;
   }
 
+  /** Every homing shot to draw now, on the timeline other ships are drawn on. */
+  seekerViews(): SeekerView[] {
+    return this.seekers.views(this.remotes.viewTick);
+  }
+
   /** The predicted state the client holds for a tick, if it still has it. */
   predictedAt(tick: number): ShipState | null {
     const slot = tick & (HISTORY_SIZE - 1);
@@ -601,6 +614,7 @@ export class ClientCore implements WorldState {
     this.recentDamage.clear();
     this.lastDeathTick.clear();
     this.remotes.clear();
+    this.seekers.clear();
     // The world is the same for the life of a room; which rocks and orbs
     // are gone is told again after every welcome.
     if (
@@ -683,7 +697,8 @@ export class ClientCore implements WorldState {
     this.state = this.stepOwnShip(state, input, this.tick, world);
     this.store(this.tick, input, this.state, send ? nowMs : NOT_SENT);
     const shot = shotThisTick(this.state);
-    if (shot) {
+    // A homing shot is the server's to fly; it arrives in snapshots.
+    if (shot && shot !== 'seeker') {
       this.ownBullets.push({
         bullet: spawnBullet(this.playerId, this.tick, this.state, shot),
         confirmed: false,
@@ -913,6 +928,7 @@ export class ClientCore implements WorldState {
     this.remotes.arrived(snapshot.serverTick, arrivedAtMs);
     for (const entry of snapshot.remotes) this.remotes.add(entry.id, entry.sample);
     this.remotes.prune(snapshot.serverTick);
+    this.seekers.arrived(snapshot.serverTick, snapshot.seekers);
     this.remoteBullets = this.remoteBullets.filter(
       (remote) => !bulletExpired(remote.bullet, snapshot.serverTick - 60),
     );
@@ -980,7 +996,7 @@ export class ClientCore implements WorldState {
       state = this.stepOwnShip(state, this.historyInput[replaySlot] ?? NEUTRAL_INPUT, tick, world);
       this.historyState[replaySlot] = state;
       const shot = shotThisTick(state);
-      if (!shot) continue;
+      if (!shot || shot === 'seeker') continue;
       refired.add(tick);
       const bullet = spawnBullet(this.playerId, tick, state, shot);
       const index = this.ownBullets.findIndex((own) => own.bullet.spawnTick === tick);

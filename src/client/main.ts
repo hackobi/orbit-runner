@@ -271,6 +271,10 @@ function frame(nowMs: number): void {
   const remotes = view ? core.remoteViews() : [];
   if (view) {
     const bullets = core.bulletViews();
+    // Homing shots are drawn with the bullets, as one more kind of shot.
+    for (const seeker of core.seekerViews()) {
+      bullets.push({ ...seeker, spawnTick: 0, shot: 'seeker' });
+    }
     const world = core.world ? { world: core.world, tick: core.drawTick, state: core } : null;
     if (view.alive) nearMiss(nowMs, view.x, view.y, view.z);
     scene.render(view, remotes, bullets, core.playerId, elapsedMs / 1000, world);

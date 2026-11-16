@@ -5,6 +5,7 @@ import {
   FAR_ENTRY_BYTES,
   INPUT_REDUNDANCY,
   NEAR_ENTRY_BYTES,
+  SEEKER_ENTRY_BYTES,
   NO_PLAYER,
   PROTOCOL_VERSION,
   REJECT_FULL,
@@ -68,7 +69,7 @@ describe('client messages', () => {
     ];
     expect(inputs[0]).toMatchObject({ fire: true, boost: false, brake: false, viewDelay: 228 });
     expect(inputs[1]).toMatchObject({ boost: true, brake: false });
-    expect(inputs[2]).toMatchObject({ boost: false, brake: true, heavy: true });
+    expect(inputs[2]).toMatchObject({ boost: false, brake: true, heavy: true, seek: false });
     expect(inputs[0]?.heavy).toBe(false);
     const decoded = decodeClientMessage(encodeInput(4_000_000_000, inputs));
     expect(decoded).toEqual({ type: 'input', tick: 4_000_000_000, inputs });
@@ -186,11 +187,17 @@ describe('server messages', () => {
         { id: 3, sample: near },
         { id: 15, sample: far },
       ],
+      seekers: [
+        { ownerId: 3, targetId: 7, x: 4000.25, y: -12.5, z: -3999.75 },
+        { ownerId: 15, targetId: NO_PLAYER, x: -5200, y: 499, z: 0.5 },
+      ],
     };
     const bytes = encodeSnapshot(message);
     // What the server keeps for rewinding is exactly what the client decodes.
     expect(decodeServerMessage(bytes)).toEqual({ type: 'snapshot', ...message });
-    expect(bytes.byteLength).toBe(SNAPSHOT_HEADER_BYTES + NEAR_ENTRY_BYTES + FAR_ENTRY_BYTES);
+    expect(bytes.byteLength).toBe(
+      SNAPSHOT_HEADER_BYTES + NEAR_ENTRY_BYTES + FAR_ENTRY_BYTES + 2 * SEEKER_ENTRY_BYTES,
+    );
     expect(near.full).toBe(true);
     expect(far).toMatchObject({ full: false, yaw: 0, hp: 0 });
   });
@@ -224,13 +231,15 @@ describe('server messages', () => {
         killMultTicks: 0,
         storeTicks: 0,
         remotes: [],
+        seekers: [],
       }),
     );
     expect(none?.type === 'snapshot' && Number.isNaN(none.inputLead)).toBe(true);
   });
 
-  it('a snapshot is 104 bytes plus 21 per nearby ship', () => {
-    expect(SNAPSHOT_HEADER_BYTES).toBe(104);
+  it('a snapshot is 108 bytes plus 21 per nearby ship and 12 per homing shot', () => {
+    expect(SNAPSHOT_HEADER_BYTES).toBe(108);
+    expect(SEEKER_ENTRY_BYTES).toBe(12);
     expect(NEAR_ENTRY_BYTES).toBe(21);
     expect(FAR_ENTRY_BYTES).toBe(13);
   });
