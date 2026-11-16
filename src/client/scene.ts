@@ -15,7 +15,9 @@ import {
   DoubleSide,
   DynamicDrawUsage,
   Euler,
+  ExtrudeGeometry,
   Group,
+  InstancedBufferAttribute,
   InstancedMesh,
   Matrix4,
   Mesh,
@@ -31,6 +33,7 @@ import {
   SRGBColorSpace,
   Scene,
   ShaderMaterial,
+  Shape,
   SphereGeometry,
   TorusGeometry,
   Vector3,
@@ -102,11 +105,20 @@ const OWN_BULLET_COLOR = new Color(0xfff2a8);
 const OTHER_BULLET_COLOR = new Color(0xff7a4d);
 /** v1's Fenix beam is red, thin and 12 long (main.js:6027). */
 const BEAM_COLOR = new Color(0xff2222);
-/** A heavy shot is a fat ball, the same colour whoever fired it: it is the thing to dodge. */
-const HEAVY_COLOR = new Color(0xffa040);
-/** A homing shot: a magenta dart that leaves a trail, so its turn can be read. */
+/**
+ * A heavy shot is a ball of plasma, the same colour whoever fired it: it is the
+ * thing to dodge. Its soft glow reaches exactly as far as it can hit; the hot
+ * centre is much smaller.
+ */
+const HEAVY_COLOR = new Color(0xff8a1c);
+const HEAVY_CORE_COLOR = new Color(0xfff3cf);
+const HEAVY_CORE = 0.3; // of the radius
+const HEAVY_EMBER = 0xff9a3c;
+/** A homing shot: a see-through magenta dart that leaves a trail, so its turn can be read. */
 const SEEKER_COLOR = new Color(0xff40e0);
+const SEEKER_ALPHA = 0.7;
 const SEEKER_TRAIL = 0xff80f0;
+const MAX_GLOWS = 64;
 
 /** v1's orb colours (main.js:5126-5845). */
 const ORB_COLORS: Record<OrbKind, number> = {
@@ -238,30 +250,119 @@ function buildWormholeMaterial(time: { value: number }): ShaderMaterial {
   });
 }
 
+/**
+ * Plasma: a glowing shape that is brightest where it faces the viewer and fades
+ * to nothing at its edge, with bands of light crawling over it. Heavy and homing
+ * shots are drawn with it, each with its own colour and strength (`tint`).
+ */
+function buildGlowMaterial(time: { value: number }): ShaderMaterial {
+  return new ShaderMaterial({
+    uniforms: { time },
+    transparent: true,
+    depthWrite: false,
+    blending: AdditiveBlending,
+    vertexShader: /* glsl */ `
+      attribute vec4 tint;
+      varying vec4 colour;
+      varying vec3 local;
+      varying float facing;
+      void main() {
+        colour = tint;
+        local = position;
+        vec4 seen = modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+        vec3 outward = normalize(normalMatrix * mat3(instanceMatrix) * normal);
+        facing = abs(dot(outward, normalize(-seen.xyz)));
+        gl_Position = projectionMatrix * seen;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float time;
+      varying vec4 colour;
+      varying vec3 local;
+      varying float facing;
+      void main() {
+        float bands = sin(local.x * 5.0 + time * 9.0) * sin(local.y * 6.0 - time * 7.0)
+          * sin(local.z * 4.0 + time * 11.0);
+        float body = pow(facing, 1.3);
+        float heart = pow(facing, 7.0);
+        vec3 lit = mix(colour.rgb, vec3(1.0), heart * 0.75) * (0.85 + 0.6 * bands);
+        gl_FragColor = vec4(lit, body * colour.a);
+        #include <colorspace_fragment>
+      }
+    `,
+  });
+}
+
 /** How wide a wormhole's mouth is drawn: v1's ring reached 4 units out (main.js:5565). */
 const WORMHOLE_SIZE = 8;
 
-/** v1's Fenix (main.js:5038-5094): a black dart with wings and pale edges, nose along +Z. */
+/**
+ * The Fenix: a swept-wing raptor in deep red, edged in glowing gold, nose along +Z.
+ * v1's was a plain black dart (main.js:5038-5094), which vanished against space.
+ */
 function buildFenix(): Group {
   const group = new Group();
-  const dark = new MeshStandardMaterial({ color: 0x0a0a0a, metalness: 0.4, roughness: 0.5 });
-  const pale = new MeshStandardMaterial({
-    color: 0xffffff,
-    emissive: 0xffeedd,
-    emissiveIntensity: 1.5,
+  const hull = new MeshStandardMaterial({
+    color: 0xd42a1e,
+    emissive: 0x4a0c06,
+    metalness: 0.35,
+    roughness: 0.35,
+    flatShading: true,
   });
-  const body = new Mesh(new ConeGeometry(1.2, 4, 12), dark);
+  const carbon = new MeshStandardMaterial({ color: 0x3a3f4a, metalness: 0.3, roughness: 0.4 });
+  const glass = new MeshStandardMaterial({ color: 0x0c0e14, metalness: 0.2, roughness: 0.1 });
+  const gold = new MeshStandardMaterial({
+    color: 0xffaa22,
+    emissive: 0xff8800,
+    emissiveIntensity: 0.9,
+  });
+  const fire = new MeshStandardMaterial({
+    color: 0xff5522,
+    emissive: 0xff4410,
+    emissiveIntensity: 1.2,
+  });
+
+  // Wings, drawn from above: x across, y forward. Swept back, with a notched trailing edge.
+  const half: [number, number][] = [
+    [0.5, 1.3],
+    [3.4, -2.3],
+    [3.0, -2.7],
+    [1.4, -1.2],
+    [0.7, -2.1],
+  ];
+  const outline = new Shape();
+  outline.moveTo(0, 1.6);
+  for (const [x, y] of half) outline.lineTo(x, y);
+  outline.lineTo(0, -1.5);
+  for (const [x, y] of [...half].reverse()) outline.lineTo(-x, y);
+  outline.closePath();
+  const wingGeometry = new ExtrudeGeometry(outline, { depth: 0.1, bevelEnabled: false });
+  wingGeometry.rotateX(Math.PI / 2);
+  wingGeometry.translate(0, 0.05, 0);
+  const wings = new Mesh(wingGeometry, hull);
+
+  const body = new Mesh(new ConeGeometry(0.8, 5.4, 6), carbon);
   body.rotation.x = Math.PI / 2;
-  const wings = new Mesh(new BoxGeometry(5.2, 0.12, 1.3), dark);
-  wings.position.z = -1.1;
-  const edge = new Mesh(new BoxGeometry(5.2, 0.05, 0.12), pale);
-  edge.position.set(0, 0.07, -0.5);
-  const tail = new Mesh(
-    new SphereGeometry(0.45, 12, 8),
-    new MeshStandardMaterial({ color: 0xff5522, emissive: 0xff5522, emissiveIntensity: 3 }),
-  );
-  tail.position.z = -2;
-  group.add(body, wings, edge, tail);
+  body.scale.z = 0.6; // flattened; the cone's own z is up once it is laid along the nose
+  body.position.z = 0.5;
+
+  const canopy = new Mesh(new SphereGeometry(0.4, 12, 8), glass);
+  canopy.scale.set(0.7, 0.5, 1.9);
+  canopy.position.set(0, 0.3, 0.7);
+
+  group.add(wings, body, canopy);
+  for (const side of [1, -1]) {
+    // A glowing strip along each leading edge, from wing root to wing tip.
+    const edge = new Mesh(new BoxGeometry(4.6, 0.1, 0.12), gold);
+    edge.position.set(side * 1.95, 0.08, -0.5);
+    edge.rotation.y = side === 1 ? 0.893 : Math.PI - 0.893;
+    const fin = new Mesh(new BoxGeometry(0.08, 0.95, 1.2), hull);
+    fin.position.set(side * 0.75, 0.45, -1.5);
+    fin.rotation.z = side * -0.5;
+    const engine = new Mesh(new SphereGeometry(0.34, 12, 8), fire);
+    engine.position.set(side * 0.5, 0, -2.05);
+    group.add(edge, fin, engine);
+  }
   return group;
 }
 
@@ -338,6 +439,8 @@ export class GameScene {
   private readonly ship = buildShip(0xf5f5f5);
   private readonly remoteShips = new Map<number, ShipModel>();
   private readonly bullets: InstancedMesh;
+  private readonly glows: InstancedMesh;
+  private readonly glowTints: InstancedBufferAttribute;
   private rocks: InstancedMesh | null = null;
   private rocksOf: World | null = null;
   /** Each rock's fixed tumble, so the belt is not two thousand copies of one stone. */
@@ -382,8 +485,11 @@ export class GameScene {
   private readonly bulletScale = new Vector3(1, 1, 7);
   /** A beam is 12 long and thin (main.js:6027); the shape it is drawn from has radius 0.25. */
   private readonly beamScale = new Vector3(0.5, 0.5, 24);
-  private readonly heavyScale = new Vector3().setScalar(SIM.heavyRadius / SIM.bulletRadius);
-  private readonly seekerScale = new Vector3(3.2, 3.2, 12);
+  private readonly heavyCoreScale = new Vector3().setScalar(
+    (SIM.heavyRadius * HEAVY_CORE) / SIM.bulletRadius,
+  );
+  private readonly heavyGlowScale = new Vector3();
+  private readonly seekerScale = new Vector3(3.2, 3.2, 12).multiplyScalar(SIM.bulletRadius);
   private readonly zAxis = new Vector3(0, 0, 1);
 
   constructor(canvas: HTMLCanvasElement) {
@@ -428,6 +534,16 @@ export class GameScene {
     this.bullets.frustumCulled = false;
     this.bullets.count = 0;
 
+    // Heavy and homing shots glow; each instance carries its colour and strength.
+    const glowGeometry = new SphereGeometry(1, 20, 14);
+    this.glowTints = new InstancedBufferAttribute(new Float32Array(MAX_GLOWS * 4), 4);
+    this.glowTints.setUsage(DynamicDrawUsage);
+    glowGeometry.setAttribute('tint', this.glowTints);
+    this.glows = new InstancedMesh(glowGeometry, buildGlowMaterial(this.seconds), MAX_GLOWS);
+    this.glows.instanceMatrix.setUsage(DynamicDrawUsage);
+    this.glows.frustumCulled = false;
+    this.glows.count = 0;
+
     const sparkGeometry = new SphereGeometry(1, 10, 8);
     for (let i = 0; i < MAX_SPARKS; i++) {
       const material = new MeshBasicMaterial({
@@ -443,7 +559,14 @@ export class GameScene {
       this.scene.add(mesh);
     }
 
-    this.scene.add(planet, buildStars(), this.ship.group, this.bullets, this.particles.mesh);
+    this.scene.add(
+      planet,
+      buildStars(),
+      this.ship.group,
+      this.bullets,
+      this.glows,
+      this.particles.mesh,
+    );
 
     this.resize();
     window.addEventListener('resize', () => {
@@ -841,18 +964,37 @@ export class GameScene {
   }
 
   private drawBullets(bullets: readonly BulletView[], ownId: number): void {
-    const count = Math.min(bullets.length, MAX_BULLETS);
-    for (let i = 0; i < count; i++) {
-      const bullet = bullets[i];
-      if (!bullet) break;
+    let solid = 0;
+    let glowing = 0;
+    // Plasma swells and shrinks a little, 3 times a second.
+    this.heavyGlowScale.setScalar(SIM.heavyRadius * (1 + 0.08 * Math.sin(this.seconds.value * 19)));
+    for (const bullet of bullets) {
+      if (solid >= MAX_BULLETS) break;
       // A stretched dot pointing along its flight.
       this.position.set(bullet.x, bullet.y, bullet.z);
       // A homing shot seen only once has no direction yet.
       if (bullet.dx === 0 && bullet.dy === 0 && bullet.dz === 0) this.direction.copy(this.zAxis);
       else this.direction.set(bullet.dx, bullet.dy, bullet.dz);
       this.orientation.setFromUnitVectors(this.zAxis, this.direction);
-      if (bullet.shot === 'seeker') {
-        this.particles.emit(bullet.x, bullet.y, bullet.z, 0, 0, 0, 0.5, 0.5, SEEKER_TRAIL);
+
+      if (bullet.shot === 'seeker' || bullet.shot === 'heavy') {
+        const heavy = bullet.shot === 'heavy';
+        if (heavy)
+          this.particles.emit(bullet.x, bullet.y, bullet.z, 0, 0, 0, 0.35, 0.3, HEAVY_EMBER);
+        else this.particles.emit(bullet.x, bullet.y, bullet.z, 0, 0, 0, 0.5, 0.5, SEEKER_TRAIL);
+        if (glowing < MAX_GLOWS) {
+          const tint = heavy ? HEAVY_COLOR : SEEKER_COLOR;
+          this.matrix.compose(
+            this.position,
+            this.orientation,
+            heavy ? this.heavyGlowScale : this.seekerScale,
+          );
+          this.glows.setMatrixAt(glowing, this.matrix);
+          this.glowTints.setXYZW(glowing, tint.r, tint.g, tint.b, heavy ? 1 : SEEKER_ALPHA);
+          glowing++;
+        }
+        // Only the heavy shot has a solid centre.
+        if (!heavy) continue;
       }
       this.matrix.compose(
         this.position,
@@ -860,28 +1002,28 @@ export class GameScene {
         bullet.shot === 'beam'
           ? this.beamScale
           : bullet.shot === 'heavy'
-            ? this.heavyScale
-            : bullet.shot === 'seeker'
-              ? this.seekerScale
-              : this.bulletScale,
+            ? this.heavyCoreScale
+            : this.bulletScale,
       );
-      this.bullets.setMatrixAt(i, this.matrix);
+      this.bullets.setMatrixAt(solid, this.matrix);
       this.bullets.setColorAt(
-        i,
+        solid,
         bullet.shot === 'beam'
           ? BEAM_COLOR
           : bullet.shot === 'heavy'
-            ? HEAVY_COLOR
-            : bullet.shot === 'seeker'
-              ? SEEKER_COLOR
-              : bullet.ownerId === ownId
-                ? OWN_BULLET_COLOR
-                : OTHER_BULLET_COLOR,
+            ? HEAVY_CORE_COLOR
+            : bullet.ownerId === ownId
+              ? OWN_BULLET_COLOR
+              : OTHER_BULLET_COLOR,
       );
+      solid++;
     }
-    this.bullets.count = count;
+    this.bullets.count = solid;
     this.bullets.instanceMatrix.needsUpdate = true;
     if (this.bullets.instanceColor) this.bullets.instanceColor.needsUpdate = true;
+    this.glows.count = glowing;
+    this.glows.instanceMatrix.needsUpdate = true;
+    this.glowTints.needsUpdate = true;
   }
 
   private drawSparks(elapsedSeconds: number): void {
