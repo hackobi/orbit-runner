@@ -11,10 +11,10 @@ This file is the running checkpoint. A new session should read it first, then `d
 | 2. Multiplayer | **Done 2026-11-13, approved 2026-11-14.** Every acceptance check passes; numbers below | STOP, with measured numbers |
 | 3. Content and mobile | **Built and tested 2026-11-14, except what needs a real phone.** The device checklist (`docs/DEVICE-TESTING.md`) and the LAN HTTPS server are waiting for the user | |
 | 4. Mac app | **Built and tested 2026-11-14 on this Mac.** Other Macs and a 120 Hz display: UNVERIFIED | |
-| Dogfight feel (user request, 2026-11-15) | **Step 1 built on branch `feature/dogfight`, waiting for the user to play it.** Tasks and what each was checked with are in [Dogfight feel](#dogfight-feel-before-phase-5) | The user approves before it is merged to `feature/v2-rebuild`, which deploys |
+| Dogfight feel (user request, 2026-11-15) | **Step 1 is live** (merged and deployed 2026-11-16 with the user's approval; they found physics and gameplay fine). Tasks are in [Dogfight feel](#dogfight-feel-before-phase-5) | The user picks what comes next |
 | 5. Demos integration | Not started. Direction from the user recorded under Phase 5 (reuse v1's payment flow; King of the Hill) | Separate approval, and a payment proposal first |
 
-**Next action:** the user plays step 1 of [Dogfight feel](#dogfight-feel-before-phase-5) and approves merging `feature/dogfight` into `feature/v2-rebuild` (which deploys); then tuning from their notes, then step 2 (matches). Phases 1 to 4 are built. Phase 5 (Demos) needs separate approval and starts with a written payment proposal, not code. Open items that need the user: `npm run dev:lan` (it changes the Mac's keychain) and the phone checklist in `docs/DEVICE-TESTING.md`; opening the Mac app themselves.
+**Next action:** the user chooses between step 2 of [Dogfight feel](#dogfight-feel-before-phase-5) (matches) and Phase 5. Their direction on 2026-11-16: the open room stays the normal game, everyone with the same abilities; rules, timing, groups and teams come later, for tournaments. Phases 1 to 4 are built. Phase 5 (Demos) needs separate approval and starts with a written payment proposal, not code. Open items that need the user: `npm run dev:lan` (it changes the Mac's keychain) and the phone checklist in `docs/DEVICE-TESTING.md`; opening the Mac app themselves.
 
 ## How to run it
 
@@ -572,3 +572,8 @@ Blockers: none. Waiting for the user: Phase 5 needs separate approval.
 - Dogfight feel, task 5, client only: a hit flashes blue while the target has shield left; a hull at 35 or under trails smoke; a ship breaks up in a burst; and for 0.6 s after a kill this player made or suffered, sparks and debris play at a fifth of their speed and the view closes in by 9°. The game itself does not slow: it is shared.
 - Tuned after measuring, before the user played it: the homing shot first flew at 140 u/s and caught a fleeing ship only from 400 units while locking on from 1,500. It now flies at 180 u/s and locks on from 600, which is as far as it can catch. Boost and brake need a tenth of a tank to start, because held on a dry tank they caught one tick in nine. Wire format 11; trace hash 3638788936.
 - Known and left: a ship that circles without stopping is never hit by a homing shot, and one crossing close in front (300 units) is past before it can turn. Both are easy targets for the gun and the heavy shot.
+
+### 2026-11-16: step 1 deployed; shot and Fenix looks
+
+- The user played step 1 and approved the deploy. `feature/dogfight` was fast-forwarded into `feature/v2-rebuild` and pushed; the live server reports wire format 11.
+- From their notes: the heavy shot is now plasma (a small hot centre in a banded glow that reaches exactly as far as it hits, with embers behind), the homing shot is see-through, and the Fenix is a red swept-wing ship edged in gold instead of v1's black dart. Client only (`src/client/scene.ts`). Seen in staged screenshots on desktop Chromium; not on a phone.
