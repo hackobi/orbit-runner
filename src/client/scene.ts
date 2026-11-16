@@ -267,11 +267,16 @@ function showAs(model: ShipModel, fenix: boolean): void {
   model.fenix.visible = fenix;
 }
 
-/** v1's starfield (main.js:4583-4603): 4,000 points in a shell 8,000 to 20,000 out. */
+/**
+ * v1's starfield (main.js:4583-4603): 4,000 points in a shell 8,000 to 20,000 out.
+ * Smaller than v1's 1.6 pixels and mostly faint: on a phone they read bigger
+ * than the rocks of the belt.
+ */
 function buildStars(): Points {
   const count = 4000;
   const rng = new Rng(4000);
   const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
     const r = 8000 + rng.next() * 12000;
     const theta = rng.next() * Math.PI * 2;
@@ -279,14 +284,19 @@ function buildStars(): Points {
     positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
     positions[i * 3 + 1] = r * Math.cos(phi);
     positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    // Cubed, so most stars are dim and a few bright.
+    const brightness = 0.3 + 0.7 * rng.next() ** 3;
+    colors.fill(brightness, i * 3, i * 3 + 3);
   }
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new BufferAttribute(colors, 3));
   return new Points(
     geometry,
     new PointsMaterial({
       color: 0x99ccff,
-      size: 1.6,
+      vertexColors: true,
+      size: 1,
       sizeAttenuation: false,
       transparent: true,
       opacity: 0.9,
@@ -305,7 +315,8 @@ export class GameScene {
   private readonly renderer: WebGLRenderer;
   private readonly scene = new Scene();
   private readonly camera: PerspectiveCamera;
-  private readonly ship = buildShip(0x1a1a1a);
+  // The same light hull as other players: v1's near-black one vanished against space.
+  private readonly ship = buildShip(0xf5f5f5);
   private readonly remoteShips = new Map<number, ShipModel>();
   private readonly bullets: InstancedMesh;
   private rocks: InstancedMesh | null = null;
