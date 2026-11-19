@@ -35,6 +35,20 @@ import type {
   RemoteEntry,
   SeekerEntry,
 } from '../shared/protocol.ts';
+import {
+  FIRST_RAIDER_ID,
+  MISSIONS,
+  NEW_PROGRESS,
+  NPC_SCORE,
+  RAIDER_COUNT,
+  WARLORD_ARMOUR,
+  WARLORD_ID,
+  XP,
+  hullScaleOf,
+  levelOf,
+  nextMissionIndex,
+} from '../shared/progress.ts';
+import type { MissionKind, Progress } from '../shared/progress.ts';
 import { distantSampleOf, sampleOf, sampleTrack } from '../shared/remote.ts';
 import type { RemoteSample } from '../shared/remote.ts';
 import { Rng } from '../shared/rng.ts';
@@ -64,6 +78,7 @@ import {
   VIEW_DELAY_STEPS_PER_TICK,
   damageShip,
   destroyShip,
+  quantiseControls,
   shotThisTick,
   spawnShip,
 } from '../shared/sim/ship.ts';
@@ -80,6 +95,16 @@ import {
 } from '../shared/sim/world.ts';
 import type { World, WorldEffect } from '../shared/sim/world.ts';
 import type { Channel, Transport } from '../shared/transport.ts';
+import {
+  RAIDER_RESPAWN_TICKS,
+  WARLORD_FIRST_TICKS,
+  WARLORD_RETURN_TICKS,
+  createBrain,
+  npcControls,
+  provoke,
+} from './npc.ts';
+import type { NpcBrain, NpcTarget } from './npc.ts';
+import type { PilotStore } from './pilots.ts';
 
 export const MAX_PLAYERS = 16;
 
@@ -145,9 +170,13 @@ const HELLO_TIMEOUT_MS = 5000;
 /** A connection is closed after this many malformed messages. */
 const MAX_MALFORMED_MESSAGES = 20;
 
+/** A pilot's progress is written to the store this often while it is changing. */
+const SAVE_EVERY_TICKS = 600;
+
 export interface DeathRecord {
   /** Unique for the life of the room, so a payout can never be made twice. */
   deathId: number;
+  /** Either may be a ship the server flies (progress.ts, npcKindOf), which nobody pays or is paid for. */
   victimId: number;
   killerId: number | null;
   cause: DeathCause;
@@ -187,6 +216,10 @@ export interface RoomOptions {
   /** False leaves the orbs out, for tests of one mechanism. */
   orbs?: boolean;
   listener?: RoomListener;
+  /** True adds the ships the server flies: raiders, and the Warlord. */
+  npcs?: boolean;
+  /** Keeps pilots' progress between visits. Without one it lasts as long as the seat. */
+  pilots?: PilotStore;
   /** Called after every simulated tick. Tests use it to record what really happened. */
   onTick?: (tick: number, room: Room) => void;
   /**
@@ -279,12 +312,31 @@ interface Player {
   scheduledOrbs: { applyTick: number; orbId: number; spawnTick: number }[];
   /** Things bought from the store, due on a coming tick in the same way. */
   scheduledGrants: { applyTick: number; item: StoreItem }[];
+  /** Experience and the mission in hand. Only the server ever changes them. */
+  progress: Progress;
+  /** The progress has changed since the player was last told. */
+  progressDue: boolean;
+  /** The progress has changed since it was last written to the store. */
+  saveDue: boolean;
+  /** The pilot this progress belongs to, in hex. Null for a visitor. */
+  readonly pilotKey: string | null;
+  /** Ticks alive in the belt not yet counted as a second. */
+  beltTicks: number;
+  /** Set for a ship the server flies. It has no connection and is never away. */
+  readonly npc: NpcBrain | null;
+  /** For a ship the server flies: the tick it comes back on. */
+  respawnAtTick: number;
+  /** The players who have damaged this ship in this life. */
+  readonly damagedBy: Set<number>;
 }
 
 interface LiveBullet {
   readonly bullet: Bullet;
   readonly announcement: BulletEvent;
 }
+
+/** The server's own ships have no session. No hello can present this: an all-zero token reads as none. */
+const NO_TOKEN = new Uint8Array(SESSION_TOKEN_BYTES);
 
 function sameToken(a: Uint8Array, b: Uint8Array): boolean {
   if (a.byteLength !== b.byteLength) return false;
@@ -325,6 +377,10 @@ export class Room {
 
   private readonly now: () => number;
   private readonly rng: Rng;
+  /** Its own generator, so a room flies and spawns its players the same with or without these ships. */
+  private readonly npcRng: Rng;
+  private readonly withNpcs: boolean;
+  private readonly pilots: PilotStore | undefined;
   private readonly createToken: () => Uint8Array;
   private readonly maxPlayers: number;
   private readonly listener: RoomListener;
@@ -351,10 +407,40 @@ export class Room {
     const worldSeed = options.seed >>> 0;
     this.world = createWorld(worldSeed, asteroidCount, options.orbs ?? true);
     this.ledger = new WorldLedger(this.world);
+    this.npcRng = new Rng((options.seed ^ 0x52a1de25) >>> 0);
+    this.withNpcs = options.npcs ?? false;
+    this.pilots = options.pilots;
+    if (this.withNpcs) {
+      const warlord = this.newPlayer(WARLORD_ID, NO_TOKEN, createBrain('warlord', this.npcRng));
+      warlord.ship = destroyShip(warlord.ship);
+      warlord.respawnAtTick = WARLORD_FIRST_TICKS;
+      this.players.set(warlord.id, warlord);
+      for (let i = 0; i < RAIDER_COUNT; i++) {
+        const raider = this.newPlayer(
+          FIRST_RAIDER_ID + i,
+          NO_TOKEN,
+          createBrain('raider', this.npcRng),
+        );
+        this.players.set(raider.id, raider);
+      }
+    }
   }
 
+  /** People in the room. The ships the server flies are not counted. */
   get playerCount(): number {
-    return this.players.size;
+    let count = 0;
+    for (const player of this.players.values()) if (!player.npc) count++;
+    return count;
+  }
+
+  /** A player's experience and mission. */
+  progressOf(playerId: number): Readonly<Progress> | undefined {
+    return this.players.get(playerId)?.progress;
+  }
+
+  /** Every ship the server flies. */
+  npcIds(): number[] {
+    return [...this.players.values()].filter((player) => player.npc).map((player) => player.id);
   }
 
   /** Every homing shot in flight. */
@@ -390,7 +476,7 @@ export class Room {
   }
 
   playerIds(): number[] {
-    return [...this.players.keys()];
+    return [...this.players.values()].filter((player) => !player.npc).map((player) => player.id);
   }
 
   /**
@@ -399,7 +485,7 @@ export class Room {
    */
   releaseDroppedSeats(): void {
     for (const player of [...this.players.values()]) {
-      if (!player.connection && !player.claim) this.remove(player);
+      if (!player.npc && !player.connection && !player.claim) this.remove(player);
     }
   }
 
@@ -479,9 +565,15 @@ export class Room {
 
   private stepShips(): void {
     const effects: WorldEffect[] = [];
+    let targets: NpcTarget[] | null = null;
     for (const player of this.players.values()) {
       let input: Input;
-      if (player.away) {
+      if (player.npc) {
+        targets ??= this.npcTargets();
+        input = quantiseControls(
+          npcControls(player.npc, player.ship, targets, this.tick, this.npcRng),
+        );
+      } else if (player.away) {
         // Decision D6: an absent player's ship flies straight and can be hit.
         input = NEUTRAL_INPUT;
       } else {
@@ -507,7 +599,7 @@ export class Room {
         input.pitch === last.pitch &&
         input.throttle === last.throttle &&
         input.fire === last.fire;
-      player.unchangedTicks = unchanged ? player.unchangedTicks + 1 : 0;
+      player.unchangedTicks = unchanged && !player.npc ? player.unchangedTicks + 1 : 0;
       if (!unchanged) player.idle = false;
       player.input = input;
 
@@ -579,6 +671,11 @@ export class Room {
           player.beltIncome -= SIM.tickRate;
           player.score += 1;
         }
+        player.beltTicks += 1;
+        if (player.beltTicks >= SIM.tickRate) {
+          player.beltTicks = 0;
+          this.advanceMission(player, 'belt');
+        }
       }
       const shot = shotThisTick(player.ship);
       if (shot) this.fire(player, shot);
@@ -590,6 +687,8 @@ export class Room {
     const orb = this.world.orbs.orbs[orbId];
     if (!orb) return;
     player.score += orbScore(orb.kind, player.asteroidMultTicks > 0);
+    this.gainXp(player, XP.orb);
+    this.advanceMission(player, 'orbs');
     if (orb.kind === 'miner') player.asteroidMultTicks = SCORE.multiplierTicks;
     if (orb.kind === 'hunter') player.killMultTicks = SCORE.multiplierTicks;
     if (orb.kind === 'zaphire') player.storeTicks = SCORE.storeTicks;
@@ -615,7 +714,8 @@ export class Room {
     player.lastFireTick = this.tick;
     const ship = player.ship;
     if (shot === 'seeker') {
-      const others = [...this.players.values()];
+      // The server's ships do not lock on to each other.
+      const others = [...this.players.values()].filter((other) => !(player.npc && other.npc));
       this.seekers.push(launchSeeker(player.id, this.tick, ship, others));
       return;
     }
@@ -662,11 +762,14 @@ export class Room {
       let hitAt = Infinity;
       for (const target of this.players.values()) {
         if (target === owner || !target.ship.alive) continue;
+        // The server's ships do not shoot each other.
+        if (owner.npc && target.npc) continue;
         const seen = sampleTrack(target.track, viewTick, 0);
         // The shooter must have been looking at this life of the ship, alive
         // and unprotected.
         if (!seen?.alive || seen.invulnerable || seen.spawnSeq !== target.ship.spawnSeq) continue;
-        const at = bulletHit(bullet, this.tick, seen.x, seen.y, seen.z, hitDistance);
+        const reach = hitDistance * hullScaleOf(target.id);
+        const at = bulletHit(bullet, this.tick, seen.x, seen.y, seen.z, reach);
         if (at >= 0 && at < hitAt) {
           hitAt = at;
           hitTarget = target;
@@ -703,7 +806,7 @@ export class Room {
       if (rock && rock.at < hitAt) {
         this.ledger.asteroids.remove(rock.id, this.tick);
         this.stats.asteroidsShot += 1;
-        owner.score += asteroidScore(owner.asteroidMultTicks > 0);
+        this.rewardRock(owner);
         this.broadcast({
           kind: 'asteroid',
           asteroidId: rock.id,
@@ -725,9 +828,19 @@ export class Room {
 
   /** A shot of `owner`'s, fired at `spawnTick`, takes `damage` off `target`. */
   private landHit(owner: Player, target: Player, damage: number, spawnTick: number): void {
-    target.ship = damageShip(target.ship, damage);
+    const dealt = target.id === WARLORD_ID ? Math.ceil(damage / WARLORD_ARMOUR) : damage;
+    target.ship = damageShip(target.ship, dealt);
     this.stats.hits += 1;
-    owner.score += SCORE.pvpHit;
+    if (target.npc) {
+      owner.score += NPC_SCORE.hit;
+      this.gainXp(owner, XP.npcHit);
+      provoke(target.npc, owner.id, this.tick);
+    } else {
+      owner.score += SCORE.pvpHit;
+      this.gainXp(owner, XP.playerHit);
+    }
+    this.advanceMission(owner, 'hits');
+    if (!owner.npc) target.damagedBy.add(owner.id);
     this.listener.hit?.({ ownerId: owner.id, spawnTick, targetId: target.id, tick: this.tick });
     this.announce(
       {
@@ -746,11 +859,74 @@ export class Room {
       target.id,
     );
     if (!target.ship.alive) {
-      owner.kills += 1;
-      owner.killsThisLife += 1;
-      owner.score += killScore(target.ship.x, target.ship.z, owner.killMultTicks > 0);
+      if (target.id === WARLORD_ID) {
+        // A raid: everyone who damaged it shares in it, whoever fired last.
+        for (const id of target.damagedBy) {
+          const raider = this.players.get(id);
+          if (!raider) continue;
+          raider.score += NPC_SCORE.warlordKill;
+          this.gainXp(raider, XP.warlordKill);
+          this.advanceMission(raider, 'warlord');
+        }
+      } else if (target.npc) {
+        owner.score += NPC_SCORE.raiderKill;
+        this.gainXp(owner, XP.raiderKill);
+        this.advanceMission(owner, 'raiders');
+      } else {
+        // Kills are of players only: a title or a bounty must not be farmed from the server's ships.
+        owner.kills += 1;
+        owner.killsThisLife += 1;
+        owner.score += killScore(target.ship.x, target.ship.z, owner.killMultTicks > 0);
+        this.gainXp(owner, XP.playerKill);
+      }
       this.recordDeath(target, owner, CAUSE_PLAYER);
     }
+  }
+
+  /** What shooting down a rock is worth. */
+  private rewardRock(owner: Player): void {
+    owner.score += asteroidScore(owner.asteroidMultTicks > 0);
+    this.gainXp(owner, XP.asteroid);
+    this.advanceMission(owner, 'rocks');
+  }
+
+  private gainXp(player: Player, amount: number): void {
+    if (player.npc) return;
+    player.progress.xp += amount;
+    player.progressDue = true;
+    player.saveDue = true;
+  }
+
+  /** Counts one toward the player's mission if it is of this kind, and pays it out when done. */
+  private advanceMission(player: Player, kind: MissionKind): void {
+    if (player.npc) return;
+    const progress = player.progress;
+    const mission = MISSIONS[progress.missionIndex];
+    if (!mission || mission.kind !== kind) return;
+    progress.missionProgress += 1;
+    player.progressDue = true;
+    player.saveDue = true;
+    if (progress.missionProgress < mission.goal) return;
+    progress.missionsDone += 1;
+    progress.missionProgress = 0;
+    progress.missionIndex = nextMissionIndex(progress.missionIndex, this.withNpcs);
+    player.score += mission.points;
+    this.gainXp(player, mission.xp);
+  }
+
+  /** The players' ships that the server's ships may attack. */
+  private npcTargets(): NpcTarget[] {
+    const targets: NpcTarget[] = [];
+    for (const player of this.players.values()) {
+      if (!player.npc && !player.away && player.ship.alive) targets.push(player);
+    }
+    return targets;
+  }
+
+  private savePilot(player: Player): void {
+    if (!player.saveDue || !player.pilotKey || !this.pilots) return;
+    player.saveDue = false;
+    this.pilots.save(player.pilotKey, player.progress);
   }
 
   /**
@@ -774,8 +950,10 @@ export class Room {
       let hitAt = Infinity;
       for (const target of this.players.values()) {
         if (target === owner || !target.ship.alive || target.ship.invulnTicks > 0) continue;
+        if (owner.npc && target.npc) continue;
         const ship = target.ship;
-        const at = bulletHit(path, this.tick, ship.x, ship.y, ship.z, hitDistance);
+        const reach = hitDistance * hullScaleOf(target.id);
+        const at = bulletHit(path, this.tick, ship.x, ship.y, ship.z, reach);
         if (at >= 0 && at < hitAt) {
           hitAt = at;
           hitTarget = target;
@@ -785,7 +963,7 @@ export class Room {
       if (rock && rock.at < hitAt) {
         this.ledger.asteroids.remove(rock.id, this.tick);
         this.stats.asteroidsShot += 1;
-        owner.score += asteroidScore(owner.asteroidMultTicks > 0);
+        this.rewardRock(owner);
         this.broadcast({
           kind: 'asteroid',
           asteroidId: rock.id,
@@ -804,6 +982,11 @@ export class Room {
 
   private stepAwayAndRespawn(): void {
     for (const player of [...this.players.values()]) {
+      if (player.npc) {
+        this.respawnNpc(player, player.npc);
+        continue;
+      }
+      if (this.tick % SAVE_EVERY_TICKS === 0) this.savePilot(player);
       const graceOver = player.away && this.tick - player.awaySinceTick >= AWAY_GRACE_TICKS;
       if (!player.away && !player.idle && player.unchangedTicks >= IDLE_TICKS) {
         player.idle = true;
@@ -845,7 +1028,23 @@ export class Room {
     }
   }
 
+  /** A ship of the server's that is down comes back when its time is up. */
+  private respawnNpc(player: Player, brain: NpcBrain): void {
+    if (player.ship.alive) return;
+    if (this.tick < player.respawnAtTick) return;
+    const ship = spawnShip(this.npcRng, player.ship.spawnSeq + 1);
+    player.ship = brain.kind === 'warlord' ? { ...ship, shield: SIM.maxShield } : ship;
+    player.spawnedAtTick = this.tick;
+    player.damagedBy.clear();
+    brain.provokedBy = null;
+  }
+
   private recordDeath(victim: Player, killer: Player | null, cause: DeathCause): void {
+    if (victim.npc) {
+      victim.respawnAtTick =
+        this.tick + (victim.npc.kind === 'warlord' ? WARLORD_RETURN_TICKS : RAIDER_RESPAWN_TICKS);
+    }
+    victim.damagedBy.clear();
     const deathId = this.nextDeathId++;
     this.stats.deaths += 1;
     this.listener.playerDied?.({
@@ -896,6 +1095,10 @@ export class Room {
 
   private flushEvents(): void {
     for (const player of this.players.values()) {
+      if (player.progressDue) {
+        player.progressDue = false;
+        player.outbox.push({ kind: 'progress', ...player.progress });
+      }
       if (player.outbox.length === 0) continue;
       if (player.connection) {
         for (let start = 0; start < player.outbox.length; start += 255) {
@@ -991,11 +1194,14 @@ export class Room {
   }
 
   private sendScores(): void {
-    const entries = [...this.players.values()].map((player) => ({
-      playerId: player.id,
-      score: player.score,
-      kills: player.kills,
-    }));
+    const entries = [...this.players.values()]
+      .filter((player) => !player.npc)
+      .map((player) => ({
+        playerId: player.id,
+        score: player.score,
+        kills: player.kills,
+        level: levelOf(player.progress.xp),
+      }));
     const message = encodeScores(entries);
     for (const player of this.players.values()) {
       if (player.connection) this.send(player.connection, message, 'droppable');
@@ -1047,7 +1253,7 @@ export class Room {
     // noticed as dead yet or not, unless someone is still flying with it.
     if (hello.sessionToken) {
       for (const player of this.players.values()) {
-        if (!sameToken(player.token, hello.sessionToken)) continue;
+        if (player.npc || !sameToken(player.token, hello.sessionToken)) continue;
         const old = player.connection;
         const maybeInUse =
           old !== null &&
@@ -1066,7 +1272,7 @@ export class Room {
         return;
       }
     }
-    this.seatNewPlayer(connection, hello.clientTimeMs);
+    this.seatNewPlayer(connection, hello.clientTimeMs, hello.pilotKey ?? null);
   }
 
   /** The newcomer waiting on this player's token is the player: the seat is theirs. */
@@ -1089,10 +1295,19 @@ export class Room {
     if (!claim) return;
     player.claim = null;
     claim.connection.claiming = false;
-    if (!claim.connection.closed) this.seatNewPlayer(claim.connection, claim.clientTimeMs);
+    // It holds the seat's token, so it is the same pilot in a second tab: it
+    // starts from what that seat has earned, and the store keeps the further on.
+    if (!claim.connection.closed) {
+      this.savePilot(player);
+      this.seatNewPlayer(claim.connection, claim.clientTimeMs, player.pilotKey);
+    }
   }
 
-  private seatNewPlayer(connection: Connection, clientTimeMs: number): void {
+  private seatNewPlayer(
+    connection: Connection,
+    clientTimeMs: number,
+    pilotKey: Uint8Array | string | null,
+  ): void {
     const id = this.freeId();
     if (id === null) {
       this.send(connection, encodeReject(REJECT_FULL), 'reliable');
@@ -1101,11 +1316,34 @@ export class Room {
     }
     const token = this.createToken();
     if (token.byteLength !== SESSION_TOKEN_BYTES) throw new Error('session token must be 16 bytes');
-    const player: Player = {
+    const key =
+      pilotKey instanceof Uint8Array
+        ? Array.from(pilotKey, (byte) => byte.toString(16).padStart(2, '0')).join('')
+        : pilotKey;
+    const player = this.newPlayer(id, token, null, key);
+    this.players.set(id, player);
+    this.listener.playerJoined?.(id, this.tick);
+    this.welcomeBack(player, connection, clientTimeMs);
+  }
+
+  /** A seat with nothing done in it yet: a new player's, or one of the server's own ships'. */
+  private newPlayer(
+    id: number,
+    token: Uint8Array,
+    npc: NpcBrain | null,
+    pilotKey: string | null = null,
+  ): Player {
+    const progress = { ...((pilotKey && this.pilots?.load(pilotKey)) || NEW_PROGRESS) };
+    // A mission kept from a room that had the server's ships cannot be done in one without.
+    if (!this.withNpcs && MISSIONS[progress.missionIndex]?.needsNpcs) {
+      progress.missionIndex = nextMissionIndex(progress.missionIndex, false);
+      progress.missionProgress = 0;
+    }
+    return {
       id,
       token,
       connection: null,
-      ship: spawnShip(this.rng, 0),
+      ship: spawnShip(npc ? this.npcRng : this.rng, 0),
       input: NEUTRAL_INPUT,
       pending: new Map(),
       firstInputTick: null,
@@ -1135,10 +1373,15 @@ export class Room {
       outbox: [],
       scheduledOrbs: [],
       scheduledGrants: [],
+      progress,
+      progressDue: false,
+      saveDue: false,
+      pilotKey,
+      beltTicks: 0,
+      npc,
+      respawnAtTick: 0,
+      damagedBy: new Set(),
     };
-    this.players.set(id, player);
-    this.listener.playerJoined?.(id, this.tick);
-    this.welcomeBack(player, connection, clientTimeMs);
   }
 
   /**
@@ -1194,6 +1437,7 @@ export class Room {
     for (const grant of player.scheduledGrants) {
       player.outbox.push({ kind: 'grant', item: grant.item, applyTick: grant.applyTick });
     }
+    player.progressDue = true;
     for (const gone of this.ledger.asteroids.goneAt(this.tick)) {
       player.outbox.push({
         kind: 'asteroid',
@@ -1240,6 +1484,7 @@ export class Room {
   // --- Connections ----------------------------------------------------------
 
   private freeId(): number | null {
+    // Seats are numbered from 0. The server's own ships have ids far above them.
     for (let id = 0; id < this.maxPlayers; id++) {
       if (!this.players.has(id)) return id;
     }
@@ -1284,9 +1529,11 @@ export class Room {
       return;
     }
     this.markAway(player);
+    this.savePilot(player);
   }
 
   private remove(player: Player): void {
+    this.savePilot(player);
     this.players.delete(player.id);
     this.bullets = this.bullets.filter((live) => live.bullet.ownerId !== player.id);
     this.seekers = this.seekers.filter((seeker) => seeker.ownerId !== player.id);

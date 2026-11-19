@@ -16,12 +16,13 @@ import {
   quantisePosition,
 } from './remote.ts';
 import type { RemoteSample } from './remote.ts';
+import { MISSIONS } from './progress.ts';
 import { STORE_ITEMS } from './scoring.ts';
 import type { StoreItem } from './scoring.ts';
 import { inputFromWire } from './sim/ship.ts';
 import type { Input, ShipState, ShotKind } from './sim/ship.ts';
 
-export const PROTOCOL_VERSION = 11;
+export const PROTOCOL_VERSION = 12;
 
 /** Inputs carried per message: the tick's own plus the ones before it. */
 export const INPUT_REDUNDANCY = 3;
@@ -29,6 +30,8 @@ export const INPUT_REDUNDANCY = 3;
 export const MAX_CLIENT_MESSAGE_BYTES = 64;
 
 export const SESSION_TOKEN_BYTES = 16;
+/** A pilot's key: 16 unguessable bytes the client makes once and keeps. */
+export const PILOT_KEY_BYTES = 16;
 
 const CLIENT_HELLO = 1;
 const CLIENT_INPUT = 2;
@@ -78,6 +81,12 @@ export interface HelloMessage {
   readonly clientTimeMs: number;
   /** The token from an earlier welcome, to take the same seat back. Null for a new player. */
   readonly sessionToken: Uint8Array | null;
+  /**
+   * Names the pilot whose experience and missions this player carries on
+   * with. Whoever holds it is that pilot, so it is never sent to anyone else.
+   * Null or absent for a visitor whose progress lasts as long as the seat.
+   */
+  readonly pilotKey?: Uint8Array | null;
 }
 
 export interface InputMessage {
@@ -250,8 +259,28 @@ export interface GrantEvent {
   readonly applyTick: number;
 }
 
+/**
+ * This player's experience and mission, sent to them alone whenever either
+ * changes and with every welcome. The level and the mission's text come from
+ * shared tables (progress.ts).
+ */
+export interface ProgressEvent {
+  readonly kind: 'progress';
+  readonly xp: number;
+  readonly missionIndex: number;
+  readonly missionProgress: number;
+  readonly missionsDone: number;
+}
+
 export type GameEvent =
-  BulletEvent | HitEvent | DeathEvent | LeftEvent | AsteroidEvent | OrbEvent | GrantEvent;
+  | BulletEvent
+  | HitEvent
+  | DeathEvent
+  | LeftEvent
+  | AsteroidEvent
+  | OrbEvent
+  | GrantEvent
+  | ProgressEvent;
 
 export interface EventsMessage {
   readonly type: 'events';
@@ -262,9 +291,10 @@ export interface ScoreEntry {
   readonly playerId: number;
   readonly score: number;
   readonly kills: number;
+  readonly level: number;
 }
 
-/** Everyone's points, once a second, for the scoreboard. */
+/** Everyone's points and level, once a second, for the scoreboard and the name labels. */
 export interface ScoresMessage {
   readonly type: 'scores';
   readonly entries: readonly ScoreEntry[];
@@ -544,12 +574,13 @@ function readRemote(r: Reader, tick: number): RemoteEntry {
 const NO_TOKEN = new Uint8Array(SESSION_TOKEN_BYTES);
 
 export function encodeHello(message: Omit<HelloMessage, 'type'>): Uint8Array {
-  const w = new Writer(1 + 2 + 4 + 8 + SESSION_TOKEN_BYTES);
+  const w = new Writer(1 + 2 + 4 + 8 + SESSION_TOKEN_BYTES + PILOT_KEY_BYTES);
   w.u8(CLIENT_HELLO);
   w.u16(message.protocolVersion);
   w.u32(message.simFingerprint);
   w.f64(message.clientTimeMs);
   w.raw(message.sessionToken?.byteLength === SESSION_TOKEN_BYTES ? message.sessionToken : NO_TOKEN);
+  w.raw(message.pilotKey?.byteLength === PILOT_KEY_BYTES ? message.pilotKey : NO_TOKEN);
   return w.finish();
 }
 
@@ -612,9 +643,18 @@ export function decodeClientMessage(data: Uint8Array): ClientMessage | null {
       const simFingerprint = r.u32();
       const clientTimeMs = r.f64();
       const token = r.raw(SESSION_TOKEN_BYTES);
+      const key = r.raw(PILOT_KEY_BYTES);
       if (!r.atEnd()) return null;
       const sessionToken = token.some((byte) => byte !== 0) ? token : null;
-      return { type: 'hello', protocolVersion, simFingerprint, clientTimeMs, sessionToken };
+      const pilotKey = key.some((byte) => byte !== 0) ? key : null;
+      return {
+        type: 'hello',
+        protocolVersion,
+        simFingerprint,
+        clientTimeMs,
+        sessionToken,
+        pilotKey,
+      };
     }
     if (type === CLIENT_INPUT) {
       const tick = r.u32();
@@ -717,7 +757,7 @@ export function encodeSnapshot(message: Omit<SnapshotMessage, 'type'>): Uint8Arr
 
 export function encodeScores(entries: readonly ScoreEntry[]): Uint8Array {
   const count = Math.min(entries.length, 255);
-  const w = new Writer(2 + count * 7);
+  const w = new Writer(2 + count * 8);
   w.u8(SERVER_SCORES);
   w.u8(count);
   for (let i = 0; i < count; i++) {
@@ -726,6 +766,7 @@ export function encodeScores(entries: readonly ScoreEntry[]): Uint8Array {
     w.u8(entry.playerId);
     w.u32(Math.min(0xffffffff, entry.score));
     w.u16(Math.min(65535, entry.kills));
+    w.u8(Math.min(255, entry.level));
   }
   return w.finish();
 }
@@ -740,6 +781,7 @@ const EVENT_LEFT = 4;
 const EVENT_ASTEROID = 5;
 const EVENT_ORB = 6;
 const EVENT_GRANT = 7;
+const EVENT_PROGRESS = 8;
 
 const MAX_EVENT_BYTES = 27;
 
@@ -796,6 +838,13 @@ export function encodeEvents(events: readonly GameEvent[]): Uint8Array {
         w.u8(EVENT_GRANT);
         w.u8(STORE_ITEMS.indexOf(event.item));
         w.u32(event.applyTick);
+        break;
+      case 'progress':
+        w.u8(EVENT_PROGRESS);
+        w.u32(Math.min(0xffffffff, event.xp));
+        w.u8(event.missionIndex);
+        w.u16(Math.min(65535, event.missionProgress));
+        w.u16(Math.min(65535, event.missionsDone));
         break;
       case 'orb':
         w.u8(EVENT_ORB);
@@ -866,6 +915,14 @@ function readEvent(r: Reader): GameEvent | null {
     const item = STORE_ITEMS[r.u8()];
     const applyTick = r.u32();
     return item ? { kind: 'grant', item, applyTick } : null;
+  }
+  if (kind === EVENT_PROGRESS) {
+    const xp = r.u32();
+    const missionIndex = r.u8();
+    const missionProgress = r.u16();
+    const missionsDone = r.u16();
+    if (missionIndex >= MISSIONS.length) return null;
+    return { kind: 'progress', xp, missionIndex, missionProgress, missionsDone };
   }
   if (kind === EVENT_ORB) {
     return {
@@ -970,7 +1027,7 @@ export function decodeServerMessage(data: Uint8Array): ServerMessage | null {
       const count = r.u8();
       const entries: ScoreEntry[] = [];
       for (let i = 0; i < count; i++) {
-        entries.push({ playerId: r.u8(), score: r.u32(), kills: r.u16() });
+        entries.push({ playerId: r.u8(), score: r.u32(), kills: r.u16(), level: r.u8() });
       }
       return r.atEnd() ? { type: 'scores', entries } : null;
     }

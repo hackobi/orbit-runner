@@ -16,6 +16,7 @@ import {
   SESSION_TOKEN_BYTES,
 } from '../shared/protocol.ts';
 import type { ShipState } from '../shared/sim/ship.ts';
+import type { PilotStore } from './pilots.ts';
 import { Recorder } from './recorder.ts';
 import { Room } from './room.ts';
 import type { RoomListener } from './room.ts';
@@ -39,6 +40,10 @@ export interface ServerOptions {
    */
   clientDir?: string;
   listener?: RoomListener;
+  /** Raiders and the Warlord (RoomOptions.npcs). Off unless asked for. */
+  npcs?: boolean;
+  /** Where pilots' progress is kept (RoomOptions.pilots). */
+  pilots?: PilotStore;
   /** Passed to the room. See RoomOptions. */
   onTick?: (tick: number, room: Room) => void;
   onWork?: (durationMs: number, ticks: number) => void;
@@ -131,6 +136,8 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
     now: () => performance.now(),
     seed: options.seed ?? (Date.now() ^ (process.pid << 16)) >>> 0,
     createToken: () => randomBytes(SESSION_TOKEN_BYTES),
+    npcs: options.npcs ?? false,
+    ...(options.pilots ? { pilots: options.pilots } : {}),
     ...(recorder
       ? {
           listener: recorder.listener,

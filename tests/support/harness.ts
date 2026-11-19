@@ -16,7 +16,7 @@ import type {
 } from '../../src/net/client.ts';
 import { Session } from '../../src/net/session.ts';
 import { Room } from '../../src/server/room.ts';
-import type { DeathRecord, HitRecord } from '../../src/server/room.ts';
+import type { DeathRecord, HitRecord, RoomOptions } from '../../src/server/room.ts';
 import { createLink } from './loopback.ts';
 import type { LinkOptions, Shaper } from './loopback.ts';
 import { VirtualClock } from './virtualClock.ts';
@@ -64,6 +64,8 @@ export interface ClientSetup {
   sessionToken?: Uint8Array | null;
   /** For a session: called with each token the server issues. */
   onSessionToken?: (token: Uint8Array) => void;
+  /** The pilot whose progress this client carries on with. */
+  pilotKey?: Uint8Array;
 }
 
 export class TestWorld {
@@ -80,7 +82,12 @@ export class TestWorld {
    * The full belt and every orb, unless a test of one mechanism asks for
    * emptier space, so that nothing but that mechanism decides its result.
    */
-  constructor(seed = 1, asteroidCount: number = SIM.asteroidCount, orbs = true) {
+  constructor(
+    seed = 1,
+    asteroidCount: number = SIM.asteroidCount,
+    orbs = true,
+    extra: Pick<RoomOptions, 'npcs' | 'pilots'> = {},
+  ) {
     // Tokens only need to be distinct here, so a seeded generator will do.
     const tokens = new Rng(seed ^ 0x5eed);
     this.room = new Room({
@@ -88,6 +95,7 @@ export class TestWorld {
       seed,
       asteroidCount,
       orbs,
+      ...extra,
       createToken: () => Uint8Array.from({ length: 16 }, () => Math.floor(tokens.next() * 256)),
       listener: {
         hit: (hit) => this.hits.push(hit),
@@ -126,6 +134,7 @@ export class TestWorld {
       now: () => startedAtMs + (this.clock.now() - startedAtMs) * clockRate,
       controls: controls ? (tick) => controls(tick, core) : () => NEUTRAL_CONTROLS,
       ...(setup.tuning ? { tuning: setup.tuning } : {}),
+      ...(setup.pilotKey ? { pilotKey: setup.pilotKey } : {}),
       onCorrection: (event) => log.corrections.push(event),
       onSnapshot: (event) => log.snapshots.push(event),
       onViewHit: (hit) => log.viewHits.push(hit),
@@ -172,6 +181,7 @@ export class TestWorld {
       controls: controls ? (tick) => controls(tick, session.core) : () => NEUTRAL_CONTROLS,
       ...(setup.sessionToken ? { sessionToken: setup.sessionToken } : {}),
       ...(setup.onSessionToken ? { onSessionToken: setup.onSessionToken } : {}),
+      ...(setup.pilotKey ? { pilotKey: setup.pilotKey } : {}),
       onCorrection: (event) => log.corrections.push(event),
       onSnapshot: (event) => log.snapshots.push(event),
       onViewHit: (hit) => log.viewHits.push(hit),

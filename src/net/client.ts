@@ -40,6 +40,8 @@ import {
 import type { Bullet } from '../shared/sim/bullets.ts';
 import { SeekerTracks } from './seekers.ts';
 import type { SeekerView } from './seekers.ts';
+import { hullScaleOf } from '../shared/progress.ts';
+import type { Progress } from '../shared/progress.ts';
 import { SIM_FINGERPRINT } from '../shared/sim/fingerprint.ts';
 import {
   NEUTRAL_INPUT,
@@ -205,6 +207,8 @@ export interface ClientOptions {
   controls: (tick: number) => Controls;
   /** A token from an earlier welcome, to take the same seat back after a reconnect. */
   sessionToken?: Uint8Array | null;
+  /** The pilot whose progress to carry on with (protocol.ts, HelloMessage). */
+  pilotKey?: Uint8Array | null;
   tuning?: Partial<ClientTuning>;
   remoteTuning?: Partial<RemoteTuning>;
   onCorrection?: (event: CorrectionEvent) => void;
@@ -310,6 +314,8 @@ export class ClientCore implements WorldState {
   storeTicks = 0;
   /** Everyone's points, as last sent. */
   scoreboard: readonly ScoreEntry[] = [];
+  /** This pilot's experience and mission, as last sent. Null until the server has said. */
+  progress: Progress | null = null;
 
   /** Smoothed round trip in milliseconds, measured from input acknowledgements. */
   rttMs = 0;
@@ -428,6 +434,7 @@ export class ClientCore implements WorldState {
           simFingerprint: SIM_FINGERPRINT,
           clientTimeMs: this.now(),
           sessionToken: this.sessionToken,
+          pilotKey: options.pilotKey ?? null,
         }),
         'reliable',
       );
@@ -779,7 +786,8 @@ export class ClientCore implements WorldState {
       // The ship is drawn as it was a moment ago. If it is known to have
       // been destroyed since, the server will not count a hit on it.
       if (this.destroyedSince(id, seen.stateTick, seen.hp + seen.shield, tick)) continue;
-      const at = bulletHit(own.bullet, tick, seen.x, seen.y, seen.z, hitDistance);
+      const reach = hitDistance * hullScaleOf(id);
+      const at = bulletHit(own.bullet, tick, seen.x, seen.y, seen.z, reach);
       if (at >= 0 && at < hitAt) {
         hitAt = at;
         hitTarget = id;
@@ -1038,6 +1046,14 @@ export class ClientCore implements WorldState {
 
   private applyEvent(event: GameEvent): void {
     switch (event.kind) {
+      case 'progress':
+        this.progress = {
+          xp: event.xp,
+          missionIndex: event.missionIndex,
+          missionProgress: event.missionProgress,
+          missionsDone: event.missionsDone,
+        };
+        break;
       case 'bullet': {
         const announced = bulletFrom(
           event.ownerId,

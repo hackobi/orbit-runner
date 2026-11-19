@@ -53,12 +53,28 @@ describe('client messages', () => {
       type: 'hello',
       ...base,
       sessionToken: null,
+      pilotKey: null,
     });
     expect(decodeClientMessage(encodeHello({ ...base, sessionToken: token }))).toEqual({
       type: 'hello',
       ...base,
       sessionToken: token,
+      pilotKey: null,
     });
+    // A pilot key travels beside the token and is not confused with it.
+    const pilotKey = Uint8Array.from({ length: 16 }, (_, i) => 200 - i);
+    expect(decodeClientMessage(encodeHello({ ...base, sessionToken: token, pilotKey }))).toEqual({
+      type: 'hello',
+      ...base,
+      sessionToken: token,
+      pilotKey,
+    });
+    // A key of the wrong length is sent as none.
+    expect(
+      decodeClientMessage(
+        encodeHello({ ...base, sessionToken: null, pilotKey: new Uint8Array(4) }),
+      ),
+    ).toMatchObject({ pilotKey: null });
   });
 
   it('input round-trips with its redundant copies, buttons and view delay', () => {
@@ -246,8 +262,8 @@ describe('server messages', () => {
 
   it('the scoreboard round-trips', () => {
     const entries = [
-      { playerId: 0, score: 0, kills: 0 },
-      { playerId: 15, score: 123456, kills: 42 },
+      { playerId: 0, score: 0, kills: 0, level: 1 },
+      { playerId: 15, score: 123456, kills: 42, level: 50 },
     ];
     expect(decodeServerMessage(encodeScores(entries))).toEqual({ type: 'scores', entries });
   });
@@ -281,6 +297,7 @@ describe('server messages', () => {
       { kind: 'orb', orbId: 2, tick: 1015, playerId: NO_PLAYER, spawnTick: 990, byBullet: true },
       { kind: 'death', deathId: 79, victimId: 6, killerId: NO_PLAYER, cause: CAUSE_EDGE, tick: 9 },
       { kind: 'grant', item: 'fenix', applyTick: 1044 },
+      { kind: 'progress', xp: 123456, missionIndex: 7, missionProgress: 59, missionsDone: 300 },
     ];
     expect(decodeServerMessage(encodeEvents(events))).toEqual({ type: 'events', events });
     expect(decodeServerMessage(encodeEvents([]))).toEqual({ type: 'events', events: [] });
