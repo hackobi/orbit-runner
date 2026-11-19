@@ -471,6 +471,12 @@ export class Room {
     if (player) player.score = Math.max(0, player.score + points);
   }
 
+  /** Test and development aid: gives a player experience. Never reachable from the network. */
+  addXp(playerId: number, amount: number): void {
+    const player = this.players.get(playerId);
+    if (player) this.gainXp(player, amount);
+  }
+
   isAway(playerId: number): boolean {
     return this.players.get(playerId)?.away ?? false;
   }

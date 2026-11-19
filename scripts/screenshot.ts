@@ -9,6 +9,7 @@ import { createBot } from '../src/net/bot.ts';
 import { circler } from '../src/net/behaviours.ts';
 import { startServer } from '../src/server/server.ts';
 import { SIM } from '../src/shared/constants.ts';
+import { FIRST_RAIDER_ID, WARLORD_ID } from '../src/shared/progress.ts';
 import type { OrbKind } from '../src/shared/sim/orbs.ts';
 import type { ShipState } from '../src/shared/sim/ship.ts';
 
@@ -21,7 +22,7 @@ const CLIENT_PORT = 5311;
 process.env.ORBIT_SERVER_PORT = String(SERVER_PORT);
 process.env.ORBIT_CLIENT_PORT = String(CLIENT_PORT);
 
-const server = await startServer({ port: SERVER_PORT, seed: 5 });
+const server = await startServer({ port: SERVER_PORT, seed: 5, npcs: true });
 const vite = await createServer();
 await vite.listen();
 const room = server.room;
@@ -105,6 +106,31 @@ await page.screenshot({ path: `${out}/wormhole${phone ? '-phone' : ''}.png` });
 const zaphire = orbOf('zaphire');
 place(me, { x: zaphire.x, y: zaphire.y, z: zaphire.z - 12, speed: 30, targetSpeed: 30, hp: 40 });
 await shot('store');
+
+// Behind one of the server's ships, looking along its heading.
+const behind = (id: number, distance: number): void => {
+  const ship = room.shipOf(id);
+  if (!ship) throw new Error(`no ship ${id}`);
+  place(me, {
+    x: ship.x - Math.sin(ship.yaw) * distance,
+    y: ship.y,
+    z: ship.z - Math.cos(ship.yaw) * distance,
+    yaw: ship.yaw,
+    speed: ship.speed,
+    targetSpeed: ship.speed,
+  });
+};
+
+// A raider on patrol, and a level gained.
+behind(FIRST_RAIDER_ID, 45);
+room.addXp(me, 450);
+await shot('raider-level-up');
+
+// The Warlord, which arrives 45 s after the room opens.
+while (!room.shipOf(WARLORD_ID)?.alive) await page.waitForTimeout(500);
+await page.waitForTimeout(600);
+behind(WARLORD_ID, 70);
+await shot('warlord');
 
 // A Fenix firing, outside the combat zone.
 place(me, { x: 0, y: 0, z: SIM.combatZoneRadius + 200, fenix: true, invulnTicks: 0 });

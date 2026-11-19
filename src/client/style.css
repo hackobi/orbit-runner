@@ -566,13 +566,22 @@ body {
     width: 150px;
   }
 
+  /* Under the map it would sit beneath the right thumb's buttons: it goes beside the gauges. */
   #mission {
-    margin-top: 4px;
+    position: fixed;
+    top: calc(12px + var(--inset-top));
+    left: calc(182px + var(--inset-left));
+    width: 150px;
+    margin-top: 0;
     font-size: 11px;
   }
 
+  #banner {
+    top: 24%;
+  }
+
   #banner h2 {
-    font-size: 22px;
+    font-size: 18px;
   }
 
   #corner,

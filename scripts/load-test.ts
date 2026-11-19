@@ -63,6 +63,8 @@ const keepTogether = (tick: number, room: Room): void => {
 const server = await startServer({
   port: 0,
   seed: 16,
+  // ORBIT_NPCS=1 adds the raiders and the Warlord to the sixteen bots.
+  npcs: process.env.ORBIT_NPCS === '1',
   onTick: keepTogether,
   onWork: (durationMs, ticks) => {
     work.push(durationMs / ticks);
