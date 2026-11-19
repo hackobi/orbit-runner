@@ -12,6 +12,7 @@ This file is the running checkpoint. A new session should read it first, then `d
 | 3. Content and mobile | **Built and tested 2026-11-14, except what needs a real phone.** The device checklist (`docs/DEVICE-TESTING.md`) and the LAN HTTPS server are waiting for the user | |
 | 4. Mac app | **Built and tested 2026-11-14 on this Mac.** Other Macs and a 120 Hz display: UNVERIFIED | |
 | Dogfight feel (user request, 2026-11-15) | **Step 1 is live** (merged and deployed 2026-11-16 with the user's approval; they found physics and gameplay fine). Tasks are in [Dogfight feel](#dogfight-feel-before-phase-5) | The user picks what comes next |
+| Role-playing layer (user request, 2026-11-19) | **Built and tested 2026-11-19 on `feature/rpg-layer`, local only, not merged or deployed.** Experience, levels, missions, raiders and the Warlord, progress kept per pilot. See [Role-playing layer](#role-playing-layer) | The user plays it and decides on a merge |
 | 5. Demos integration | Not started. Direction from the user recorded under Phase 5 (reuse v1's payment flow; King of the Hill) | Separate approval, and a payment proposal first |
 
 **Next action:** the user chooses between step 2 of [Dogfight feel](#dogfight-feel-before-phase-5) (matches) and Phase 5. Their direction on 2026-11-16: the open room stays the normal game, everyone with the same abilities; rules, timing, groups and teams come later, for tournaments. Phases 1 to 4 are built. Phase 5 (Demos) needs separate approval and starts with a written payment proposal, not code. Open items that need the user: `npm run dev:lan` (it changes the Mac's keychain) and the phone checklist in `docs/DEVICE-TESTING.md`; opening the Mac app themselves.
@@ -469,6 +470,25 @@ The rule for every task: anything that changes how the ship moves or what it can
 
 Turn speed is one number, `SIM.yawRate`: a half turn takes 1.57 s (`tests/unit/ship.test.ts`). Unchanged so far.
 
+## Role-playing layer
+
+Asked for by the user on 2026-11-19 ("turn this into an MMORPG"). What was built is a role-playing layer on the room-based dogfight, not a persistent world: one room, 16 players. Decisions D25 to D27.
+
+Work is on `feature/rpg-layer`, off `feature/v2-rebuild`. Wire format 12, so the Mac app must be rebuilt after a merge. The simulation step is untouched: the pinned trace hash is the same.
+
+| Part | What it is | Tested by |
+|---|---|---|
+| Experience and levels | Rocks 10, orbs 15, a hit on a player 20, a kill 150, missions more. Level n costs 100 × (n − 1)². Ranks are names (Cadet to Legend). No level changes what a ship can do (D25) | `tests/unit/rpg.test.ts` |
+| Missions | Eight, in order and round again: rocks, orbs, raiders, hits, time in the belt, the Warlord. Each pays experience and points | same |
+| Raiders | Five ships the server flies (D26). They patrol just above or below the rocks, attack a player within 650 units or one who shot them, fire in bursts and miss in runs. Back 15 s after being destroyed. They leave away players alone | same |
+| The Warlord | Arrives 45 s after the room opens and 4 minutes after it falls. Three times the size, a fifth of the damage, heavy and homing shots. Everyone who damaged it is paid | same |
+| Progress between visits | A pilot key in the browser; the server keeps progress under it (D27). **In memory unless `ORBIT_DATA_DIR` is set**: on Railway that needs a volume, or every deploy forgets it | same |
+| On screen | Experience bar, mission, banners for a level or a mission, the Warlord's bar, names and levels over ships, raiders and the Warlord on the map | Seen in staged screenshots, desktop and phone size, in Chromium (`npm run screenshot`). No automated test draws them. Not on a real phone |
+
+Not done, and not claimed: nobody has played it, so whether the raiders are fun or too easy is unknown. The browser suite runs without the server's ships, so they are covered in virtual time only. Classes, gear, guilds, chat, zones and more than one room do not exist.
+
+Found on 2026-11-18 and still open (not fixed here): a held "back" reply can clear "away" (`room.ts`, `markAway` does not clear `backDue`), and a charged homing shot fires when the server substitutes neutral input.
+
 ## Phase 5: Demos integration (separate approval)
 
 Before any code: a written proposal for how phone and Mac-app players pay or play free (`DECISIONS.md` section 10), and a review of the economy rules against Appendix B. Known constraints: `@kynesyslabs/demosdk` >= 4.0.5 (4.0.21 is current), ESM only, Node >= 22.15; on-chain amounts in OS units (1 DEM = 1e9 OS).
@@ -577,3 +597,9 @@ Blockers: none. Waiting for the user: Phase 5 needs separate approval.
 
 - The user played step 1 and approved the deploy. `feature/dogfight` was fast-forwarded into `feature/v2-rebuild` and pushed; the live server reports wire format 11.
 - From their notes: the heavy shot is now plasma (a small hot centre in a banded glow that reaches exactly as far as it hits, with embers behind), the homing shot is see-through, and the Fenix is a red swept-wing ship edged in gold instead of v1's black dart. Client only (`src/client/scene.ts`). Seen in staged screenshots on desktop Chromium; not on a phone.
+
+### 2026-11-19: role-playing layer
+
+- The user asked for the game to be turned into an MMORPG. Built as a layer that keeps the netcode's guarantees: all of it is server state, sent as one new event and one more byte per scoreboard row. Branch `feature/rpg-layer`, three commits, local only.
+- Measured: 292 unit tests and 12 integration tests pass. 16 bots plus the six server ships for 60 s: tick work p50 0.91 ms, p99 2.42 ms, no dropped ticks (`ORBIT_NPCS=1 npm run test:load -- 60`).
+- Chosen without asking, for the user to overrule: levels give no power (D25), and progress is keyed by a browser-held key (D27).
