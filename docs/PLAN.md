@@ -364,15 +364,15 @@ How to read the tables:
 
 **Hit agreement in real play (reported, not gated)**
 
-Four hunter bots over real sockets through the proxy on the 100 ms profile, with real kills, regrouped every 12 s, 60 s: **134 of 144 hits seen by shooters were confirmed (93.1%)**, with 19 kills. Of the 10 not confirmed, 8 were on a ship another player had already destroyed on the server. The server decided 2 hits that the shooter's screen did not show. The gated figure above is higher because its ships cannot die; this run is below the 95% line and is the number to expect in a free-for-all.
+Four hunter bots over real sockets through the proxy on the 100 ms profile, with real kills, regrouped every 12 s, 60 s: **145 of 153 hits seen by shooters were confirmed (94.8%)**, with 20 kills. Of the 8 not confirmed, 8 were on a ship another player had already destroyed on the server. The server decided 0 hits that the shooter's screen did not show. The gated figure above is higher because its ships cannot die; this run is below the 95% line and is the number to expect in a free-for-all.
 
 **Other acceptance checks**
 
 | Check | Measured |
 |---|---|
-| One bot, real socket, 60 s | 3599 inputs, 1800 snapshots, 0 corrections, 0 late inputs, round trip 2.5 ms |
+| One bot, real socket, 60 s | 3598 inputs, 1800 snapshots, 0 corrections, 0 late inputs, round trip 1.9 ms |
 | Four hunters, real sockets, no added latency, 60 s | all joined and saw each other; 111 bullets, 35 server hits, 35 of 36 seen hits confirmed (97.2%), 5 kills |
-| Loss mode `drop`: four hunters, 200 ms, 2% of inputs and snapshots discarded, 40 s | 332 messages dropped of 15697; 42 hits, 6 deaths; the server ran 0 ticks without an input; every bot ended in the right life of its ship and had heard of every death |
+| Loss mode `drop`: four hunters, 200 ms, 2% of inputs and snapshots discarded, 40 s | 330 messages dropped of 15787; 42 hits, 6 deaths; the server ran 0 ticks without an input; every bot ended in the right life of its ship and had heard of every death |
 | Tab hidden for 3 s, 100 ms profile | the other player saw 0 snaps and at most 0.010 units of error over 481 frames; the hidden client resumed in its seat without reconnecting |
 | Connections cut, 100 ms profile | both clients reconnected once and kept their player ids; nobody died (asserted by the test; no numbers) |
 | Late joiner, 100 ms profile | drew both other ships within 0.002 units (p95) of the server, 0 snaps, and drew their bullets |
@@ -607,7 +607,7 @@ The user approved the plan and the odds. Built on `feature/drops` (off `feature/
 - Wire format 13: one new reliable event, `crate`, sent to the pilot alone (on a drop, and with the welcome to say how many they hold). The Mac app needs a rebuild after a merge.
 - The pilot sees a banner on a drop and a crate count beside their kills. The settings panel has "Claim salvage crates", which shows a code good for ten minutes.
 - `POST /api/claim-code` (pilot key) and `POST /api/redeem` (SpaceFort's server, with `ORBIT_BRIDGE_SECRET` in the `x-bridge-secret` header). With no secret set, crates drop and show but nobody can redeem. Redeeming the same code again within the hour returns the same crates, so a lost reply can be retried.
-- Checked: lint, typecheck, 309 unit tests, the integration suite. Not checked: the browser suite was not rerun; the banner and the claim panel were not looked at on a phone; nobody has played with the odds.
+- Checked: lint, typecheck, 309 unit tests, the integration suite (12 of 12, twice, run alone). **One earlier integration run failed 1 of 12** while SpaceFort's test suite was running on the same machine; its output was not kept, so which test failed is not known. It has not repeated. Not checked: the browser suite was not rerun; the banner and the claim panel were not looked at on a phone; nobody has played with the odds.
 
 ### 2026-11-19: the boss is renamed; a plan to join the game to SpaceFort
 
