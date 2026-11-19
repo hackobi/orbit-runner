@@ -298,9 +298,19 @@ describe('server messages', () => {
       { kind: 'death', deathId: 79, victimId: 6, killerId: NO_PLAYER, cause: CAUSE_EDGE, tick: 9 },
       { kind: 'grant', item: 'fenix', applyTick: 1044 },
       { kind: 'progress', xp: 123456, missionIndex: 7, missionProgress: 59, missionsDone: 300 },
+      { kind: 'crate', tier: 3, source: 2, held: 4 },
+      { kind: 'crate', tier: 255, source: 255, held: 0 },
     ];
     expect(decodeServerMessage(encodeEvents(events))).toEqual({ type: 'events', events });
     expect(decodeServerMessage(encodeEvents([]))).toEqual({ type: 'events', events: [] });
+  });
+
+  it('a crate of a tier or a source that does not exist is malformed', () => {
+    const bad = (tier: number, source: number): unknown =>
+      decodeServerMessage(encodeEvents([{ kind: 'crate', tier, source, held: 1 }]));
+    expect(bad(5, 0)).toBeNull();
+    expect(bad(0, 3)).toBeNull();
+    expect(bad(255, 0)).toBeNull();
   });
 
   it('reject round-trips for each reason, and an unknown reason is malformed', () => {

@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SIM, TICK_MS } from '../../src/shared/constants.ts';
-import { CAUSE_PLAYER } from '../../src/shared/protocol.ts';
+import { CAUSE_PLAYER, NO_CRATE } from '../../src/shared/protocol.ts';
+import { DAILY_CRATE_CAP } from '../../src/shared/drops.ts';
 import {
   FIRST_RAIDER_ID,
   MAX_LEVEL,
@@ -31,6 +32,7 @@ import {
   WARLORD_FIRST_TICKS,
   WARLORD_RETURN_TICKS,
 } from '../../src/server/npc.ts';
+import { MemoryCrateStore } from '../../src/server/crates.ts';
 import { FilePilotStore, MemoryPilotStore } from '../../src/server/pilots.ts';
 import { TestWorld } from '../support/harness.ts';
 
@@ -476,5 +478,142 @@ describe('the ships the server flies', () => {
     expect(world.room.shipOf(WARLORD_ID)?.alive).toBe(false);
     world.run(60 * TICK_MS);
     expect(world.room.shipOf(WARLORD_ID)?.alive).toBe(true);
+  });
+});
+
+describe('salvage crates', () => {
+  /** Flies the pilot through one lone orb and back out. */
+  function takeOrb(world: TestWorld, id: number): void {
+    const orb = world.room.world.orbs.orbs[loneOrb(world, 'shield')];
+    if (!orb) throw new Error('no orb');
+    world.place(id, { ...STILL, x: orb.x, y: orb.y, z: orb.z - 20, speed: 20, targetSpeed: 20 });
+    world.run(1500);
+    world.place(id, OUTSIDE_THE_BELT);
+    world.run(300);
+  }
+
+  it('an orb that drops one tells the pilot alone, and the hold counts it', () => {
+    const crates = new MemoryCrateStore();
+    const world = new TestWorld(31, 150, true, { crates, crateOdds: { orb: 1 } });
+    const pilot = world.addClient({ pilotKey: KEY });
+    const other = world.addClient({});
+    world.run(1500);
+    const id = pilot.core.playerId;
+    world.place(other.core.playerId, OUTSIDE_THE_BELT);
+    world.place(id, OUTSIDE_THE_BELT);
+    world.run(200);
+    expect(pilot.events.filter((e) => e.kind === 'crate')).toEqual([
+      { kind: 'crate', tier: NO_CRATE, source: NO_CRATE, held: 0 },
+    ]);
+
+    takeOrb(world, id);
+
+    expect(crates.pending(KEY_HEX)).toHaveLength(1);
+    expect(crates.pending(KEY_HEX)[0]).toMatchObject({ source: 'orb', level: 1 });
+    expect(pilot.core.crates).toBe(1);
+    expect(pilot.core.crateDrops).toHaveLength(1);
+    expect(pilot.core.crateDrops[0]?.source).toBe(0);
+    expect(world.room.cratesOf(id)).toBe(1);
+    expect(other.events.some((e) => e.kind === 'crate')).toBe(false);
+  });
+
+  it('at the real odds an orb almost never drops one, and a pilot without a key never', () => {
+    const crates = new MemoryCrateStore();
+    const world = new TestWorld(31, 150, true, { crates });
+    const pilot = world.addClient({ pilotKey: KEY });
+    world.run(1500);
+    takeOrb(world, pilot.core.playerId);
+    expect(crates.count(KEY_HEX)).toBe(0);
+
+    const sure = new TestWorld(31, 150, true, { crates, crateOdds: { orb: 1 } });
+    const visitor = sure.addClient({});
+    sure.run(1500);
+    takeOrb(sure, visitor.core.playerId);
+    expect(visitor.events.some((e) => e.kind === 'crate')).toBe(false);
+    expect(visitor.core.crates).toBe(0);
+  });
+
+  it('orbs stop paying at the daily cap, and a returning pilot is told what they hold', () => {
+    const crates = new MemoryCrateStore();
+    for (let i = 0; i < DAILY_CRATE_CAP; i++) crates.add(KEY_HEX, 'Common', 'orb', 1);
+    const world = new TestWorld(31, 150, true, { crates, crateOdds: { orb: 1 } });
+    const pilot = world.addClient({ pilotKey: KEY });
+    world.run(1500);
+    expect(pilot.core.crates).toBe(DAILY_CRATE_CAP);
+    takeOrb(world, pilot.core.playerId);
+    expect(crates.count(KEY_HEX)).toBe(DAILY_CRATE_CAP);
+    expect(pilot.core.crateDrops).toHaveLength(0);
+  });
+
+  it('the pilot who destroys a raider may win one', () => {
+    const crates = new MemoryCrateStore();
+    const world = new TestWorld(9, 0, false, { npcs: true, crates, crateOdds: { raider: 1 } });
+    const pilot = world.addClient({ controls: hunter(), pilotKey: KEY });
+    world.run(1000);
+    const id = pilot.core.playerId;
+    sustain(world, id);
+    const raider = world.room.shipOf(FIRST_RAIDER_ID);
+    if (!raider) throw new Error('no raider');
+    world.place(id, { ...STILL, x: raider.x, y: raider.y, z: raider.z - 200 });
+    world.clock.every(TICK_MS, () => {
+      if (world.deaths.length > 0) world.place(id, { fireCooldown: 250 });
+    });
+    world.run(60_000);
+    expect(world.deaths[0]).toMatchObject({ killerId: id });
+    expect(crates.pending(KEY_HEX)).toHaveLength(1);
+    expect(crates.pending(KEY_HEX)[0]?.source).toBe('raider');
+  });
+
+  it('when the boss falls, every pilot who damaged it rolls, each for themselves', () => {
+    const crates = new MemoryCrateStore();
+    const world = new TestWorld(9, 0, false, { npcs: true, crates, crateOdds: { boss: 1 } });
+    const keys = [KEY, Uint8Array.from({ length: 16 }, (_, i) => 0xa0 + i)];
+    const pilots = keys.map((pilotKey) =>
+      world.addClient({ controls: hunterOf(WARLORD_ID), pilotKey }),
+    );
+    const bystander = world.addClient({ pilotKey: Uint8Array.from({ length: 16 }, () => 0x77) });
+    world.run((WARLORD_FIRST_TICKS + 60) * TICK_MS);
+    const warlord = world.room.shipOf(WARLORD_ID);
+    if (!warlord) throw new Error('no boss');
+    world.place(bystander.core.playerId, OUTSIDE_THE_BELT);
+    pilots.forEach((pilot, i) => {
+      sustain(world, pilot.core.playerId);
+      world.place(pilot.core.playerId, {
+        ...STILL,
+        x: warlord.x + (i === 0 ? -40 : 40),
+        y: warlord.y,
+        z: warlord.z - 250,
+      });
+    });
+    world.clock.every(TICK_MS, () => {
+      sustain(world, bystander.core.playerId);
+    });
+    world.run(120_000);
+    expect(world.deaths.some((d) => d.victimId === WARLORD_ID)).toBe(true);
+    expect(crates.pending(KEY_HEX).map((c) => c.source)).toEqual(['boss']);
+    expect(crates.pending('a0a1a2a3a4a5a6a7a8a9aaabacadaeaf').map((c) => c.source)).toEqual([
+      'boss',
+    ]);
+    expect(crates.count('77'.repeat(16))).toBe(0);
+  });
+
+  it('a room with drops flies exactly as one without', () => {
+    const fly = (extra: ConstructorParameters<typeof TestWorld>[3]): string => {
+      const world = new TestWorld(31, 150, true, extra);
+      const pilot = world.addClient({ pilotKey: KEY });
+      world.run(1500);
+      const id = pilot.core.playerId;
+      takeOrb(world, id);
+      world.run(5000);
+      return JSON.stringify([
+        world.room.shipOf(id),
+        world.room.scoreOf(id),
+        world.room.progressOf(id),
+        pilot.core.counters.corrections,
+      ]);
+    };
+    const crates = new MemoryCrateStore();
+    expect(fly({ crates, crateOdds: { orb: 1 } })).toBe(fly({}));
+    expect(crates.count(KEY_HEX)).toBe(1);
   });
 });

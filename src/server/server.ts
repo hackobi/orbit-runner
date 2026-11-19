@@ -1,7 +1,7 @@
 // The game server process: one room, a WebSocket endpoint at /ws, an HTTP
 // health check and, when given a built client, the game's own files.
 
-import { randomBytes } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -16,6 +16,7 @@ import {
   SESSION_TOKEN_BYTES,
 } from '../shared/protocol.ts';
 import type { ShipState } from '../shared/sim/ship.ts';
+import type { MemoryCrateStore } from './crates.ts';
 import type { PilotStore } from './pilots.ts';
 import { Recorder } from './recorder.ts';
 import { Room } from './room.ts';
@@ -44,6 +45,13 @@ export interface ServerOptions {
   npcs?: boolean;
   /** Where pilots' progress is kept (RoomOptions.pilots). */
   pilots?: PilotStore;
+  /** Where salvage crates are held (RoomOptions.crates). Without it nothing drops. */
+  crates?: MemoryCrateStore;
+  /**
+   * What SpaceFort's server must send to redeem a claim code. Without it
+   * /api/redeem refuses everyone: crates can be won and shown, not moved.
+   */
+  bridgeSecret?: string;
   /** Passed to the room. See RoomOptions. */
   onTick?: (tick: number, room: Room) => void;
   onWork?: (durationMs: number, ticks: number) => void;
@@ -138,6 +146,7 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
     createToken: () => randomBytes(SESSION_TOKEN_BYTES),
     npcs: options.npcs ?? false,
     ...(options.pilots ? { pilots: options.pilots } : {}),
+    ...(options.crates ? { crates: options.crates } : {}),
     ...(recorder
       ? {
           listener: recorder.listener,
@@ -197,6 +206,47 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
     return false;
   };
 
+  /** The two halves of a claim: the pilot asks for a code, SpaceFort's server redeems it. */
+  const handleCrates = async (
+    crates: MemoryCrateStore,
+    url: URL,
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<boolean> => {
+    if (request.method !== 'POST') return false;
+    if (url.pathname === '/api/claim-code') {
+      const body = JSON.parse(await readBody(request)) as { pilotKey?: unknown };
+      if (typeof body.pilotKey !== 'string' || !/^[0-9a-f]{32}$/.test(body.pilotKey)) {
+        sendJson(response, 400, { ok: false, error: 'not a pilot key' });
+        return true;
+      }
+      const issued = crates.issueCode(body.pilotKey);
+      sendJson(response, 200, issued ? { ok: true, ...issued } : { ok: true, crates: 0 });
+      return true;
+    }
+    if (url.pathname === '/api/redeem') {
+      const sent = request.headers['x-bridge-secret'];
+      const secret = Buffer.from(options.bridgeSecret ?? '');
+      const given = Buffer.from(typeof sent === 'string' ? sent : '');
+      if (
+        secret.length === 0 ||
+        given.length !== secret.length ||
+        !timingSafeEqual(given, secret)
+      ) {
+        sendJson(response, 403, { ok: false, error: 'not allowed' });
+        return true;
+      }
+      const body = JSON.parse(await readBody(request)) as { code?: unknown };
+      const code =
+        typeof body.code === 'string' ? body.code.replace(/[^A-Za-z0-9]/g, '').toUpperCase() : '';
+      const redemption = crates.redeem(code);
+      if (redemption) sendJson(response, 200, { ok: true, ...redemption });
+      else sendJson(response, 404, { ok: false, error: 'no such code, or it has expired' });
+      return true;
+    }
+    return false;
+  };
+
   const http = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://localhost');
     if (request.method === 'GET' && url.pathname === '/health') {
@@ -218,6 +268,9 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
       response.end('not found');
     };
     const handle = async (): Promise<boolean> => {
+      if (options.crates && (await handleCrates(options.crates, url, request, response))) {
+        return true;
+      }
       if (recorder && (await handleDebug(recorder, url, request, response))) return true;
       if (clientDir && (request.method === 'GET' || request.method === 'HEAD')) {
         return serveClientFile(clientDir, url.pathname, response);

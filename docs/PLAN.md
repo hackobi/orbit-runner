@@ -598,6 +598,17 @@ Blockers: none. Waiting for the user: Phase 5 needs separate approval.
 - The user played step 1 and approved the deploy. `feature/dogfight` was fast-forwarded into `feature/v2-rebuild` and pushed; the live server reports wire format 11.
 - From their notes: the heavy shot is now plasma (a small hot centre in a banded glow that reaches exactly as far as it hits, with embers behind), the homing shot is see-through, and the Fenix is a red swept-wing ship edged in gold instead of v1's black dart. Client only (`src/client/scene.ts`). Seen in staged screenshots on desktop Chromium; not on a phone.
 
+### 2026-11-19: salvage crates (D28)
+
+The user approved the plan and the odds. Built on `feature/drops` (off `feature/boss-name`), local only.
+
+- `src/shared/drops.ts` holds the odds; `src/server/crates.ts` holds what pilots have won (memory, or `crates.json` under `ORBIT_DATA_DIR`), the daily cap, and the one-time claim codes.
+- The room rolls on an orb, a raider kill and the boss kill, from its own random stream. A test flies the same pilot through the same orb with and without a drop and gets the same ship, score and progress.
+- Wire format 13: one new reliable event, `crate`, sent to the pilot alone (on a drop, and with the welcome to say how many they hold). The Mac app needs a rebuild after a merge.
+- The pilot sees a banner on a drop and a crate count beside their kills. The settings panel has "Claim salvage crates", which shows a code good for ten minutes.
+- `POST /api/claim-code` (pilot key) and `POST /api/redeem` (SpaceFort's server, with `ORBIT_BRIDGE_SECRET` in the `x-bridge-secret` header). With no secret set, crates drop and show but nobody can redeem. Redeeming the same code again within the hour returns the same crates, so a lost reply can be retried.
+- Checked: lint, typecheck, 309 unit tests, the integration suite. Not checked: the browser suite was not rerun; the banner and the claim panel were not looked at on a phone; nobody has played with the odds.
+
 ### 2026-11-19: the boss is renamed; a plan to join the game to SpaceFort
 
 - The user played the role-playing layer and asked for the Warlord to be renamed. It is shown as **the Dreadnought**, from one constant (`BOSS_NAME` in `src/shared/progress.ts`). Code and the wire format keep the kind `warlord`, so nothing else changes. Branch `feature/boss-name`, off `feature/rpg-layer`; lint, typecheck and 292 unit tests pass. The name is a first pick and is the user's to change.

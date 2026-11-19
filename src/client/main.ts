@@ -213,6 +213,34 @@ const invertBox = element('invert-pitch', HTMLInputElement);
 const tiltBox = element('tilt', HTMLInputElement);
 const tiltRow = element('tilt-row', HTMLLabelElement);
 
+// Crates are claimed in SpaceFort: this asks the server for a one-time code.
+const claimButton = element('claim-button', HTMLButtonElement);
+const claimText = element('claim-text', HTMLParagraphElement);
+claimButton.addEventListener('click', () => {
+  const key = pilotKey();
+  if (!key) {
+    claimText.textContent = 'This browser keeps no pilot, so it holds no crates.';
+    return;
+  }
+  claimText.textContent = 'Asking…';
+  void fetch('/api/claim-code', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      pilotKey: Array.from(key, (byte) => byte.toString(16).padStart(2, '0')).join(''),
+    }),
+  })
+    .then((response) => response.json() as Promise<{ code?: string; crates?: number }>)
+    .then((reply) => {
+      claimText.textContent = reply.code
+        ? `Code ${reply.code.slice(0, 4)}-${reply.code.slice(4)} for ${reply.crates} crate${reply.crates === 1 ? '' : 's'}. Enter it in SpaceFort within 10 minutes.`
+        : 'No crates to claim yet. Orbs, raiders and the boss can drop them.';
+    })
+    .catch(() => {
+      claimText.textContent = 'Could not reach the server. Try again.';
+    });
+});
+
 settingsButton.addEventListener('click', () => {
   settingsPanel.hidden = !settingsPanel.hidden;
   settingsButton.setAttribute('aria-expanded', String(!settingsPanel.hidden));

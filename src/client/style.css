@@ -504,6 +504,28 @@ body {
 
 /* --- Settings ---------------------------------------------------------------- */
 
+#claim {
+  max-width: 220px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--edge);
+}
+
+#claim button {
+  padding: 6px 10px;
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  background: rgb(40 80 150 / 30%);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+#claim p {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+
 #settings-button {
   top: calc(12px + var(--inset-top));
   right: calc(188px + var(--inset-right));

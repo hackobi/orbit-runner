@@ -25,6 +25,7 @@ import {
   shipName,
 } from '../shared/progress.ts';
 import type { Progress } from '../shared/progress.ts';
+import { CRATE_TIERS } from '../shared/drops.ts';
 import { STORE_ITEMS, STORE_PRICES } from '../shared/scoring.ts';
 import type { StoreItem } from '../shared/scoring.ts';
 import { grantWouldChange, outsideCombatZone } from '../shared/sim/world.ts';
@@ -259,7 +260,10 @@ export class Hud {
     shown.text(this.ammo, `Heavy ${view.heavyAmmo}`);
     shown.text(this.homing, homingLine(view));
     shown.text(this.points, `Points ${number(core.score)}`);
-    shown.text(this.kills, `Kills ${core.kills}`);
+    shown.text(
+      this.kills,
+      core.crates > 0 ? `Kills ${core.kills} · Crates ${core.crates}` : `Kills ${core.kills}`,
+    );
     const timers: string[] = [];
     if (view.rapidTicks > 0) {
       timers.push(`Rapid fire  ${Math.ceil(view.rapidTicks / SIM.tickRate)} s`);
@@ -333,6 +337,13 @@ export class Hud {
 
   /** The experience bar, the mission, and what has just been earned. */
   private updateProgress(core: ClientCore, nowMs: number): void {
+    for (const drop of core.crateDrops.splice(0)) {
+      const from = [`an orb`, `a raider`, `the ${BOSS_NAME}`][drop.source] ?? 'the belt';
+      this.announce(
+        `${CRATE_TIERS[drop.tier] ?? 'Salvage'} crate`,
+        `Salvaged from ${from}. Open ⚙ for a code to claim it in SpaceFort.`,
+      );
+    }
     const shown = this.shown;
     const now = core.progress;
     shown.hidden(this.mission, !now);

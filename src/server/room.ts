@@ -13,6 +13,7 @@ import {
   CAUSE_EDGE,
   CAUSE_PLANET,
   CAUSE_PLAYER,
+  NO_CRATE,
   NO_PLAYER,
   PROTOCOL_VERSION,
   REJECT_FULL,
@@ -49,6 +50,14 @@ import {
   nextMissionIndex,
 } from '../shared/progress.ts';
 import type { MissionKind, Progress } from '../shared/progress.ts';
+import {
+  CRATE_CHANCE,
+  CRATE_SOURCES,
+  CRATE_TIERS,
+  bossCrateChance,
+  crateTier,
+} from '../shared/drops.ts';
+import type { CrateSource } from '../shared/drops.ts';
 import { distantSampleOf, sampleOf, sampleTrack } from '../shared/remote.ts';
 import type { RemoteSample } from '../shared/remote.ts';
 import { Rng } from '../shared/rng.ts';
@@ -104,6 +113,7 @@ import {
   provoke,
 } from './npc.ts';
 import type { NpcBrain, NpcTarget } from './npc.ts';
+import type { MemoryCrateStore } from './crates.ts';
 import type { PilotStore } from './pilots.ts';
 
 export const MAX_PLAYERS = 16;
@@ -220,6 +230,10 @@ export interface RoomOptions {
   npcs?: boolean;
   /** Keeps pilots' progress between visits. Without one it lasts as long as the seat. */
   pilots?: PilotStore;
+  /** Holds the salvage crates pilots win. Without one nothing drops. */
+  crates?: MemoryCrateStore;
+  /** The chance of a crate from each source, in place of the real odds. Tests of the mechanism raise them. */
+  crateOdds?: Partial<Record<CrateSource, number>>;
   /** Called after every simulated tick. Tests use it to record what really happened. */
   onTick?: (tick: number, room: Room) => void;
   /**
@@ -326,8 +340,8 @@ interface Player {
   readonly npc: NpcBrain | null;
   /** For a ship the server flies: the tick it comes back on. */
   respawnAtTick: number;
-  /** The players who have damaged this ship in this life. */
-  readonly damagedBy: Set<number>;
+  /** The players who have damaged this ship in this life, and by how much. */
+  readonly damagedBy: Map<number, number>;
 }
 
 interface LiveBullet {
@@ -381,6 +395,10 @@ export class Room {
   private readonly npcRng: Rng;
   private readonly withNpcs: boolean;
   private readonly pilots: PilotStore | undefined;
+  private readonly crates: MemoryCrateStore | undefined;
+  /** Its own stream, so a room with drops flies exactly as one without. */
+  private readonly dropRng: Rng;
+  private readonly crateOdds: Partial<Record<CrateSource, number>>;
   private readonly createToken: () => Uint8Array;
   private readonly maxPlayers: number;
   private readonly listener: RoomListener;
@@ -410,6 +428,9 @@ export class Room {
     this.npcRng = new Rng((options.seed ^ 0x52a1de25) >>> 0);
     this.withNpcs = options.npcs ?? false;
     this.pilots = options.pilots;
+    this.crates = options.crates;
+    this.crateOdds = options.crateOdds ?? {};
+    this.dropRng = new Rng((options.seed ^ 0x0c4a7e5d) >>> 0);
     if (this.withNpcs) {
       const warlord = this.newPlayer(WARLORD_ID, NO_TOKEN, createBrain('warlord', this.npcRng));
       warlord.ship = destroyShip(warlord.ship);
@@ -695,6 +716,7 @@ export class Room {
     player.score += orbScore(orb.kind, player.asteroidMultTicks > 0);
     this.gainXp(player, XP.orb);
     this.advanceMission(player, 'orbs');
+    this.rollCrate(player, 'orb', CRATE_CHANCE.orb);
     if (orb.kind === 'miner') player.asteroidMultTicks = SCORE.multiplierTicks;
     if (orb.kind === 'hunter') player.killMultTicks = SCORE.multiplierTicks;
     if (orb.kind === 'zaphire') player.storeTicks = SCORE.storeTicks;
@@ -846,7 +868,7 @@ export class Room {
       this.gainXp(owner, XP.playerHit);
     }
     this.advanceMission(owner, 'hits');
-    if (!owner.npc) target.damagedBy.add(owner.id);
+    if (!owner.npc) target.damagedBy.set(owner.id, (target.damagedBy.get(owner.id) ?? 0) + dealt);
     this.listener.hit?.({ ownerId: owner.id, spawnTick, targetId: target.id, tick: this.tick });
     this.announce(
       {
@@ -867,17 +889,22 @@ export class Room {
     if (!target.ship.alive) {
       if (target.id === WARLORD_ID) {
         // A raid: everyone who damaged it shares in it, whoever fired last.
-        for (const id of target.damagedBy) {
+        let total = 0;
+        for (const damage of target.damagedBy.values()) total += damage;
+        for (const [id, damage] of target.damagedBy) {
           const raider = this.players.get(id);
           if (!raider) continue;
           raider.score += NPC_SCORE.warlordKill;
           this.gainXp(raider, XP.warlordKill);
           this.advanceMission(raider, 'warlord');
+          const level = levelOf(raider.progress.xp);
+          this.rollCrate(raider, 'boss', bossCrateChance(level, total > 0 ? damage / total : 0));
         }
       } else if (target.npc) {
         owner.score += NPC_SCORE.raiderKill;
         this.gainXp(owner, XP.raiderKill);
         this.advanceMission(owner, 'raiders');
+        this.rollCrate(owner, 'raider', CRATE_CHANCE.raider);
       } else {
         // Kills are of players only: a title or a bounty must not be farmed from the server's ships.
         owner.kills += 1;
@@ -894,6 +921,32 @@ export class Room {
     owner.score += asteroidScore(owner.asteroidMultTicks > 0);
     this.gainXp(owner, XP.asteroid);
     this.advanceMission(owner, 'rocks');
+  }
+
+  /**
+   * Maybe drops a salvage crate for this pilot. Orbs and raiders stop paying
+   * once the pilot has had the day's share; the boss always may.
+   */
+  private rollCrate(player: Player, source: CrateSource, chance: number): void {
+    if (!this.crates || !player.pilotKey || player.npc) return;
+    // Both numbers are drawn every time, so one pilot's cap never shifts another's luck.
+    const hit = this.dropRng.next() < (this.crateOdds[source] ?? chance);
+    const tier = crateTier(source, this.dropRng.next());
+    if (!hit) return;
+    if (source !== 'boss' && !this.crates.underCap(player.pilotKey)) return;
+    this.crates.add(player.pilotKey, tier, source, levelOf(player.progress.xp));
+    player.outbox.push({
+      kind: 'crate',
+      tier: CRATE_TIERS.indexOf(tier),
+      source: CRATE_SOURCES.indexOf(source),
+      held: this.crates.count(player.pilotKey),
+    });
+  }
+
+  /** How many crates a seated player holds (0 without a store or a pilot key). */
+  cratesOf(id: number): number {
+    const key = this.players.get(id)?.pilotKey;
+    return key && this.crates ? this.crates.count(key) : 0;
   }
 
   private gainXp(player: Player, amount: number): void {
@@ -1387,7 +1440,7 @@ export class Room {
       beltTicks: 0,
       npc,
       respawnAtTick: 0,
-      damagedBy: new Set(),
+      damagedBy: new Map(),
     };
   }
 
@@ -1445,6 +1498,14 @@ export class Room {
       player.outbox.push({ kind: 'grant', item: grant.item, applyTick: grant.applyTick });
     }
     player.progressDue = true;
+    if (this.crates && player.pilotKey) {
+      player.outbox.push({
+        kind: 'crate',
+        tier: NO_CRATE,
+        source: NO_CRATE,
+        held: this.crates.count(player.pilotKey),
+      });
+    }
     for (const gone of this.ledger.asteroids.goneAt(this.tick)) {
       player.outbox.push({
         kind: 'asteroid',

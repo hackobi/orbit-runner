@@ -7,6 +7,7 @@ const serverPort = Number(process.env.ORBIT_SERVER_PORT ?? 8790);
 // Page and game socket share one origin, so one certificate covers both.
 const proxy = {
   '/ws': { target: `ws://127.0.0.1:${serverPort}`, ws: true },
+  '/api': { target: `http://127.0.0.1:${serverPort}` },
 };
 
 // The installable app: a manifest, and a service worker that keeps the page

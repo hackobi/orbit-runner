@@ -16,13 +16,14 @@ import {
   quantisePosition,
 } from './remote.ts';
 import type { RemoteSample } from './remote.ts';
+import { CRATE_SOURCES, CRATE_TIERS } from './drops.ts';
 import { MISSIONS } from './progress.ts';
 import { STORE_ITEMS } from './scoring.ts';
 import type { StoreItem } from './scoring.ts';
 import { inputFromWire } from './sim/ship.ts';
 import type { Input, ShipState, ShotKind } from './sim/ship.ts';
 
-export const PROTOCOL_VERSION = 12;
+export const PROTOCOL_VERSION = 13;
 
 /** Inputs carried per message: the tick's own plus the ones before it. */
 export const INPUT_REDUNDANCY = 3;
@@ -272,7 +273,23 @@ export interface ProgressEvent {
   readonly missionsDone: number;
 }
 
+/**
+ * This player's salvage crates, sent to them alone: with every welcome, and
+ * when one drops. `tier` and `source` index the tables in drops.ts and are
+ * NO_CRATE when the event only reports the count.
+ */
+export interface CrateEvent {
+  readonly kind: 'crate';
+  readonly tier: number;
+  readonly source: number;
+  /** Crates held and not yet claimed. */
+  readonly held: number;
+}
+
+export const NO_CRATE = 255;
+
 export type GameEvent =
+  | CrateEvent
   | BulletEvent
   | HitEvent
   | DeathEvent
@@ -782,6 +799,7 @@ const EVENT_ASTEROID = 5;
 const EVENT_ORB = 6;
 const EVENT_GRANT = 7;
 const EVENT_PROGRESS = 8;
+const EVENT_CRATE = 9;
 
 const MAX_EVENT_BYTES = 27;
 
@@ -838,6 +856,12 @@ export function encodeEvents(events: readonly GameEvent[]): Uint8Array {
         w.u8(EVENT_GRANT);
         w.u8(STORE_ITEMS.indexOf(event.item));
         w.u32(event.applyTick);
+        break;
+      case 'crate':
+        w.u8(EVENT_CRATE);
+        w.u8(event.tier);
+        w.u8(event.source);
+        w.u16(Math.min(65535, event.held));
         break;
       case 'progress':
         w.u8(EVENT_PROGRESS);
@@ -915,6 +939,14 @@ function readEvent(r: Reader): GameEvent | null {
     const item = STORE_ITEMS[r.u8()];
     const applyTick = r.u32();
     return item ? { kind: 'grant', item, applyTick } : null;
+  }
+  if (kind === EVENT_CRATE) {
+    const tier = r.u8();
+    const source = r.u8();
+    const held = r.u16();
+    const none = tier === NO_CRATE && source === NO_CRATE;
+    if (!none && (tier >= CRATE_TIERS.length || source >= CRATE_SOURCES.length)) return null;
+    return { kind: 'crate', tier, source, held };
   }
   if (kind === EVENT_PROGRESS) {
     const xp = r.u32();

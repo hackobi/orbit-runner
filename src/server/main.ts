@@ -1,3 +1,4 @@
+import { FileCrateStore, MemoryCrateStore } from './crates.ts';
 import { FilePilotStore, MemoryPilotStore } from './pilots.ts';
 import { startServer } from './server.ts';
 
@@ -22,6 +23,10 @@ const npcs = process.env.ORBIT_NPCS ? process.env.ORBIT_NPCS === '1' : !testHook
 // in memory and a restart or a deploy forgets it.
 const dataDir = process.env.ORBIT_DATA_DIR;
 const pilots = dataDir ? new FilePilotStore(dataDir) : new MemoryPilotStore();
+// Salvage crates are kept the same way. SpaceFort's server redeems claim
+// codes with ORBIT_BRIDGE_SECRET; without one, crates drop but cannot be moved.
+const crates = dataDir ? new FileCrateStore(dataDir) : new MemoryCrateStore();
+const bridgeSecret = process.env.ORBIT_BRIDGE_SECRET;
 
 const server = await startServer({
   port,
@@ -29,11 +34,18 @@ const server = await startServer({
   testHooks,
   npcs,
   pilots,
+  crates,
+  ...(bridgeSecret ? { bridgeSecret } : {}),
   ...(clientDir ? { clientDir } : {}),
 });
 console.log(`orbit-runner server listening on http://${host}:${server.port} (game socket at /ws)`);
 if (clientDir) console.log(`serving the built client from ${clientDir}`);
 if (testHooks) console.log('test hooks are ON: /debug endpoints are open');
+console.log(
+  bridgeSecret
+    ? 'crate claims can be redeemed (ORBIT_BRIDGE_SECRET is set)'
+    : 'crates drop but cannot be redeemed: set ORBIT_BRIDGE_SECRET to let SpaceFort claim them',
+);
 console.log(npcs ? 'raiders and the Dreadnought are flying' : 'no server-flown ships');
 console.log(
   dataDir
@@ -44,6 +56,7 @@ console.log(
 const shutdown = (): void => {
   void server.close().then(() => {
     if (pilots instanceof FilePilotStore) pilots.flush();
+    if (crates instanceof FileCrateStore) crates.flush();
     process.exit(0);
   });
 };

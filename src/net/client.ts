@@ -10,6 +10,7 @@ import { SHIP_LENGTH, SIM, TICK_MS } from '../shared/constants.ts';
 import { TWO_PI } from '../shared/math.ts';
 import {
   INPUT_REDUNDANCY,
+  NO_CRATE,
   PROTOCOL_VERSION,
   decodeServerMessage,
   encodeBuy,
@@ -316,6 +317,10 @@ export class ClientCore implements WorldState {
   scoreboard: readonly ScoreEntry[] = [];
   /** This pilot's experience and mission, as last sent. Null until the server has said. */
   progress: Progress | null = null;
+  /** Salvage crates held and not yet claimed, as last sent. */
+  crates = 0;
+  /** Crates won since the display last took them (tier and source index drops.ts). */
+  readonly crateDrops: { tier: number; source: number }[] = [];
 
   /** Smoothed round trip in milliseconds, measured from input acknowledgements. */
   rttMs = 0;
@@ -1046,6 +1051,11 @@ export class ClientCore implements WorldState {
 
   private applyEvent(event: GameEvent): void {
     switch (event.kind) {
+      case 'crate':
+        this.crates = event.held;
+        if (event.tier !== NO_CRATE)
+          this.crateDrops.push({ tier: event.tier, source: event.source });
+        break;
       case 'progress':
         this.progress = {
           xp: event.xp,
