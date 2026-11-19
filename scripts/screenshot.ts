@@ -7,6 +7,7 @@ import { chromium, devices } from '@playwright/test';
 import { createServer } from 'vite';
 import { createBot } from '../src/net/bot.ts';
 import { circler } from '../src/net/behaviours.ts';
+import { MemoryCrateStore } from '../src/server/crates.ts';
 import { startServer } from '../src/server/server.ts';
 import { SIM } from '../src/shared/constants.ts';
 import { FIRST_RAIDER_ID, WARLORD_ID } from '../src/shared/progress.ts';
@@ -22,7 +23,15 @@ const CLIENT_PORT = 5311;
 process.env.ORBIT_SERVER_PORT = String(SERVER_PORT);
 process.env.ORBIT_CLIENT_PORT = String(CLIENT_PORT);
 
-const server = await startServer({ port: SERVER_PORT, seed: 5, npcs: true });
+// Every orb drops a crate here, so the banner and the claim panel can be seen.
+const crates = new MemoryCrateStore();
+const server = await startServer({
+  port: SERVER_PORT,
+  seed: 5,
+  npcs: true,
+  crates,
+  crateOdds: { orb: 1 },
+});
 const vite = await createServer();
 await vite.listen();
 const room = server.room;
@@ -120,6 +129,27 @@ const behind = (id: number, distance: number): void => {
     targetSpeed: ship.speed,
   });
 };
+
+// A crate has dropped from the orb just taken: its banner, and the count by the kills.
+await shot('crate-drop');
+const kills = await page.locator('#kills').textContent();
+if (!/Crates \d/.test(kills ?? '')) throw new Error(`no crate count on the HUD: ${kills}`);
+
+// The claim panel: a code, which the fire key must not replace.
+await page.locator('#settings-button').click();
+await page.locator('#claim-button').click();
+await page.waitForFunction(() =>
+  /Code \w{4}-\w{4}/.test(document.querySelector('#claim-text')?.textContent ?? ''),
+);
+const code = await page.locator('#claim-text').textContent();
+await page.keyboard.press('Space');
+await page.waitForTimeout(400);
+if ((await page.locator('#claim-text').textContent()) !== code) {
+  throw new Error('the fire key asked for a new claim code');
+}
+await shot('crate-claim');
+console.log(`claim panel says: ${(code ?? '').replace(/\w{4}-\w{4}/, 'XXXX-XXXX')}`);
+await page.locator('#settings-button').click();
 
 // A raider on patrol, and a level gained.
 behind(FIRST_RAIDER_ID, 45);

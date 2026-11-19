@@ -222,6 +222,9 @@ claimButton.addEventListener('click', () => {
     claimText.textContent = 'This browser keeps no pilot, so it holds no crates.';
     return;
   }
+  // Back to the game at once: a focused button would be pressed again by the
+  // fire key, and each press replaces the code just shown.
+  canvas.focus();
   claimText.textContent = 'Asking…';
   void fetch('/api/claim-code', {
     method: 'POST',
