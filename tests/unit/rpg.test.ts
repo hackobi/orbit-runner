@@ -92,7 +92,7 @@ describe('levels, ranks and the order of missions', () => {
     expect(npcKindOf(FIRST_RAIDER_ID)).toBe('raider');
     expect(npcKindOf(FIRST_RAIDER_ID + RAIDER_COUNT)).toBeNull();
     expect(npcKindOf(15)).toBeNull();
-    expect(shipName(WARLORD_ID, 0)).toBe('The Warlord');
+    expect(shipName(WARLORD_ID, 0)).toBe('The Dreadnought');
     expect(shipName(FIRST_RAIDER_ID + 1, 0)).toBe('Raider 2');
     expect(shipName(3, 0)).toBe('Player 4');
     expect(shipName(0, 0)).toBe('You');

@@ -34,7 +34,7 @@ const server = await startServer({
 console.log(`orbit-runner server listening on http://${host}:${server.port} (game socket at /ws)`);
 if (clientDir) console.log(`serving the built client from ${clientDir}`);
 if (testHooks) console.log('test hooks are ON: /debug endpoints are open');
-console.log(npcs ? 'raiders and the Warlord are flying' : 'no server-flown ships');
+console.log(npcs ? 'raiders and the Dreadnought are flying' : 'no server-flown ships');
 console.log(
   dataDir
     ? `pilot progress is kept in ${dataDir}`

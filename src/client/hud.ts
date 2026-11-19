@@ -15,6 +15,7 @@ import {
 } from '../shared/protocol.ts';
 import type { DeathEvent, GameEvent } from '../shared/protocol.ts';
 import {
+  BOSS_NAME,
   MISSIONS,
   WARLORD_ID,
   levelOf,
@@ -216,7 +217,7 @@ export class Hud {
     }
     if (event.kind !== 'death') return;
     if (event.victimId === WARLORD_ID && event.cause === CAUSE_PLAYER) {
-      this.announce('The Warlord has fallen', 'Everyone who damaged it shares the reward.');
+      this.announce(`The ${BOSS_NAME} has fallen`, 'Everyone who damaged it shares the reward.');
     }
     if (event.victimId === core.playerId) this.ownDeath = event;
     const victim = nameOf(event.victimId, core.playerId);
@@ -377,7 +378,7 @@ export class Hud {
     const warlord = remotes.find((remote) => remote.id === WARLORD_ID && remote.alive);
     if (warlord && !this.warlordSeen) {
       this.announce(
-        'The Warlord has entered the belt',
+        `The ${BOSS_NAME} has entered the belt`,
         'Bring it down together: it is on the map.',
       );
     }
@@ -385,7 +386,7 @@ export class Hud {
     this.shown.hidden(this.boss, !warlord);
     if (!warlord) return;
     const distance = Math.hypot(warlord.x - view.x, warlord.y - view.y, warlord.z - view.z);
-    this.shown.text(this.bossName, `The Warlord · ${number(distance)} away`);
+    this.shown.text(this.bossName, `The ${BOSS_NAME} · ${number(distance)} away`);
     // A distant ship comes as a position only; its bar keeps the last figure seen.
     if (warlord.full) {
       const left = (warlord.hp + warlord.shield) / (SIM.maxHp + SIM.maxShield);

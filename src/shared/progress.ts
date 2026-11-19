@@ -84,6 +84,9 @@ export interface Mission {
   readonly needsNpcs: boolean;
 }
 
+/** What players see the boss called. Code and the wire format keep the kind `warlord`. */
+export const BOSS_NAME = 'Dreadnought';
+
 /** A pilot works through these in order, and then round again. */
 export const MISSIONS: readonly Mission[] = [
   {
@@ -117,7 +120,7 @@ export const MISSIONS: readonly Mission[] = [
   {
     kind: 'warlord',
     goal: 1,
-    text: 'Help bring down the Warlord',
+    text: `Help bring down the ${BOSS_NAME}`,
     xp: 800,
     points: 3000,
     needsNpcs: true,
@@ -177,7 +180,7 @@ export function hullScaleOf(id: number): number {
 export function shipName(id: number, ownId: number): string {
   if (id === ownId) return 'You';
   const kind = npcKindOf(id);
-  if (kind === 'warlord') return 'The Warlord';
+  if (kind === 'warlord') return `The ${BOSS_NAME}`;
   if (kind === 'raider') return `Raider ${id - FIRST_RAIDER_ID + 1}`;
   return `Player ${id + 1}`;
 }
