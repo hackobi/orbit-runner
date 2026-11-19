@@ -611,7 +611,7 @@ The user approved the plan and the odds. Built on `feature/drops` (off `feature/
 - The other half is built in SpaceFort (`feat/salvage-bridge`): its Salvage tab takes the code and opens the crates. A browser test there claimed and opened three crates through both real servers.
 - After a claim, pilots still flying are sent their new count. The claim button gives focus back to the game, so the fire key cannot ask for a second code.
 - Seen in a real browser (`scripts/screenshot.ts`, scenes `crate-drop` and `crate-claim`): the banner, the count beside the kills, and a code in the settings panel, with no console errors. Desktop size only.
-- Checked: lint, typecheck, 310 unit tests, the integration suite (12 of 12, twice, run alone). **One earlier integration run failed 1 of 12** while SpaceFort's test suite was running on the same machine; its output was not kept, so which test failed is not known. It has not repeated. Not checked: the browser suite was not rerun; the banner and the claim panel were not looked at on a phone; nobody has played with the odds.
+- Checked: lint, typecheck, 310 unit tests, the integration suite (12 of 12, twice, run alone). **One earlier integration run failed 1 of 12** while SpaceFort's test suite was running on the same machine; its output was not kept, so which test failed is not known. It has not repeated. The browser suite passed 22 of 22 on the final code. Not checked: the banner and the claim panel on a phone; nobody has played with the odds.
 
 ### 2026-11-19: the boss is renamed; a plan to join the game to SpaceFort
 

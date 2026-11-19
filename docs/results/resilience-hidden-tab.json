@@ -1,16 +1,16 @@
 {
-  "measuredAt": "2026-11-19T00:48:19.329Z",
+  "measuredAt": "2026-11-19T14:14:42.358Z",
   "data": {
     "client": "Chromium desktop",
     "frames": 481,
-    "framesPerSecond": 60.00274440826815,
+    "framesPerSecond": 60.00274440826816,
     "remoteSamples": 481,
-    "remoteErrorP50": 0.0039344086973752985,
-    "remoteErrorP95": 0.007927137604391728,
-    "remoteErrorMax": 0.010398487659459988,
+    "remoteErrorP50": 0.004339041699941047,
+    "remoteErrorP95": 0.007403666252458642,
+    "remoteErrorMax": 0.008906422494736652,
     "extrapolatedShare": 0,
     "snaps": 0,
-    "worstSnapExcess": -1.874946558894239,
+    "worstSnapExcess": -1.9299493296272099,
     "corrections": 0,
     "correctionP95": 0,
     "correctionMax": 0,
@@ -18,10 +18,10 @@
     "hitsConfirmed": 0,
     "hitAgreement": 1,
     "serverHitsNotSeen": 0,
-    "roundTripMs": 105.54052544366279,
-    "inputSlackTicks": 3.4066233889261963,
-    "viewDelayMs": 222.91666666666666,
-    "interpolationDelayMs": 69.86666665473604,
+    "roundTripMs": 107.2739340764674,
+    "inputSlackTicks": 3.6095383119583113,
+    "viewDelayMs": 226.04166666666666,
+    "interpolationDelayMs": 71.5,
     "missedInputShare": 0
   }
 }
