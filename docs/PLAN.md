@@ -649,3 +649,9 @@ The user asked for the best-looking ships and scenery that cost nothing in gamep
 - Measured on this Mac, headless Chromium, like for like (the machine's load changed between pairs): old 768, new 776 and 787; later old 498, new 484, 489 and 474; at phone size there is no like-for-like pair. So no difference that this measure can see. **It is bound by the processor, not the graphics card, so it says nothing about a phone's fill rate. Not run on a real phone.** The pictures were also taken in WebKit, Safari's engine, and match.
 - Checked: lint, typecheck, 320 unit tests, 12 integration tests, the browser suite 26 of 26.
 - Left out on purpose: bloom as a full-screen pass (the one thing here that could cost a phone frames).
+
+### 2026-11-20: everything deployed
+
+- The user played the new look locally and approved a deploy. `feature/v2-rebuild` was fast-forwarded to `feature/visuals` (`c9cf4d6`) and pushed, which put the role-playing layer, the boss rename, salvage crates, controller support and the new look on the live site together. The live server reports wire format 13.
+- On Railway as deployed: raiders and the Warlock are on; pilot progress and crates are in memory only (no `ORBIT_DATA_DIR`, no volume), so each deploy forgets them; crates cannot be redeemed (no `ORBIT_BRIDGE_SECRET`).
+- Not checked on the live site: playing it on a phone.
