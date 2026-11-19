@@ -607,6 +607,8 @@ The user approved the plan and the odds. Built on `feature/drops` (off `feature/
 - Wire format 13: one new reliable event, `crate`, sent to the pilot alone (on a drop, and with the welcome to say how many they hold). The Mac app needs a rebuild after a merge.
 - The pilot sees a banner on a drop and a crate count beside their kills. The settings panel has "Claim salvage crates", which shows a code good for ten minutes.
 - `POST /api/claim-code` (pilot key) and `POST /api/redeem` (SpaceFort's server, with `ORBIT_BRIDGE_SECRET` in the `x-bridge-secret` header). With no secret set, crates drop and show but nobody can redeem. Redeeming the same code again within the hour returns the same crates, so a lost reply can be retried.
+- `ORBIT_TRY_CRATE_ODDS` (0 to 1) replaces the real odds for every source, for trying drops by hand. Never on a public server; the server says so at start.
+- The other half is built in SpaceFort (`feat/salvage-bridge`): its Salvage tab takes the code and opens the crates. A browser test there claimed and opened three crates through both real servers.
 - Checked: lint, typecheck, 309 unit tests, the integration suite (12 of 12, twice, run alone). **One earlier integration run failed 1 of 12** while SpaceFort's test suite was running on the same machine; its output was not kept, so which test failed is not known. It has not repeated. Not checked: the browser suite was not rerun; the banner and the claim panel were not looked at on a phone; nobody has played with the odds.
 
 ### 2026-11-19: the boss is renamed; a plan to join the game to SpaceFort
