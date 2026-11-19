@@ -41,6 +41,7 @@ import {
 } from 'three';
 import type { BulletView, ShipView } from '../net/client.ts';
 import type { RemoteView } from '../net/remotes.ts';
+import { hullScaleOf, npcKindOf } from '../shared/progress.ts';
 import { SHIP_HULL_RADIUS, SIM } from '../shared/constants.ts';
 import { Rng } from '../shared/rng.ts';
 import { Particles } from './particles.ts';
@@ -922,9 +923,11 @@ export class GameScene {
       seen.add(remote.id);
       let model = this.remoteShips.get(remote.id);
       if (!model) {
-        // v1 draws other players in a light hull (main.js:6823).
-        model = buildShip(0xf5f5f5);
-        model.group.scale.setScalar(REMOTE_SHIP_SCALE);
+        // v1 draws other players in a light hull (main.js:6823). The server's
+        // own ships are told apart by colour, and the Warlord by its size.
+        const npc = npcKindOf(remote.id);
+        model = buildShip(npc === 'warlord' ? 0x6a2fb0 : npc === 'raider' ? 0xc8452c : 0xf5f5f5);
+        model.group.scale.setScalar(REMOTE_SHIP_SCALE * hullScaleOf(remote.id));
         this.remoteShips.set(remote.id, model);
         this.scene.add(model.group);
       }
@@ -939,7 +942,9 @@ export class GameScene {
         // Its trail: puffs left where its tail was, which the ship flies away from.
         const rate = REMOTE_EXHAUST_RATE * (remote.boosting ? 2 : 1) * elapsedSeconds;
         const puffs = Math.floor(rate + Math.random());
-        this.direction.set(0, 0, -2.4 * REMOTE_SHIP_SCALE).applyQuaternion(mesh.quaternion);
+        this.direction
+          .set(0, 0, -2.4 * REMOTE_SHIP_SCALE * hullScaleOf(remote.id))
+          .applyQuaternion(mesh.quaternion);
         for (let i = 0; i < puffs; i++) {
           const jitter = (): number => (Math.random() * 2 - 1) * 0.5;
           this.particles.emit(

@@ -8,6 +8,8 @@
   --energy: #f0c24b;
   --warn: #ffb347;
   --bad: #ff6a5c;
+  --xp: #b98cff;
+  --boss: #c77dff;
   --inset-top: env(safe-area-inset-top, 0px);
   --inset-right: env(safe-area-inset-right, 0px);
   --inset-bottom: env(safe-area-inset-bottom, 0px);
@@ -96,6 +98,107 @@ body {
   padding: 0 7px;
   font-size: 12px;
   line-height: 18px;
+}
+
+#xp-fill {
+  background: var(--xp);
+}
+
+/* What was just earned, at the right-hand end of the bar. */
+#xp-gain {
+  position: absolute;
+  top: 0;
+  right: 7px;
+  font-size: 12px;
+  line-height: 18px;
+  color: #fff;
+}
+
+#mission {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+#mission[hidden],
+#boss[hidden],
+#banner[hidden] {
+  display: none;
+}
+
+#mission-text {
+  margin-bottom: 3px;
+  color: var(--ink);
+}
+
+#mission-bar {
+  margin-bottom: 0;
+}
+
+#mission-fill {
+  background: var(--xp);
+}
+
+/* The Warlord's bar sits low in the middle, between a phone's two thumbs. */
+#boss {
+  position: absolute;
+  left: 50%;
+  bottom: calc(44px + var(--inset-bottom));
+  width: min(320px, 40vw);
+  transform: translateX(-50%);
+  text-align: center;
+  font-size: 12px;
+  color: var(--boss);
+}
+
+#boss-bar {
+  height: 10px;
+  margin: 3px 0 0;
+  border-color: var(--boss);
+}
+
+#boss-fill {
+  background: var(--boss);
+  opacity: 0.9;
+}
+
+#banner {
+  position: absolute;
+  top: 32%;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  white-space: nowrap;
+  animation: banner-in 320ms ease-out;
+}
+
+#banner h2 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow:
+    0 0 18px var(--xp),
+    0 2px 3px #000;
+}
+
+#banner p {
+  margin: 2px 0 0;
+  color: var(--ink);
+}
+
+@keyframes banner-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(1.25);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #banner {
+    animation: none;
+  }
 }
 
 #hull-bar.low .fill {
@@ -200,6 +303,16 @@ body {
 
 #labels span.far {
   color: var(--dim);
+}
+
+#labels span.raider {
+  color: var(--warn);
+}
+
+#labels span.warlord {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--boss);
 }
 
 #store,
@@ -451,6 +564,15 @@ body {
 @media (max-height: 480px) {
   #gauges {
     width: 150px;
+  }
+
+  #mission {
+    margin-top: 4px;
+    font-size: 11px;
+  }
+
+  #banner h2 {
+    font-size: 22px;
   }
 
   #corner,

@@ -14,6 +14,18 @@ import {
   NO_PLAYER,
 } from '../shared/protocol.ts';
 import type { DeathEvent, GameEvent } from '../shared/protocol.ts';
+import {
+  MAX_LEVEL,
+  MISSIONS,
+  WARLORD_ID,
+  levelOf,
+  levelProgress,
+  npcKindOf,
+  rankOf,
+  shipName,
+  xpForLevel,
+} from '../shared/progress.ts';
+import type { Progress } from '../shared/progress.ts';
 import { STORE_ITEMS, STORE_PRICES } from '../shared/scoring.ts';
 import type { StoreItem } from '../shared/scoring.ts';
 import { grantWouldChange, outsideCombatZone } from '../shared/sim/world.ts';
@@ -32,10 +44,11 @@ const number = (value: number): string => Math.round(value).toLocaleString('en-U
 const clock = (seconds: number): string =>
   `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 
-const nameOf = (playerId: number, ownId: number): string =>
-  playerId === ownId ? 'You' : `Player ${playerId + 1}`;
+const nameOf = shipName;
 
 const FEED_SECONDS = 6;
+const BANNER_SECONDS = 3.5;
+const XP_GAIN_SECONDS = 1.6;
 const FEED_LINES = 4;
 const MAP_EVERY_MS = 100;
 const BEST_KEY = 'orbit-runner.best';
@@ -133,6 +146,19 @@ export class Hud {
   private readonly deathBest = element('death-best', HTMLParagraphElement);
   private readonly deathRespawn = element('death-respawn', HTMLParagraphElement);
   private readonly help = element('help', HTMLDivElement);
+  private readonly xpFill = element('xp-fill', HTMLDivElement);
+  private readonly xp = element('xp', HTMLSpanElement);
+  private readonly xpGain = element('xp-gain', HTMLElement);
+  private readonly mission = element('mission', HTMLDivElement);
+  private readonly missionText = element('mission-text', HTMLDivElement);
+  private readonly missionFill = element('mission-fill', HTMLDivElement);
+  private readonly missionCount = element('mission-count', HTMLSpanElement);
+  private readonly boss = element('boss', HTMLDivElement);
+  private readonly bossName = element('boss-name', HTMLDivElement);
+  private readonly bossFill = element('boss-fill', HTMLDivElement);
+  private readonly banner = element('banner', HTMLDivElement);
+  private readonly bannerTitle = element('banner-title', HTMLHeadingElement);
+  private readonly bannerDetail = element('banner-detail', HTMLParagraphElement);
 
   private readonly storeButtons = new Map<StoreItem, HTMLButtonElement>();
   private readonly labelNodes = new Map<number, HTMLSpanElement>();
@@ -140,6 +166,9 @@ export class Hud {
   private readonly point = { x: 0, y: 0 };
   private mapDrawnAtMs = -Infinity;
   private scoreboardText = '';
+  /** Each player's level, from the scoreboard the server last sent. */
+  private readonly levels = new Map<number, number>();
+  private levelsFrom: ClientCore['scoreboard'] = [];
   private scoreboardOn: boolean;
 
   private best = readBest();
@@ -147,6 +176,14 @@ export class Hud {
   private wasAlive = false;
   private lifeStartedAtMs = 0;
   private lifeSeconds = 0;
+
+  /** The progress last shown, to tell what has just been earned. */
+  private progress: Progress | null = null;
+  private xpGained = 0;
+  private xpGainUntilMs = 0;
+  private readonly banners: { title: string; detail: string }[] = [];
+  private bannerUntilMs = 0;
+  private warlordSeen = false;
 
   constructor(buy: (item: StoreItem) => void) {
     for (const button of this.store.querySelectorAll('button')) {
@@ -180,6 +217,9 @@ export class Hud {
       return;
     }
     if (event.kind !== 'death') return;
+    if (event.victimId === WARLORD_ID && event.cause === CAUSE_PLAYER) {
+      this.announce('The Warlord has fallen', 'Everyone who damaged it shares the reward.');
+    }
     if (event.victimId === core.playerId) this.ownDeath = event;
     const victim = nameOf(event.victimId, core.playerId);
     this.say(
@@ -243,6 +283,9 @@ export class Hud {
           : '',
     );
 
+    this.updateProgress(core, nowMs);
+    this.updateBoss(view, remotes);
+    this.updateBanner(nowMs);
     this.updateLife(core, view, nowMs);
     this.updateStore(core, view);
     this.updateLabels(view, remotes, project);
@@ -267,6 +310,92 @@ export class Hud {
           : 'was away too long';
       default:
         return own ? 'You were shot down.' : 'was shot down';
+    }
+  }
+
+  /** A line across the middle of the screen for a few seconds. They queue. */
+  private announce(title: string, detail: string): void {
+    this.banners.push({ title, detail });
+  }
+
+  private updateBanner(nowMs: number): void {
+    if (nowMs >= this.bannerUntilMs) {
+      const next = this.banners.shift();
+      if (next) {
+        this.bannerTitle.textContent = next.title;
+        this.bannerDetail.textContent = next.detail;
+        this.bannerUntilMs = nowMs + BANNER_SECONDS * 1000;
+        // One banner straight after another plays the entrance again.
+        for (const animation of this.banner.getAnimations()) animation.currentTime = 0;
+      }
+    }
+    this.shown.hidden(this.banner, nowMs >= this.bannerUntilMs);
+  }
+
+  /** The experience bar, the mission, and what has just been earned. */
+  private updateProgress(core: ClientCore, nowMs: number): void {
+    const shown = this.shown;
+    const now = core.progress;
+    shown.hidden(this.mission, !now);
+    if (!now) return;
+    const before = this.progress;
+    if (before && now.xp > before.xp) {
+      this.xpGained = (nowMs < this.xpGainUntilMs ? this.xpGained : 0) + (now.xp - before.xp);
+      this.xpGainUntilMs = nowMs + XP_GAIN_SECONDS * 1000;
+      if (now.missionsDone > before.missionsDone) {
+        const done = MISSIONS[before.missionIndex];
+        if (done) {
+          this.announce(
+            'Mission complete',
+            `${done.text} · +${number(done.xp)} XP · +${number(done.points)} points`,
+          );
+        }
+      }
+      const level = levelOf(now.xp);
+      if (level > levelOf(before.xp)) {
+        const rank = rankOf(level);
+        this.announce(`Level ${level}`, rank === rankOf(level - 1) ? rank : `Promoted to ${rank}`);
+      }
+    }
+    if (before !== now) this.progress = now;
+
+    const level = levelOf(now.xp);
+    shown.style(this.xpFill, 'width', `${levelProgress(now.xp) * 100}%`);
+    shown.text(this.xp, `Lv ${level} · ${rankOf(level)}`);
+    this.xp.title =
+      level >= MAX_LEVEL
+        ? `${number(now.xp)} XP`
+        : `${number(now.xp)} XP · level ${level + 1} at ${number(xpForLevel(level + 1))}`;
+    shown.text(this.xpGain, nowMs < this.xpGainUntilMs ? `+${number(this.xpGained)} XP` : '');
+
+    const mission = MISSIONS[now.missionIndex];
+    if (!mission) return;
+    shown.text(this.missionText, mission.text);
+    shown.style(this.missionFill, 'width', `${(now.missionProgress / mission.goal) * 100}%`);
+    shown.text(
+      this.missionCount,
+      `${now.missionProgress} / ${mission.goal} · ${number(mission.xp)} XP`,
+    );
+  }
+
+  /** The Warlord's bar: shown to everyone while it is in the belt, wherever they are. */
+  private updateBoss(view: ShipView, remotes: readonly RemoteView[]): void {
+    const warlord = remotes.find((remote) => remote.id === WARLORD_ID && remote.alive);
+    if (warlord && !this.warlordSeen) {
+      this.announce(
+        'The Warlord has entered the belt',
+        'Bring it down together: it is on the map.',
+      );
+    }
+    this.warlordSeen = warlord !== undefined;
+    this.shown.hidden(this.boss, !warlord);
+    if (!warlord) return;
+    const distance = Math.hypot(warlord.x - view.x, warlord.y - view.y, warlord.z - view.z);
+    this.shown.text(this.bossName, `The Warlord · ${number(distance)} away`);
+    // A distant ship comes as a position only; its bar keeps the last figure seen.
+    if (warlord.full) {
+      const left = (warlord.hp + warlord.shield) / (SIM.maxHp + SIM.maxShield);
+      this.shown.style(this.bossFill, 'width', `${left * 100}%`);
     }
   }
 
@@ -351,9 +480,11 @@ export class Hud {
         this.labels.append(node);
       }
       const distance = Math.hypot(remote.x - view.x, remote.y - view.y, remote.z - view.z);
-      const text = `Player ${remote.id + 1}  ${number(distance)}`;
+      const npc = npcKindOf(remote.id);
+      const level = this.levels.get(remote.id);
+      const text = `${nameOf(remote.id, NO_PLAYER)}${level ? ` · Lv ${level}` : ''}  ${number(distance)}`;
       if (node.textContent !== text) node.textContent = text;
-      const kind = remote.full ? '' : 'far';
+      const kind = npc ?? (remote.full ? '' : 'far');
       if (node.className !== kind) node.className = kind;
       node.style.transform = `translate(${this.point.x.toFixed(1)}px, ${this.point.y.toFixed(1)}px) translate(-50%, -100%)`;
     }
@@ -365,10 +496,17 @@ export class Hud {
   }
 
   private updateScoreboard(core: ClientCore): void {
+    if (core.scoreboard !== this.levelsFrom) {
+      this.levelsFrom = core.scoreboard;
+      this.levels.clear();
+      for (const entry of core.scoreboard) this.levels.set(entry.playerId, entry.level);
+    }
     const rows = this.scoreboardOn
       ? [...core.scoreboard].sort((a, b) => b.score - a.score || a.playerId - b.playerId)
       : [];
-    const text = rows.map((row) => `${row.playerId}:${row.score}:${row.kills}`).join('|');
+    const text = rows
+      .map((row) => `${row.playerId}:${row.score}:${row.kills}:${row.level}`)
+      .join('|');
     if (text === this.scoreboardText) return;
     this.scoreboardText = text;
     this.scoreboard.replaceChildren(
@@ -376,7 +514,7 @@ export class Hud {
         const line = document.createElement('li');
         if (row.playerId === core.playerId) line.className = 'me';
         const name = document.createElement('span');
-        name.textContent = nameOf(row.playerId, core.playerId);
+        name.textContent = `${nameOf(row.playerId, core.playerId)} · Lv ${row.level}`;
         const score = document.createElement('span');
         score.textContent = `${number(row.score)}  ·  ${row.kills}`;
         line.append(name, score);
@@ -418,11 +556,13 @@ export class Hud {
     context.arc(half, half, SIM.combatZoneRadius * scale, 0, Math.PI * 2);
     context.stroke();
 
-    context.fillStyle = '#ff6a5c';
     for (const remote of remotes) {
       if (!remote.alive) continue;
+      // Players red, raiders amber, and the Warlord a big violet mark nobody can miss.
+      const npc = npcKindOf(remote.id);
+      context.fillStyle = npc === 'warlord' ? '#c77dff' : npc === 'raider' ? '#ffb347' : '#ff6a5c';
       context.beginPath();
-      context.arc(px(remote.x), pz(remote.z), 2.5, 0, Math.PI * 2);
+      context.arc(px(remote.x), pz(remote.z), npc === 'warlord' ? 5 : 2.5, 0, Math.PI * 2);
       context.fill();
     }
 

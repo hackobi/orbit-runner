@@ -146,6 +146,27 @@ function keepToken(token: Uint8Array): void {
   }
 }
 
+// The pilot's key: made once and kept in this browser, so experience and
+// missions carry over between visits. Whoever holds it is that pilot.
+const PILOT_KEY = 'orbit-runner.pilot';
+function pilotKey(): Uint8Array | null {
+  try {
+    const kept = localStorage.getItem(PILOT_KEY) ?? '';
+    if (/^[0-9a-f]{32}$/.test(kept)) {
+      return Uint8Array.from(kept.match(/../g) ?? [], (byte) => parseInt(byte, 16));
+    }
+    const key = crypto.getRandomValues(new Uint8Array(16));
+    localStorage.setItem(
+      PILOT_KEY,
+      Array.from(key, (byte) => byte.toString(16).padStart(2, '0')).join(''),
+    );
+    return key;
+  } catch {
+    // Storage switched off: a visitor, whose progress lasts as long as the seat.
+    return null;
+  }
+}
+
 // The Mac app has no service worker. It loads the page from the network (or
 // from inside itself) at every start, so it is always the current version,
 // and under Electron 45 a start-up with a worker's update waiting never
@@ -164,6 +185,7 @@ const session: Session = new Session({
   connect: () => new WebSocketTransport(new WebSocket(socketUrl())),
   sessionToken: keptToken(),
   onSessionToken: keepToken,
+  pilotKey: pilotKey(),
   now: () => performance.now(),
   controls: (tick) => recorder?.controls(tick, session.core) ?? devices.read(throttleOpen()),
   onGameEvent,

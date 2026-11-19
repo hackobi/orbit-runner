@@ -22,6 +22,11 @@
 
     <div id="hud">
       <div id="gauges">
+        <div class="bar" id="xp-bar" role="meter" aria-label="Experience">
+          <div class="fill" id="xp-fill"></div>
+          <span id="xp"></span>
+          <b id="xp-gain"></b>
+        </div>
         <div class="bar" id="hull-bar" role="meter" aria-label="Hull">
           <div class="fill" id="hull-fill"></div>
           <span id="hull"></span>
@@ -44,10 +49,27 @@
 
       <div id="corner">
         <canvas id="minimap" width="160" height="160" aria-label="Map"></canvas>
+        <div id="mission" aria-live="polite">
+          <div id="mission-text"></div>
+          <div class="bar" id="mission-bar" role="meter" aria-label="Mission">
+            <div class="fill" id="mission-fill"></div>
+            <span id="mission-count"></span>
+          </div>
+        </div>
         <ol id="scoreboard" aria-label="Scoreboard"></ol>
       </div>
 
       <div id="status" role="status" aria-live="polite"></div>
+      <div id="boss" hidden>
+        <div id="boss-name"></div>
+        <div class="bar" id="boss-bar" role="meter" aria-label="The Warlord">
+          <div class="fill" id="boss-fill"></div>
+        </div>
+      </div>
+      <div id="banner" role="status" hidden>
+        <h2 id="banner-title"></h2>
+        <p id="banner-detail"></p>
+      </div>
       <div id="warning" role="alert"></div>
       <ul id="feed" aria-live="polite"></ul>
       <div id="labels" aria-hidden="true"></div>
