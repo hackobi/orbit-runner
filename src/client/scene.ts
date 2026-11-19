@@ -1,22 +1,17 @@
 // The picture: planet, stars, rocks, orbs, ships, bullets and the chase camera. It draws
 // whatever the netcode says is where; it decides nothing.
 
+import type { BufferGeometry } from 'three';
 import {
   ACESFilmicToneMapping,
   AdditiveBlending,
   AmbientLight,
-  BufferAttribute,
-  BoxGeometry,
-  BufferGeometry,
   Color,
-  ConeGeometry,
   DirectionalLight,
-  DodecahedronGeometry,
   DoubleSide,
   DynamicDrawUsage,
   Euler,
-  ExtrudeGeometry,
-  Group,
+  IcosahedronGeometry,
   InstancedBufferAttribute,
   InstancedMesh,
   Matrix4,
@@ -26,25 +21,25 @@ import {
   PerspectiveCamera,
   PlaneGeometry,
   PointLight,
-  Points,
-  PointsMaterial,
   Quaternion,
   RingGeometry,
   SRGBColorSpace,
   Scene,
   ShaderMaterial,
-  Shape,
   SphereGeometry,
-  TorusGeometry,
   Vector3,
   WebGLRenderer,
 } from 'three';
 import type { BulletView, ShipView } from '../net/client.ts';
 import type { RemoteView } from '../net/remotes.ts';
 import { hullScaleOf, npcKindOf } from '../shared/progress.ts';
-import { SHIP_HULL_RADIUS, SIM } from '../shared/constants.ts';
+import { SIM } from '../shared/constants.ts';
 import { Rng } from '../shared/rng.ts';
-import { Particles } from './particles.ts';
+import { SUN_DIRECTION, buildBackdrop } from './backdrop.ts';
+import type { Backdrop } from './backdrop.ts';
+import { buildShip, showAs } from './models.ts';
+import type { ShipModel } from './models.ts';
+import { Particles, SpriteBatch } from './particles.ts';
 import { TIERS } from './quality.ts';
 import type { QualityTier } from './quality.ts';
 import type { OrbKind } from '../shared/sim/orbs.ts';
@@ -79,7 +74,8 @@ const EXHAUST_BASE_RATE = 50;
 const EXHAUST_RATE_PER_SPEED = 4;
 /** Other ships leave a trail too, so that where one is heading can be read. v1 drew none. */
 const REMOTE_EXHAUST_RATE = 45; // puffs a second, doubled under boost
-const REMOTE_EXHAUST_COLOR = 0xffb070;
+/** A remote ship's speed is not sent, so its engines glow as at cruising speed. */
+const REMOTE_GLOW_SPEED = 40;
 /** Camera shake dies away at 6 units a second (main.js:8865). */
 const SHAKE_DECAY = 6;
 const SHAKE_MAX = 2.5;
@@ -120,6 +116,7 @@ const SEEKER_COLOR = new Color(0xff40e0);
 const SEEKER_ALPHA = 0.7;
 const SEEKER_TRAIL = 0xff80f0;
 const MAX_GLOWS = 64;
+const MAX_LIGHTS = 640;
 
 /** v1's orb colours (main.js:5126-5845). */
 const ORB_COLORS: Record<OrbKind, number> = {
@@ -143,6 +140,10 @@ const ORB_CORE: Record<OrbKind, number> = {
   miner: 1.2,
   hunter: 1.2,
 };
+/** The bright centre is this much of the orb as drawn; the rest is glow. */
+const ORB_CENTRE = 0.55;
+/** The soft halo reaches this many times further than the orb. */
+const ORB_HALO = 3.2;
 /** The flat rings v1 draws around some orbs: outer radius and colour. */
 const ORB_RINGS: Partial<Record<OrbKind, readonly (readonly [number, number])[]>> = {
   boost: [
@@ -152,68 +153,6 @@ const ORB_RINGS: Partial<Record<OrbKind, readonly (readonly [number, number])[]>
   miner: [[2.8, 0x66ff99]],
   hunter: [[2.8, 0x66aaff]],
 };
-
-/** v1's saucer (main.js:4207-4275): disc, glowing dome, engine ring, rim lights. */
-function buildSaucer(hullColor: number): Group {
-  const group = new Group();
-  const hull = new MeshStandardMaterial({ color: hullColor, metalness: 0.1, roughness: 0.9 });
-
-  const top = new SphereGeometry(SHIP_HULL_RADIUS, 24, 8, 0, Math.PI * 2, 0, Math.PI * 0.5);
-  top.scale(1, 0.3, 1);
-  const bottom = new SphereGeometry(
-    SHIP_HULL_RADIUS,
-    24,
-    8,
-    0,
-    Math.PI * 2,
-    Math.PI * 0.5,
-    Math.PI * 0.5,
-  );
-  bottom.scale(1, 0.25, 1);
-
-  const dome = new Mesh(
-    new SphereGeometry(0.6, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5),
-    new MeshStandardMaterial({
-      color: 0x00ffff,
-      emissive: 0x00cccc,
-      emissiveIntensity: 2,
-      metalness: 0.3,
-      roughness: 0.1,
-      transparent: true,
-      opacity: 0.9,
-    }),
-  );
-  dome.position.y = 0.3;
-
-  const ring = new Mesh(
-    new TorusGeometry(1.5, 0.1, 8, 24),
-    new MeshStandardMaterial({
-      color: 0x0099ff,
-      emissive: 0x0066ff,
-      emissiveIntensity: 3,
-      metalness: 0.5,
-      roughness: 0.3,
-    }),
-  );
-  ring.rotation.x = Math.PI / 2;
-  ring.position.y = -0.1;
-
-  const rimLight = new MeshStandardMaterial({
-    color: 0xffffff,
-    emissive: 0x00ffff,
-    emissiveIntensity: 5,
-  });
-  const rimGeometry = new SphereGeometry(0.08, 8, 8);
-  for (let i = 0; i < 8; i++) {
-    const angle = (i / 8) * Math.PI * 2;
-    const light = new Mesh(rimGeometry, rimLight);
-    light.position.set(Math.cos(angle) * 1.8, 0, Math.sin(angle) * 1.8);
-    group.add(light);
-  }
-
-  group.add(new Mesh(top, hull), new Mesh(bottom, hull), dome, ring);
-  return group;
-}
 
 /**
  * A wormhole's mouth: a dark centre inside a bright ring whose arms turn.
@@ -297,132 +236,32 @@ function buildGlowMaterial(time: { value: number }): ShaderMaterial {
 /** How wide a wormhole's mouth is drawn: v1's ring reached 4 units out (main.js:5565). */
 const WORMHOLE_SIZE = 8;
 
-/**
- * The Fenix: a swept-wing raptor in deep red, edged in glowing gold, nose along +Z.
- * v1's was a plain black dart (main.js:5038-5094), which vanished against space.
- */
-function buildFenix(): Group {
-  const group = new Group();
-  const hull = new MeshStandardMaterial({
-    color: 0xd42a1e,
-    emissive: 0x4a0c06,
-    metalness: 0.35,
-    roughness: 0.35,
-    flatShading: true,
-  });
-  const carbon = new MeshStandardMaterial({ color: 0x3a3f4a, metalness: 0.3, roughness: 0.4 });
-  const glass = new MeshStandardMaterial({ color: 0x0c0e14, metalness: 0.2, roughness: 0.1 });
-  const gold = new MeshStandardMaterial({
-    color: 0xffaa22,
-    emissive: 0xff8800,
-    emissiveIntensity: 0.9,
-  });
-  const fire = new MeshStandardMaterial({
-    color: 0xff5522,
-    emissive: 0xff4410,
-    emissiveIntensity: 1.2,
-  });
-
-  // Wings, drawn from above: x across, y forward. Swept back, with a notched trailing edge.
-  const half: [number, number][] = [
-    [0.5, 1.3],
-    [3.4, -2.3],
-    [3.0, -2.7],
-    [1.4, -1.2],
-    [0.7, -2.1],
-  ];
-  const outline = new Shape();
-  outline.moveTo(0, 1.6);
-  for (const [x, y] of half) outline.lineTo(x, y);
-  outline.lineTo(0, -1.5);
-  for (const [x, y] of [...half].reverse()) outline.lineTo(-x, y);
-  outline.closePath();
-  const wingGeometry = new ExtrudeGeometry(outline, { depth: 0.1, bevelEnabled: false });
-  wingGeometry.rotateX(Math.PI / 2);
-  wingGeometry.translate(0, 0.05, 0);
-  const wings = new Mesh(wingGeometry, hull);
-
-  const body = new Mesh(new ConeGeometry(0.8, 5.4, 6), carbon);
-  body.rotation.x = Math.PI / 2;
-  body.scale.z = 0.6; // flattened; the cone's own z is up once it is laid along the nose
-  body.position.z = 0.5;
-
-  const canopy = new Mesh(new SphereGeometry(0.4, 12, 8), glass);
-  canopy.scale.set(0.7, 0.5, 1.9);
-  canopy.position.set(0, 0.3, 0.7);
-
-  group.add(wings, body, canopy);
-  for (const side of [1, -1]) {
-    // A glowing strip along each leading edge, from wing root to wing tip.
-    const edge = new Mesh(new BoxGeometry(4.6, 0.1, 0.12), gold);
-    edge.position.set(side * 1.95, 0.08, -0.5);
-    edge.rotation.y = side === 1 ? 0.893 : Math.PI - 0.893;
-    const fin = new Mesh(new BoxGeometry(0.08, 0.95, 1.2), hull);
-    fin.position.set(side * 0.75, 0.45, -1.5);
-    fin.rotation.z = side * -0.5;
-    const engine = new Mesh(new SphereGeometry(0.34, 12, 8), fire);
-    engine.position.set(side * 0.5, 0, -2.05);
-    group.add(edge, fin, engine);
-  }
-  return group;
-}
-
-/** A ship that can be drawn as a saucer or as a Fenix. */
-interface ShipModel {
-  group: Group;
-  saucer: Group;
-  fenix: Group;
-}
-
-function buildShip(hullColor: number): ShipModel {
-  const group = new Group();
-  const saucer = buildSaucer(hullColor);
-  const fenix = buildFenix();
-  fenix.visible = false;
-  group.add(saucer, fenix);
-  return { group, saucer, fenix };
-}
-
-function showAs(model: ShipModel, fenix: boolean): void {
-  model.saucer.visible = !fenix;
-  model.fenix.visible = fenix;
-}
+/** Rock colours: mostly grey and brown stone, some slate, a little rust. */
+const ROCK_COLORS = [0x9a948e, 0x8a7763, 0x6f7d92, 0x5a5860, 0x9c6a4c, 0xaaa6a0];
 
 /**
- * v1's starfield (main.js:4583-4603): 4,000 points in a shell 8,000 to 20,000 out.
- * Smaller than v1's 1.6 pixels and mostly faint: on a phone they read bigger
- * than the rocks of the belt.
+ * One lumpy stone, in place of v1's twelve-sided one (main.js:4754). No
+ * point of it is further out than a rock can be hit, and few are far inside.
  */
-function buildStars(): Points {
-  const count = 4000;
-  const rng = new Rng(4000);
-  const positions = new Float32Array(count * 3);
-  const colors = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    const r = 8000 + rng.next() * 12000;
-    const theta = rng.next() * Math.PI * 2;
-    const phi = Math.acos(2 * rng.next() - 1);
-    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-    positions[i * 3 + 1] = r * Math.cos(phi);
-    positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
-    // Cubed, so most stars are dim and a few bright.
-    const brightness = 0.3 + 0.7 * rng.next() ** 3;
-    colors.fill(brightness, i * 3, i * 3 + 3);
+function buildRockGeometry(): BufferGeometry {
+  const geometry = new IcosahedronGeometry(1, 1);
+  const positions = geometry.getAttribute('position');
+  const point = new Vector3();
+  for (let i = 0; i < positions.count; i++) {
+    point.fromBufferAttribute(positions, i);
+    // The same number for every copy of a corner, so the faces stay joined.
+    const seed =
+      Math.round(point.x * 100) * 12.9898 +
+      Math.round(point.y * 100) * 78.233 +
+      Math.round(point.z * 100) * 37.719;
+    const jag = Math.sin(seed) * 43758.5453;
+    const lump =
+      Math.sin(point.x * 2.1 + 1) * Math.sin(point.y * 1.7 + 2) * Math.sin(point.z * 1.9);
+    point.multiplyScalar(0.8 + 0.2 * (jag - Math.floor(jag)) + 0.08 * lump);
+    positions.setXYZ(i, point.x, point.y * 0.86, point.z * 0.94);
   }
-  const geometry = new BufferGeometry();
-  geometry.setAttribute('position', new BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new BufferAttribute(colors, 3));
-  return new Points(
-    geometry,
-    new PointsMaterial({
-      color: 0x99ccff,
-      vertexColors: true,
-      size: 1,
-      sizeAttenuation: false,
-      transparent: true,
-      opacity: 0.9,
-    }),
-  );
+  geometry.computeVertexNormals();
+  return geometry;
 }
 
 interface Spark {
@@ -437,7 +276,14 @@ export class GameScene {
   private readonly scene = new Scene();
   private readonly camera: PerspectiveCamera;
   // The same light hull as other players: v1's near-black one vanished against space.
-  private readonly ship = buildShip(0xf5f5f5);
+  private readonly ship = buildShip('own');
+  private readonly backdrop: Backdrop;
+  /** Lights redrawn every frame: engine glows and the halo round each shot. */
+  private readonly lights = new SpriteBatch(MAX_LIGHTS);
+  /** The halo round each orb, set when the orb comes or goes. */
+  private orbHalos: SpriteBatch | null = null;
+  private orbGlows: InstancedMesh | null = null;
+  private readonly color = new Color();
   private readonly remoteShips = new Map<number, ShipModel>();
   private readonly bullets: InstancedMesh;
   private readonly glows: InstancedMesh;
@@ -447,6 +293,11 @@ export class GameScene {
   /** Each rock's fixed tumble, so the belt is not two thousand copies of one stone. */
   private rockTurns: Quaternion[] = [];
   private rockWasGone: boolean[] = [];
+  /** Each rock turns slowly about its own axis. */
+  private rockAxes: Vector3[] = [];
+  private rockRates: number[] = [];
+  private readonly spin = new Quaternion();
+  private readonly turned = new Quaternion();
   private readonly rockScale = new Vector3();
   private orbCores: InstancedMesh | null = null;
   private orbRings: InstancedMesh | null = null;
@@ -502,28 +353,21 @@ export class GameScene {
 
     this.camera = new PerspectiveCamera(BASE_FOV, 1, 0.5, 60000);
 
+    // The sky, the planet and the rest of the scenery, painted once.
+    this.backdrop = buildBackdrop(this.renderer, matchMedia('(pointer: coarse)').matches);
+    this.scene.background = this.backdrop.sky;
+    this.scene.environment = this.backdrop.light;
+
     // A pale light that travels with the camera, so whatever is near is lit
     // from the player's side (main.js:340). v1's reached 800 units.
-    const lamp = new PointLight(0x88bbff, 1.6, 800, 0);
+    const lamp = new PointLight(0x88bbff, 0.9, 800, 0);
     this.camera.add(lamp);
     this.scene.add(this.camera);
 
-    this.scene.add(new AmbientLight(0x708090, 0.6));
-    const sun = new DirectionalLight(0xffffff, 1.1);
-    sun.position.set(1000, 1500, 800); // main.js:347
+    this.scene.add(new AmbientLight(0x506080, 0.3));
+    const sun = new DirectionalLight(0xfff0dc, 1.7);
+    sun.position.copy(SUN_DIRECTION);
     this.scene.add(sun);
-
-    // The planet at the origin (main.js:4524).
-    const planet = new Mesh(
-      new SphereGeometry(SIM.planetRadius, 64, 64),
-      new MeshStandardMaterial({
-        color: 0x3355aa,
-        emissive: 0x3355aa,
-        emissiveIntensity: 0.22,
-        metalness: 0.1,
-        roughness: 0.85,
-      }),
-    );
 
     // Every bullet is one instance of the same small glowing shape.
     this.bullets = new InstancedMesh(
@@ -561,12 +405,12 @@ export class GameScene {
     }
 
     this.scene.add(
-      planet,
-      buildStars(),
+      this.backdrop.group,
       this.ship.group,
       this.bullets,
       this.glows,
       this.particles.mesh,
+      this.lights.mesh,
     );
 
     this.resize();
@@ -663,6 +507,8 @@ export class GameScene {
     }
     this.camera.lookAt(this.lookAt);
     this.seconds.value += elapsedSeconds;
+    this.backdrop.update(this.camera.position, this.renderer.getPixelRatio(), this.seconds.value);
+    this.lights.count = 0;
 
     const slow = this.slowMotionSeconds > 0;
     this.slowMotionSeconds = Math.max(0, this.slowMotionSeconds - elapsedSeconds);
@@ -670,6 +516,7 @@ export class GameScene {
 
     if (view.alive) {
       this.emitExhaust(view, elapsedSeconds);
+      this.engineGlow(this.ship, view.fenix, view.speed, view.boosting, 1);
       this.emitSmoke(view.x, view.y, view.z, view.hp, elapsedSeconds);
     }
     for (const remote of remotes) {
@@ -686,6 +533,7 @@ export class GameScene {
     this.drawRemotes(remotes, elapsedSeconds);
     this.drawBullets(bullets, ownId);
     this.drawSparks(effectSeconds);
+    this.lights.commit();
 
     // Field of view widens with speed (main.js:8726-8730). v1 moved 6·dt of
     // the way each frame; this is the same response at any frame rate.
@@ -709,21 +557,48 @@ export class GameScene {
     this.exhaustOwed -= Math.floor(this.exhaustOwed);
     if (count === 0) return;
     const back = this.forward; // set by render: the nose direction
-    const up = this.offset.set(0, 0.25, 0).applyQuaternion(this.orientation);
-    const behind = 1.6 + Math.min(8, view.speed * 0.04);
+    const engines = view.fenix ? this.ship.fenixEngines : this.ship.engines;
+    const behind = Math.min(8, view.speed * 0.04);
     const thrown = 14 + view.speed * 0.55;
     for (let i = 0; i < count; i++) {
-      const jitter = (): number => (Math.random() * 2 - 1) * 0.4;
+      const engine = engines[i % engines.length];
+      if (!engine) break;
+      const from = this.offset.copy(engine).applyQuaternion(this.orientation);
+      const jitter = (): number => (Math.random() * 2 - 1) * 0.12;
       this.particles.emit(
-        view.x - back.x * behind + up.x + jitter(),
-        view.y - back.y * behind + up.y + jitter(),
-        view.z - back.z * behind + up.z + jitter(),
-        back.x * (view.speed - thrown) + jitter() * 2,
-        back.y * (view.speed - thrown) + jitter() * 2,
-        back.z * (view.speed - thrown) + jitter() * 2,
-        0.5 + Math.random() * 0.25,
-        0.18 * (0.6 + Math.random() * 0.5),
+        view.x + from.x - back.x * behind + jitter(),
+        view.y + from.y - back.y * behind + jitter(),
+        view.z + from.z - back.z * behind + jitter(),
+        back.x * (view.speed - thrown) + jitter() * 6,
+        back.y * (view.speed - thrown) + jitter() * 6,
+        back.z * (view.speed - thrown) + jitter() * 6,
+        0.35 + Math.random() * 0.25,
+        0.1 * (0.6 + Math.random() * 0.5),
         EXHAUST_COLOR,
+      );
+    }
+  }
+
+  /** A light at each engine, bigger the faster the ship goes, and flickering. */
+  private engineGlow(
+    model: ShipModel,
+    fenix: boolean,
+    speed: number,
+    boosting: boolean,
+    scale: number,
+  ): void {
+    // A big ship's glow grows by less than the ship does.
+    const size = (0.42 + speed * 0.004 + (boosting ? 0.4 : 0)) * scale ** 0.6;
+    for (const engine of fenix ? model.fenixEngines : model.engines) {
+      this.position.copy(engine).multiplyScalar(scale).applyQuaternion(model.group.quaternion);
+      this.position.add(model.group.position);
+      this.lights.add(
+        this.position.x,
+        this.position.y,
+        this.position.z,
+        size * (0.9 + Math.random() * 0.2),
+        model.engineColor,
+        0.7,
       );
     }
   }
@@ -742,15 +617,8 @@ export class GameScene {
       }
       this.rocksOf = view.world;
       this.rocks = new InstancedMesh(
-        new DodecahedronGeometry(1, 0),
-        new MeshStandardMaterial({
-          color: 0xa8a8a8,
-          roughness: 0.95,
-          metalness: 0.05,
-          emissive: 0x222222,
-          emissiveIntensity: 0.18,
-          flatShading: true,
-        }),
+        buildRockGeometry(),
+        new MeshStandardMaterial({ roughness: 0.92, metalness: 0.08, flatShading: true }),
         Math.max(1, asteroids.length),
       );
       this.rocks.instanceMatrix.setUsage(DynamicDrawUsage);
@@ -763,6 +631,15 @@ export class GameScene {
           new Euler(rng.next() * Math.PI * 2, rng.next() * Math.PI * 2, rng.next() * Math.PI * 2),
         ),
       );
+      this.rockAxes = asteroids.map(() =>
+        new Vector3(rng.next() - 0.5, rng.next() - 0.5, rng.next() - 0.5).normalize(),
+      );
+      // A turn takes between 20 seconds and a minute and a half.
+      this.rockRates = asteroids.map(() => 0.07 + rng.next() * 0.24);
+      for (let id = 0; id < asteroids.length; id++) {
+        const hex = ROCK_COLORS[Math.floor(rng.next() * ROCK_COLORS.length)] ?? 0x999999;
+        this.rocks.setColorAt(id, this.color.setHex(hex).multiplyScalar(0.75 + rng.next() * 0.4));
+      }
       this.rockWasGone = asteroids.map((_, id) => view.state.asteroidGone(id, view.tick));
     }
     const rocks = this.rocks;
@@ -795,7 +672,12 @@ export class GameScene {
       }
       this.rockWasGone[id] = gone;
       this.rockScale.setScalar(gone ? 0 : rock.scale);
-      this.matrix.compose(this.position, turn, this.rockScale);
+      const axis = this.rockAxes[id];
+      if (axis) {
+        this.spin.setFromAxisAngle(axis, (this.rockRates[id] ?? 0) * this.seconds.value);
+        this.turned.multiplyQuaternions(this.spin, turn);
+      } else this.turned.copy(turn);
+      this.matrix.compose(this.position, this.turned, this.rockScale);
       rocks.setMatrixAt(id, this.matrix);
     }
     rocks.instanceMatrix.needsUpdate = true;
@@ -809,7 +691,13 @@ export class GameScene {
   private drawOrbs(view: WorldView): void {
     const orbs = view.world.orbs.orbs;
     if (this.orbsOf !== view.world) {
-      for (const old of [this.orbCores, this.orbRings, this.wormholes]) {
+      for (const old of [
+        this.orbCores,
+        this.orbRings,
+        this.wormholes,
+        this.orbGlows,
+        this.orbHalos?.mesh,
+      ]) {
         if (!old) continue;
         this.scene.remove(old);
         old.geometry.dispose();
@@ -862,7 +750,27 @@ export class GameScene {
       wormholes.frustumCulled = false;
       wormholes.instanceMatrix.setUsage(DynamicDrawUsage);
       this.wormholes = wormholes;
-      this.scene.add(cores, rings, wormholes);
+      // Round each bright centre, a shell of plasma in the orb's colour and a soft halo.
+      const glowGeometry = new SphereGeometry(1, 20, 14);
+      const tints = new InstancedBufferAttribute(new Float32Array(Math.max(1, orbs.length) * 4), 4);
+      for (const [id, orb] of orbs.entries()) {
+        color.setHex(ORB_COLORS[orb.kind]);
+        tints.setXYZW(id, color.r, color.g, color.b, 0.9);
+      }
+      glowGeometry.setAttribute('tint', tints);
+      const glows = new InstancedMesh(
+        glowGeometry,
+        buildGlowMaterial(this.seconds),
+        Math.max(1, orbs.length),
+      );
+      glows.count = orbs.length;
+      glows.frustumCulled = false;
+      for (let id = 0; id < orbs.length; id++)
+        glows.setMatrixAt(id, this.matrix.makeScale(0, 0, 0));
+      this.orbGlows = glows;
+      this.orbHalos = new SpriteBatch(Math.max(1, orbs.length));
+      this.orbHalos.count = orbs.length;
+      this.scene.add(cores, rings, wormholes, glows, this.orbHalos.mesh);
       // Start as if every orb had been gone, so that each is placed once below.
       this.orbWasGone = orbs.map(() => true);
       for (let id = 0; id < orbs.length; id++)
@@ -870,7 +778,9 @@ export class GameScene {
     }
     const cores = this.orbCores;
     const rings = this.orbRings;
-    if (!cores || !rings) return;
+    const glows = this.orbGlows;
+    const halos = this.orbHalos;
+    if (!cores || !rings || !glows || !halos) return;
 
     const tick = Math.floor(view.tick);
     let coresChanged = false;
@@ -884,11 +794,21 @@ export class GameScene {
       this.orbWasGone[id] = gone;
       this.position.set(orb.x, orb.y, orb.z);
       // A wormhole has no core of its own: its mouth is drawn below.
-      this.rockScale.setScalar(gone || orb.kind === 'wormhole' ? 0 : ORB_CORE[orb.kind]);
+      const size = gone || orb.kind === 'wormhole' ? 0 : ORB_CORE[orb.kind];
+      this.rockScale.setScalar(size * ORB_CENTRE);
       cores.setMatrixAt(id, this.matrix.compose(this.position, this.identity, this.rockScale));
+      this.rockScale.setScalar(size);
+      glows.setMatrixAt(id, this.matrix.compose(this.position, this.identity, this.rockScale));
+      this.color.setHex(ORB_COLORS[orb.kind]);
+      const c = this.color;
+      halos.set(id, orb.x, orb.y, orb.z, size * ORB_HALO, c.r, c.g, c.b, size > 0 ? 0.45 : 0);
       coresChanged = true;
     }
-    if (coresChanged) cores.instanceMatrix.needsUpdate = true;
+    if (coresChanged) {
+      cores.instanceMatrix.needsUpdate = true;
+      glows.instanceMatrix.needsUpdate = true;
+      halos.commit();
+    }
 
     for (const [i, ring] of this.ringOf.entries()) {
       const orb = orbs[ring.orbId];
@@ -923,10 +843,8 @@ export class GameScene {
       seen.add(remote.id);
       let model = this.remoteShips.get(remote.id);
       if (!model) {
-        // v1 draws other players in a light hull (main.js:6823). The server's
-        // own ships are told apart by colour, and the Warlord by its size.
-        const npc = npcKindOf(remote.id);
-        model = buildShip(npc === 'warlord' ? 0x6a2fb0 : npc === 'raider' ? 0xc8452c : 0xf5f5f5);
+        // The server's own ships have shapes of their own; the Warlock is three times the size.
+        model = buildShip(npcKindOf(remote.id) ?? 'other');
         model.group.scale.setScalar(REMOTE_SHIP_SCALE * hullScaleOf(remote.id));
         this.remoteShips.set(remote.id, model);
         this.scene.add(model.group);
@@ -939,14 +857,19 @@ export class GameScene {
         this.euler.set(remote.pitch, remote.yaw, remote.roll, 'YXZ');
         mesh.quaternion.setFromEuler(this.euler);
         mesh.position.set(remote.x, remote.y, remote.z);
-        // Its trail: puffs left where its tail was, which the ship flies away from.
+        if (model.spinner) model.spinner.rotation.z = this.seconds.value * 0.8;
+        const scale = REMOTE_SHIP_SCALE * hullScaleOf(remote.id);
+        this.engineGlow(model, remote.fenix, REMOTE_GLOW_SPEED, remote.boosting, scale);
+        // Its trail: puffs left where its engines were, which the ship flies away from.
         const rate = REMOTE_EXHAUST_RATE * (remote.boosting ? 2 : 1) * elapsedSeconds;
         const puffs = Math.floor(rate + Math.random());
-        this.direction
-          .set(0, 0, -2.4 * REMOTE_SHIP_SCALE * hullScaleOf(remote.id))
-          .applyQuaternion(mesh.quaternion);
+        const engines = remote.fenix ? model.fenixEngines : model.engines;
+        const hex = model.engineColor.getHex();
         for (let i = 0; i < puffs; i++) {
-          const jitter = (): number => (Math.random() * 2 - 1) * 0.5;
+          const engine = engines[i % engines.length];
+          if (!engine) break;
+          this.direction.copy(engine).multiplyScalar(scale).applyQuaternion(mesh.quaternion);
+          const jitter = (): number => (Math.random() * 2 - 1) * 0.3;
           this.particles.emit(
             remote.x + this.direction.x + jitter(),
             remote.y + this.direction.y + jitter(),
@@ -955,8 +878,8 @@ export class GameScene {
             jitter(),
             jitter(),
             0.7 + Math.random() * 0.3,
-            0.3 * (0.6 + Math.random() * 0.5),
-            REMOTE_EXHAUST_COLOR,
+            0.26 * scale * (0.6 + Math.random() * 0.5),
+            hex,
           );
         }
       }
@@ -1011,16 +934,25 @@ export class GameScene {
             : this.bulletScale,
       );
       this.bullets.setMatrixAt(solid, this.matrix);
-      this.bullets.setColorAt(
-        solid,
+      const tint =
         bullet.shot === 'beam'
           ? BEAM_COLOR
           : bullet.shot === 'heavy'
             ? HEAVY_CORE_COLOR
             : bullet.ownerId === ownId
               ? OWN_BULLET_COLOR
-              : OTHER_BULLET_COLOR,
-      );
+              : OTHER_BULLET_COLOR;
+      this.bullets.setColorAt(solid, tint);
+      // A soft light round each shot, so it reads from far off.
+      if (bullet.shot !== 'heavy')
+        this.lights.add(
+          bullet.x,
+          bullet.y,
+          bullet.z,
+          bullet.shot === 'beam' ? 2.2 : 1.5,
+          tint,
+          0.55,
+        );
       solid++;
     }
     this.bullets.count = solid;

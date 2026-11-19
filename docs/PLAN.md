@@ -13,6 +13,7 @@ This file is the running checkpoint. A new session should read it first, then `d
 | 4. Mac app | **Built and tested 2026-11-14 on this Mac.** Other Macs and a 120 Hz display: UNVERIFIED | |
 | Dogfight feel (user request, 2026-11-15) | **Step 1 is live** (merged and deployed 2026-11-16 with the user's approval; they found physics and gameplay fine). Tasks are in [Dogfight feel](#dogfight-feel-before-phase-5) | The user picks what comes next |
 | Role-playing layer (user request, 2026-11-19) | **Built and tested 2026-11-19 on `feature/rpg-layer`, local only, not merged or deployed.** Experience, levels, missions, raiders and the boss (shown as the Warlock), progress kept per pilot. See [Role-playing layer](#role-playing-layer) | The user plays it and decides on a merge |
+| New look (user request, 2026-11-19) | **Built and tested 2026-11-19 on `feature/visuals`, local only.** Sky, planet, rocks, ships, orbs and particles redrawn; client only, wire format and simulation untouched. See the log | The user looks at it and decides on a merge |
 | 5. Demos integration | Not started. Direction from the user recorded under Phase 5 (reuse v1's payment flow; King of the Hill) | Separate approval, and a payment proposal first |
 
 **Next action:** the user chooses between step 2 of [Dogfight feel](#dogfight-feel-before-phase-5) (matches) and Phase 5. Their direction on 2026-11-16: the open room stays the normal game, everyone with the same abilities; rules, timing, groups and teams come later, for tournaments. Phases 1 to 4 are built. Phase 5 (Demos) needs separate approval and starts with a written payment proposal, not code. Open items that need the user: `npm run dev:lan` (it changes the Mac's keychain) and the phone checklist in `docs/DEVICE-TESTING.md`; opening the Mac app themselves.
@@ -635,3 +636,16 @@ The user approved the plan and the odds. Built on `feature/drops` (off `feature/
 - Progress written to `ORBIT_DATA_DIR` was read back by a restarted server and given to the same pilot key, once, by hand.
 - Also measured: 16 bots plus the six server ships for 60 s: tick work p50 0.91 ms, p99 2.42 ms, no dropped ticks (`ORBIT_NPCS=1 npm run test:load -- 60`).
 - Chosen without asking, for the user to overrule: levels give no power (D25), and progress is keyed by a browser-held key (D27).
+
+### 2026-11-19: a new look for the ships and the scenery
+
+The user asked for the best-looking ships and scenery that cost nothing in gameplay or smoothness. Branch `feature/visuals`, off `feature/controller`, local only. Client only: no change to the server, the simulation or the wire format.
+
+- **Scenery** (`src/client/backdrop.ts`): a nebula sky with a sun where the light comes from, a planet with cloud bands, a storm, a day and night side and a rim of air, a faint sheet of dust through the belt, tinted stars (still one pixel each), and motes of dust near the camera that show speed. The sky and the planet's surface are painted once at start into pictures; nothing full-screen is computed per frame.
+- **Ships** (`src/client/models.ts`): the player's saucer has a metal hull that mirrors the sky, twin engines and a prow, so its heading reads from any side; lights are cyan on the player's own ship and amber on others. Raiders are a dark pincer with red lights; the Warlock is a spiked crystal with a turning ring. Every model fits inside the hull radius it is hit by. Each ship is 3 to 5 draws (the old saucer was 12).
+- **Rocks**: one lumpy stone in six colours, each turning slowly, no point further out than the rock can be hit.
+- **Effects** (`src/client/particles.ts`): exhaust, smoke and bursts are soft round lights facing the camera (2 triangles each, where each was a 60-triangle ball). Engines glow, shots have a halo, orbs have a plasma shell and a halo.
+- `scripts/looks.ts` stages ten views and measures frames a second in a 16-player fight with the frame-rate limit off.
+- Measured on this Mac, headless Chromium, like for like (the machine's load changed between pairs): old 768, new 776 and 787; later old 498, new 484, 489 and 474; at phone size old 752 (first pair), new 491 (second pair). So no difference that this measure can see. **It is bound by the processor, not the graphics card, so it says nothing about a phone's fill rate. Not run on a real phone or in Safari.**
+- Checked: lint, typecheck, 320 unit tests, 12 integration tests, the browser suite 26 of 26.
+- Left out on purpose: bloom as a full-screen pass (the one thing here that could cost a phone frames). A very faint regular grain remains in the nebula.

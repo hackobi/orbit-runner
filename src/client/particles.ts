@@ -1,51 +1,156 @@
-// Glowing specks: the exhaust trail and the bursts where something broke up
-// or was picked up. All of them are instances of one small sphere, moved in
-// straight lines and shrunk away over their short lives. Nothing here is
-// part of the game; it may use Math.random.
+// Glowing specks and soft lights: the exhaust trail, the bursts where
+// something broke up or was picked up, and the glow around engines, shots
+// and orbs. Each is a small square turned to face the camera and shaded as
+// a round light that fades to nothing at its edge: two triangles apiece,
+// all drawn in one call. Nothing here is part of the game; it may use
+// Math.random.
 
 import {
   AdditiveBlending,
   Color,
   DynamicDrawUsage,
-  InstancedMesh,
-  Matrix4,
-  MeshBasicMaterial,
-  SphereGeometry,
+  InstancedBufferAttribute,
+  InstancedBufferGeometry,
+  Mesh,
+  PlaneGeometry,
+  ShaderMaterial,
 } from 'three';
 
-const VALUES = 8; // x, y, z, vx, vy, vz, life left, whole life
+/** A set of round lights, each with a place, a size, a colour and a strength. */
+export class SpriteBatch {
+  readonly mesh: Mesh;
+  count = 0;
+
+  private readonly capacity: number;
+  private readonly places: Float32Array;
+  private readonly tints: Float32Array;
+  private readonly placeAttribute: InstancedBufferAttribute;
+  private readonly tintAttribute: InstancedBufferAttribute;
+  private readonly geometry = new InstancedBufferGeometry();
+
+  constructor(capacity: number) {
+    this.capacity = capacity;
+    this.places = new Float32Array(capacity * 4);
+    this.tints = new Float32Array(capacity * 4);
+    const square = new PlaneGeometry(2, 2);
+    this.geometry.index = square.index;
+    this.geometry.setAttribute('position', square.getAttribute('position'));
+    this.placeAttribute = new InstancedBufferAttribute(this.places, 4);
+    this.tintAttribute = new InstancedBufferAttribute(this.tints, 4);
+    this.placeAttribute.setUsage(DynamicDrawUsage);
+    this.tintAttribute.setUsage(DynamicDrawUsage);
+    this.geometry.setAttribute('place', this.placeAttribute);
+    this.geometry.setAttribute('tint', this.tintAttribute);
+    this.geometry.instanceCount = 0;
+    this.mesh = new Mesh(
+      this.geometry,
+      new ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        blending: AdditiveBlending,
+        vertexShader: /* glsl */ `
+          attribute vec4 place;
+          attribute vec4 tint;
+          varying vec4 colour;
+          varying vec2 across;
+          void main() {
+            colour = tint;
+            across = position.xy;
+            vec4 seen = modelViewMatrix * vec4(place.xyz, 1.0);
+            seen.xy += position.xy * place.w;
+            gl_Position = projectionMatrix * seen;
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          varying vec4 colour;
+          varying vec2 across;
+          void main() {
+            float d = length(across);
+            float glow = max(0.0, 1.0 - d);
+            glow *= glow;
+            // The middle burns towards white.
+            vec3 lit = mix(colour.rgb, vec3(1.0), glow * glow * 0.35);
+            gl_FragColor = vec4(lit, glow * colour.a);
+            #include <tonemapping_fragment>
+            #include <colorspace_fragment>
+          }
+        `,
+      }),
+    );
+    this.mesh.frustumCulled = false;
+  }
+
+  /** Sets light `i`. Colours are linear, as `Color` holds them. */
+  set(
+    i: number,
+    x: number,
+    y: number,
+    z: number,
+    size: number,
+    r: number,
+    g: number,
+    b: number,
+    alpha: number,
+  ): void {
+    const at = i * 4;
+    this.places[at] = x;
+    this.places[at + 1] = y;
+    this.places[at + 2] = z;
+    this.places[at + 3] = size;
+    this.tints[at] = r;
+    this.tints[at + 1] = g;
+    this.tints[at + 2] = b;
+    this.tints[at + 3] = alpha;
+  }
+
+  /** Adds a light after the last. Dropped when the batch is full. */
+  add(x: number, y: number, z: number, size: number, color: Color, alpha: number): void {
+    if (this.count >= this.capacity) return;
+    this.set(this.count, x, y, z, size, color.r, color.g, color.b, alpha);
+    this.count += 1;
+  }
+
+  /** Moves light `from` into slot `to`. */
+  move(from: number, to: number): void {
+    this.places.copyWithin(to * 4, from * 4, from * 4 + 4);
+    this.tints.copyWithin(to * 4, from * 4, from * 4 + 4);
+  }
+
+  /** Hands what was set to the graphics card. */
+  commit(): void {
+    this.geometry.instanceCount = this.count;
+    this.placeAttribute.needsUpdate = true;
+    this.tintAttribute.needsUpdate = true;
+  }
+}
+
+const VALUES = 9; // x, y, z, vx, vy, vz, life left, whole life, size
+/** A soft light reads smaller than the hard ball it replaces, so it is drawn this much bigger. */
+const SOFT_SCALE = 2.4;
+const STRENGTH = 0.5;
 
 export class Particles {
-  readonly mesh: InstancedMesh;
   /** How many may be alive at once. The quality controller lowers it on slow devices. */
   budget: number;
 
+  private readonly batch: SpriteBatch;
   private readonly data: Float32Array;
-  private readonly sizes: Float32Array;
+  /** Each speck's colour, linear. */
+  private readonly colors: Float32Array;
   private readonly capacity: number;
   private count = 0;
-  private readonly matrix = new Matrix4();
   private readonly color = new Color();
 
   constructor(capacity: number) {
     this.capacity = capacity;
     this.budget = capacity;
     this.data = new Float32Array(capacity * VALUES);
-    this.sizes = new Float32Array(capacity);
-    this.mesh = new InstancedMesh(
-      new SphereGeometry(1, 6, 6),
-      new MeshBasicMaterial({
-        color: 0xffffff,
-        transparent: true,
-        opacity: 0.7,
-        blending: AdditiveBlending,
-        depthWrite: false,
-      }),
-      capacity,
-    );
-    this.mesh.instanceMatrix.setUsage(DynamicDrawUsage);
-    this.mesh.frustumCulled = false;
-    this.mesh.count = 0;
+    this.colors = new Float32Array(capacity * 3);
+    this.batch = new SpriteBatch(capacity);
+  }
+
+  get mesh(): Mesh {
+    return this.batch.mesh;
   }
 
   /** One speck. Dropped if the budget is spent. */
@@ -71,8 +176,11 @@ export class Particles {
     d[at + 5] = vz;
     d[at + 6] = life;
     d[at + 7] = life;
-    this.sizes[this.count] = size;
-    this.mesh.setColorAt(this.count, this.color.setHex(color));
+    d[at + 8] = size;
+    this.color.setHex(color);
+    this.colors[this.count * 3] = this.color.r;
+    this.colors[this.count * 3 + 1] = this.color.g;
+    this.colors[this.count * 3 + 2] = this.color.b;
     this.count += 1;
   }
 
@@ -87,7 +195,7 @@ export class Particles {
         (Math.random() * 2 - 1) * speed,
         (Math.random() * 2 - 1) * speed,
         0.6 + Math.random() * 0.2,
-        0.22 * (0.7 + Math.random() * 0.9),
+        0.15 * (0.7 + Math.random() * 0.9),
         color,
       );
     }
@@ -95,7 +203,7 @@ export class Particles {
 
   update(elapsedSeconds: number): void {
     const d = this.data;
-    const mesh = this.mesh;
+    const c = this.colors;
     let i = 0;
     while (i < this.count) {
       const at = i * VALUES;
@@ -105,9 +213,7 @@ export class Particles {
         const last = this.count - 1;
         if (i !== last) {
           d.copyWithin(at, last * VALUES, last * VALUES + VALUES);
-          this.sizes[i] = this.sizes[last] ?? 0;
-          mesh.getColorAt(last, this.color);
-          mesh.setColorAt(i, this.color);
+          c.copyWithin(i * 3, last * 3, last * 3 + 3);
         }
         this.count = last;
         continue;
@@ -119,13 +225,22 @@ export class Particles {
       d[at] = x;
       d[at + 1] = y;
       d[at + 2] = z;
-      const size = (this.sizes[i] ?? 0) * Math.min(1, (life / (d[at + 7] ?? 1)) * 2);
-      this.matrix.makeScale(size, size, size).setPosition(x, y, z);
-      mesh.setMatrixAt(i, this.matrix);
+      // It shrinks and dims away over the second half of its life.
+      const left = Math.min(1, (life / (d[at + 7] ?? 1)) * 2);
+      this.batch.set(
+        i,
+        x,
+        y,
+        z,
+        (d[at + 8] ?? 0) * SOFT_SCALE * (0.5 + 0.5 * left),
+        c[i * 3] ?? 0,
+        c[i * 3 + 1] ?? 0,
+        c[i * 3 + 2] ?? 0,
+        STRENGTH * left,
+      );
       i += 1;
     }
-    mesh.count = this.count;
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    this.batch.count = this.count;
+    this.batch.commit();
   }
 }
