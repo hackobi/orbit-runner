@@ -12,7 +12,7 @@ This file is the running checkpoint. A new session should read it first, then `d
 | 3. Content and mobile | **Built and tested 2026-11-14, except what needs a real phone.** The device checklist (`docs/DEVICE-TESTING.md`) and the LAN HTTPS server are waiting for the user | |
 | 4. Mac app | **Built and tested 2026-11-14 on this Mac.** Other Macs and a 120 Hz display: UNVERIFIED | |
 | Dogfight feel (user request, 2026-11-15) | **Step 1 is live** (merged and deployed 2026-11-16 with the user's approval; they found physics and gameplay fine). Tasks are in [Dogfight feel](#dogfight-feel-before-phase-5) | The user picks what comes next |
-| Role-playing layer (user request, 2026-11-19) | **Built and tested 2026-11-19 on `feature/rpg-layer`, local only, not merged or deployed.** Experience, levels, missions, raiders and the Warlord, progress kept per pilot. See [Role-playing layer](#role-playing-layer) | The user plays it and decides on a merge |
+| Role-playing layer (user request, 2026-11-19) | **Built and tested 2026-11-19 on `feature/rpg-layer`, local only, not merged or deployed.** Experience, levels, missions, raiders and the boss (shown as the Dreadnought), progress kept per pilot. See [Role-playing layer](#role-playing-layer) | The user plays it and decides on a merge |
 | 5. Demos integration | Not started. Direction from the user recorded under Phase 5 (reuse v1's payment flow; King of the Hill) | Separate approval, and a payment proposal first |
 
 **Next action:** the user chooses between step 2 of [Dogfight feel](#dogfight-feel-before-phase-5) (matches) and Phase 5. Their direction on 2026-11-16: the open room stays the normal game, everyone with the same abilities; rules, timing, groups and teams come later, for tournaments. Phases 1 to 4 are built. Phase 5 (Demos) needs separate approval and starts with a written payment proposal, not code. Open items that need the user: `npm run dev:lan` (it changes the Mac's keychain) and the phone checklist in `docs/DEVICE-TESTING.md`; opening the Mac app themselves.
@@ -597,6 +597,11 @@ Blockers: none. Waiting for the user: Phase 5 needs separate approval.
 
 - The user played step 1 and approved the deploy. `feature/dogfight` was fast-forwarded into `feature/v2-rebuild` and pushed; the live server reports wire format 11.
 - From their notes: the heavy shot is now plasma (a small hot centre in a banded glow that reaches exactly as far as it hits, with embers behind), the homing shot is see-through, and the Fenix is a red swept-wing ship edged in gold instead of v1's black dart. Client only (`src/client/scene.ts`). Seen in staged screenshots on desktop Chromium; not on a phone.
+
+### 2026-11-19: the boss is renamed; a plan to join the game to SpaceFort
+
+- The user played the role-playing layer and asked for the Warlord to be renamed. It is shown as **the Dreadnought**, from one constant (`BOSS_NAME` in `src/shared/progress.ts`). Code and the wire format keep the kind `warlord`, so nothing else changes. Branch `feature/boss-name`, off `feature/rpg-layer`; lint, typecheck and 292 unit tests pass. The name is a first pick and is the user's to change.
+- The user asked for drops of items that carry into SpaceFort (from orbs, raiders at very low odds, and the boss at higher odds that rise with pilot level). This is Phase 5 territory, so it starts with a written proposal: `dwarf-fortress-nft-game/claudedocs/INTEGRATION_PLAN_2026-11-19.md`. It keeps wallet and chain code out of this game (drops are pending crates under the pilot, moved by a one-time claim code redeemed in SpaceFort), which leaves D27 intact, and it amends D25 (level would raise boss odds). **No drop code is written.** It waits for the user's yes on the plan and the odds.
 
 ### 2026-11-19: role-playing layer
 
