@@ -88,7 +88,9 @@ export const SHIELD_SPARK = 0x5ab8ff;
 export const DEATH_SPARK = 0xffc070;
 /** A hull at or under this trails smoke: two bullets from the end. */
 const SMOKE_BELOW_HP = 35;
-const SMOKE_COLOR = 0x6b6b6b;
+/** Dim, so that the soft lights it is drawn with read as haze and not as a lamp. */
+const SMOKE_COLOR = 0x2c2c2c;
+const SMOKE_SPARK = 0xff7a30;
 const SMOKE_RATE = 30; // puffs a second
 /** After a kill, sparks and debris play at this fraction of their speed for a moment. */
 const SLOW_MOTION_RATE = 0.2;
@@ -466,7 +468,30 @@ export class GameScene {
   private emitSmoke(x: number, y: number, z: number, hp: number, elapsedSeconds: number): void {
     if (hp > SMOKE_BELOW_HP || Math.random() > SMOKE_RATE * elapsedSeconds) return;
     const drift = (): number => (Math.random() * 2 - 1) * 1.5;
-    this.particles.emit(x, y + 0.6, z, drift(), 2 + drift(), drift(), 1.1, 0.9, SMOKE_COLOR);
+    this.particles.emit(
+      x + drift(),
+      y + 0.8 + drift() * 0.4,
+      z + drift(),
+      drift(),
+      2 + drift(),
+      drift(),
+      1.1,
+      0.8,
+      SMOKE_COLOR,
+    );
+    // And now and then a spark of fire in it.
+    if (Math.random() < 0.35)
+      this.particles.emit(
+        x,
+        y + 0.5,
+        z,
+        drift() * 2,
+        3 + drift(),
+        drift() * 2,
+        0.5,
+        0.1,
+        SMOKE_SPARK,
+      );
   }
 
   /** Jolts the camera (main.js:8865-8869). Amounts are v1's, 0.08 to 1.2. */
@@ -908,8 +933,8 @@ export class GameScene {
       if (bullet.shot === 'seeker' || bullet.shot === 'heavy') {
         const heavy = bullet.shot === 'heavy';
         if (heavy)
-          this.particles.emit(bullet.x, bullet.y, bullet.z, 0, 0, 0, 0.35, 0.3, HEAVY_EMBER);
-        else this.particles.emit(bullet.x, bullet.y, bullet.z, 0, 0, 0, 0.5, 0.5, SEEKER_TRAIL);
+          this.particles.emit(bullet.x, bullet.y, bullet.z, 0, 0, 0, 0.3, 0.11, HEAVY_EMBER);
+        else this.particles.emit(bullet.x, bullet.y, bullet.z, 0, 0, 0, 0.5, 0.22, SEEKER_TRAIL);
         if (glowing < MAX_GLOWS) {
           const tint = heavy ? HEAVY_COLOR : SEEKER_COLOR;
           this.matrix.compose(

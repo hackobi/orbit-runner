@@ -1,7 +1,9 @@
 // The ships. Each is built once from simple shapes, joined into one piece
 // per material, so a ship costs four or five draws however detailed it is.
 // Every model has its nose along +Z and fits inside the hull's radius, so
-// what is drawn is what can be hit.
+// what is drawn is what can be hit. (The Fenix is the exception, as it was
+// in v1: its wings reach past the hull. Other players' ships are drawn half
+// as big again, also as in v1.)
 
 import {
   BoxGeometry,

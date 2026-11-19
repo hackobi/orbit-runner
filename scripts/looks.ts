@@ -1,12 +1,12 @@
 // Pictures and a frame-rate number for judging how the game looks:
-//   node scripts/looks.ts <directory> [phone]
+//   node scripts/looks.ts <directory> [phone] [webkit]
 // It starts its own server (with the server's ships) and dev server, flies
 // one browser client, stages a set of views by placing ships, and then
 // measures frames a second in a crowded fight with the frame-rate limit off.
 // The number compares one build with another on this machine. It says
 // nothing about a real phone.
 
-import { chromium, devices } from '@playwright/test';
+import { chromium, devices, webkit } from '@playwright/test';
 import { createServer } from 'vite';
 import { createBot } from '../src/net/bot.ts';
 import { circler } from '../src/net/behaviours.ts';
@@ -18,7 +18,9 @@ import type { ShipState } from '../src/shared/sim/ship.ts';
 
 const out = process.argv[2];
 if (!out) throw new Error('usage: node scripts/looks.ts <directory> [phone]');
-const phone = process.argv[3] === 'phone';
+const phone = process.argv.includes('phone');
+// Safari's engine instead of Chrome's. Its frame rate is limited, so only the pictures count.
+const safari = process.argv.includes('webkit');
 const BOTS = 15;
 
 const SERVER_PORT = 8812;
@@ -31,9 +33,11 @@ const vite = await createServer();
 await vite.listen();
 const room = server.room;
 
-const browser = await chromium.launch({
-  args: ['--use-angle=metal', '--disable-frame-rate-limit', '--disable-gpu-vsync'],
-});
+const browser = safari
+  ? await webkit.launch()
+  : await chromium.launch({
+      args: ['--use-angle=metal', '--disable-frame-rate-limit', '--disable-gpu-vsync'],
+    });
 const profile = devices['iPhone 15 landscape'];
 const context = await browser.newContext(
   phone
@@ -95,7 +99,8 @@ const orbOf = (kind: OrbKind) => {
 };
 const shot = async (name: string, wait = 900): Promise<void> => {
   await page.waitForTimeout(wait);
-  await page.screenshot({ path: `${out}/${name}${phone ? '-phone' : ''}.png` });
+  const suffix = `${phone ? '-phone' : ''}${safari ? '-webkit' : ''}`;
+  await page.screenshot({ path: `${out}/${name}${suffix}.png` });
 };
 const behind = (id: number, distance: number): void => {
   const ship = room.shipOf(id);
@@ -149,6 +154,20 @@ place(other, {
   fenix: true,
 });
 await shot('fenix');
+clearBots();
+
+// A heavy shot just fired, then a homing shot, with a smoking ship ahead.
+place(me, { x: 0, y: 10, z: 4300, energy: SIM.maxEnergy });
+place(other, { x: 5, y: 12, z: 4335, yaw: 1.2, speed: 0, targetSpeed: 0, hp: 20, invulnTicks: 0 });
+await page.waitForTimeout(400);
+await page.keyboard.down('e');
+await page.waitForTimeout(120);
+await page.keyboard.up('e');
+await shot('heavy-and-smoke', 60);
+await page.keyboard.down('q');
+await page.waitForTimeout(1300);
+await page.keyboard.up('q');
+await shot('homing', 200);
 clearBots();
 
 behind(FIRST_RAIDER_ID, 30);

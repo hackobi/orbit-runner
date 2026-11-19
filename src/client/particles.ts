@@ -68,8 +68,9 @@ export class SpriteBatch {
             float d = length(across);
             float glow = max(0.0, 1.0 - d);
             glow *= glow;
-            // The middle burns towards white.
-            vec3 lit = mix(colour.rgb, vec3(1.0), glow * glow * 0.35);
+            // The middle of a bright light burns towards white; a dim one, such as smoke, stays dim.
+            float bright = max(colour.r, max(colour.g, colour.b));
+            vec3 lit = mix(colour.rgb, vec3(1.0), glow * glow * 0.35 * bright);
             gl_FragColor = vec4(lit, glow * colour.a);
             #include <tonemapping_fragment>
             #include <colorspace_fragment>
