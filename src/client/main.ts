@@ -5,6 +5,7 @@ import { REJECT_IDLE, REJECT_VERSION } from '../shared/protocol.ts';
 import type { GameEvent } from '../shared/protocol.ts';
 import type { BulletView } from '../net/client.ts';
 import { createDebugRecorder } from './debugHook.ts';
+import { PAD_LAYOUT, activePad, padName, unusablePad } from './gamepad.ts';
 import { InputDevices } from './input.ts';
 import { loadSettings, saveSettings } from './settings.ts';
 import { watchForUpdates } from './update.ts';
@@ -244,11 +245,44 @@ claimButton.addEventListener('click', () => {
     });
 });
 
-settingsButton.addEventListener('click', () => {
+const toggleSettings = (): void => {
   settingsPanel.hidden = !settingsPanel.hidden;
   settingsButton.setAttribute('aria-expanded', String(!settingsPanel.hidden));
   canvas.focus();
-});
+};
+settingsButton.addEventListener('click', toggleSettings);
+
+// The controller: the browser does the pairing, so this only reports what it
+// sees and lists what each control does.
+const padStatus = element('pad-status', HTMLParagraphElement);
+const padLayout = element('pad-layout', HTMLDListElement);
+for (const row of PAD_LAYOUT) {
+  const control = document.createElement('dt');
+  control.textContent = row.control;
+  const action = document.createElement('dd');
+  action.textContent = row.action;
+  padLayout.append(control, action);
+}
+let padShown: string | null = null;
+const showPad = (): void => {
+  const pad = activePad();
+  const other = pad ? null : unusablePad();
+  padLayout.hidden = !pad;
+  padStatus.textContent = pad
+    ? `Controller: ${padName(pad)}`
+    : other
+      ? `${padName(other)} is connected, but this browser does not report its layout, so it cannot be used here.`
+      : 'Controller: pair a PS5 or Xbox controller with this device, then press any button on it.';
+  const name = pad ? padName(pad) : null;
+  if (name && name !== padShown) hud.notice(`${name} connected`, 'Open ⚙ for the controls.');
+  if (!name && padShown)
+    hud.notice('Controller disconnected', 'Keyboard, mouse and touch still work.');
+  padShown = name;
+};
+window.addEventListener('gamepadconnected', showPad);
+window.addEventListener('gamepaddisconnected', showPad);
+showPad();
+devices.onPadMenu = toggleSettings;
 invertBox.checked = settings.invertPitch;
 invertBox.addEventListener('change', () => {
   settings.invertPitch = invertBox.checked;

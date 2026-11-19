@@ -12,7 +12,7 @@ This file is the running checkpoint. A new session should read it first, then `d
 | 3. Content and mobile | **Built and tested 2026-11-14, except what needs a real phone.** The device checklist (`docs/DEVICE-TESTING.md`) and the LAN HTTPS server are waiting for the user | |
 | 4. Mac app | **Built and tested 2026-11-14 on this Mac.** Other Macs and a 120 Hz display: UNVERIFIED | |
 | Dogfight feel (user request, 2026-11-15) | **Step 1 is live** (merged and deployed 2026-11-16 with the user's approval; they found physics and gameplay fine). Tasks are in [Dogfight feel](#dogfight-feel-before-phase-5) | The user picks what comes next |
-| Role-playing layer (user request, 2026-11-19) | **Built and tested 2026-11-19 on `feature/rpg-layer`, local only, not merged or deployed.** Experience, levels, missions, raiders and the boss (shown as the Dreadnought), progress kept per pilot. See [Role-playing layer](#role-playing-layer) | The user plays it and decides on a merge |
+| Role-playing layer (user request, 2026-11-19) | **Built and tested 2026-11-19 on `feature/rpg-layer`, local only, not merged or deployed.** Experience, levels, missions, raiders and the boss (shown as the Warlock), progress kept per pilot. See [Role-playing layer](#role-playing-layer) | The user plays it and decides on a merge |
 | 5. Demos integration | Not started. Direction from the user recorded under Phase 5 (reuse v1's payment flow; King of the Hill) | Separate approval, and a payment proposal first |
 
 **Next action:** the user chooses between step 2 of [Dogfight feel](#dogfight-feel-before-phase-5) (matches) and Phase 5. Their direction on 2026-11-16: the open room stays the normal game, everyone with the same abilities; rules, timing, groups and teams come later, for tournaments. Phases 1 to 4 are built. Phase 5 (Demos) needs separate approval and starts with a written payment proposal, not code. Open items that need the user: `npm run dev:lan` (it changes the Mac's keychain) and the phone checklist in `docs/DEVICE-TESTING.md`; opening the Mac app themselves.
@@ -597,6 +597,15 @@ Blockers: none. Waiting for the user: Phase 5 needs separate approval.
 
 - The user played step 1 and approved the deploy. `feature/dogfight` was fast-forwarded into `feature/v2-rebuild` and pushed; the live server reports wire format 11.
 - From their notes: the heavy shot is now plasma (a small hot centre in a banded glow that reaches exactly as far as it hits, with embers behind), the homing shot is see-through, and the Fenix is a red swept-wing ship edged in gold instead of v1's black dart. Client only (`src/client/scene.ts`). Seen in staged screenshots on desktop Chromium; not on a phone.
+
+### 2026-11-19: controller support (D29); the boss is the Warlock
+
+- The user chose **Warlock** as the boss's name. Changed in `BOSS_NAME` and the three places that do not read it (the boss bar's label, the server's start-up line, one test). The kind on the wire is still `warlord`.
+- The user asked for a way to connect a PS5 or Xbox controller. Built on `feature/controller`, off `feature/drops`, client only: no change to the server, the simulation or the wire format (still 13).
+- `src/client/gamepad.ts` reads the browser's Gamepad API and uses only pads with the standard layout, which is what browsers report for the DualSense, the PS4 pad and Xbox pads. The pad adds to the same clamped sums as every other device, so it turns no faster. Settings shows the pad's name and what each control does; a banner says when one connects or goes; Options / Menu opens and closes settings.
+- A web page cannot pair a controller. Pairing is done in the system's Bluetooth settings or by cable, and the browser shows the pad to the page only after a button on it is pressed. The settings line says so.
+- Measured: lint and typecheck clean; 320 unit tests pass (10 new, for the dead zone and the layout); `tests/e2e/gamepad.spec.ts` passes in Chromium and WebKit (4 of 4) with the browser's pad list replaced by a pad the test drives.
+- **UNVERIFIED: no real controller has been used.** Not checked: a real DualSense or Xbox pad in Chrome and Safari, any pad in the Mac app, any pad on a phone, and whether Firefox reports these pads with the standard layout (if it does not, the settings line says the pad cannot be used).
 
 ### 2026-11-19: salvage crates (D28)
 

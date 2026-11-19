@@ -54,7 +54,7 @@ console.log(
 );
 if (crateOdds)
   console.log(`TRIAL ODDS: every orb, raider and boss drops a crate ${tryOdds * 100}% of the time`);
-console.log(npcs ? 'raiders and the Dreadnought are flying' : 'no server-flown ships');
+console.log(npcs ? 'raiders and the Warlock are flying' : 'no server-flown ships');
 console.log(
   dataDir
     ? `pilot progress is kept in ${dataDir}`

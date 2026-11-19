@@ -85,7 +85,7 @@ export interface Mission {
 }
 
 /** What players see the boss called. Code and the wire format keep the kind `warlord`. */
-export const BOSS_NAME = 'Dreadnought';
+export const BOSS_NAME = 'Warlock';
 
 /** A pilot works through these in order, and then round again. */
 export const MISSIONS: readonly Mission[] = [

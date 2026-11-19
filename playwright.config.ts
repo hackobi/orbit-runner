@@ -12,9 +12,9 @@ export const PROXY_PORT = 8798;
  */
 export const CHROMIUM_ARGS = ['--use-angle=metal'];
 
-const SINGLE_CLIENT = /(determinism|flight|hud)\.spec\.ts/;
+const SINGLE_CLIENT = /(determinism|flight|gamepad|hud)\.spec\.ts/;
 // Chromium only: it is Chrome's verdict on installing that is being asked for.
-const CHROMIUM_ONLY = /(determinism|flight|hud|pwa)\.spec\.ts/;
+const CHROMIUM_ONLY = /(determinism|flight|gamepad|hud|pwa)\.spec\.ts/;
 
 export default defineConfig({
   testDir: 'tests/e2e',

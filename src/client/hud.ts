@@ -316,6 +316,11 @@ export class Hud {
     }
   }
 
+  /** Something the page itself has to say, shown as the server's announcements are. */
+  notice(title: string, detail: string): void {
+    this.announce(title, detail);
+  }
+
   /** A line across the middle of the screen for a few seconds. They queue. */
   private announce(title: string, detail: string): void {
     this.banners.push({ title, detail });

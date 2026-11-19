@@ -13,8 +13,12 @@
 // screen; fire and speed are buttons on the right. Each control follows one
 // finger by its pointer id, so they work together. The speed buttons carry
 // boost and brake too: ▲ held at top speed boosts, and ▼ brakes.
+//
+// A game controller (gamepad.ts) adds to the same sums, so it turns no faster
+// than the keys do.
 
 import type { Controls } from '../shared/sim/ship.ts';
+import { activePad, padControls } from './gamepad.ts';
 import type { Settings } from './settings.ts';
 
 const POINTER_GAIN = 0.6; // main.js:8762
@@ -107,6 +111,9 @@ class HeldButton {
 export class InputDevices {
   private readonly held = new Set<string>();
   private readonly settings: Settings;
+  /** Called once each time the controller's menu button goes down. */
+  onPadMenu: (() => void) | null = null;
+  private padMenuDown = false;
 
   // Mouse: steers while its button is down.
   private mouseDown = false;
@@ -223,20 +230,32 @@ export class InputDevices {
     // dragging the view (decision D12).
     const mouseYaw = this.mouseDown ? this.mouseX * POINTER_GAIN : 0;
     const mousePitch = this.mouseDown ? -this.mouseY * POINTER_GAIN : 0;
+    // A controller is read afresh on every call: it has no events for sticks.
+    const connected = activePad();
+    const pad = connected ? padControls(connected) : null;
+    const menu = pad?.menu ?? false;
+    if (menu && !this.padMenuDown) this.onPadMenu?.();
+    this.padMenuDown = menu;
     // The stick: right turns right, as the D key; up is the Up key.
-    const pitch = up - down + mousePitch - this.stickY + this.tiltPitch;
+    const pitch = up - down + mousePitch - this.stickY + this.tiltPitch + (pad?.pitch ?? 0);
     return {
-      yaw: clampAxis(left - right + mouseYaw - this.stickX + this.tiltYaw),
+      yaw: clampAxis(left - right + mouseYaw - this.stickX + this.tiltYaw + (pad?.yaw ?? 0)),
       pitch: clampAxis(this.settings.invertPitch ? -pitch : pitch),
-      throttle: key('KeyW') - key('KeyS') + (this.faster.down ? 1 : 0) - (this.slower.down ? 1 : 0),
-      fire: this.held.has('Space') || this.fire.down,
-      heavy: this.held.has('KeyE') || this.heavy.down,
-      seek: this.held.has('KeyQ') || this.seek.down,
+      throttle:
+        key('KeyW') -
+        key('KeyS') +
+        (this.faster.down ? 1 : 0) -
+        (this.slower.down ? 1 : 0) +
+        (pad?.throttle ?? 0),
+      fire: this.held.has('Space') || this.fire.down || (pad?.fire ?? false),
+      heavy: this.held.has('KeyE') || this.heavy.down || (pad?.heavy ?? false),
+      seek: this.held.has('KeyQ') || this.seek.down || (pad?.seek ?? false),
       boost:
         this.held.has('ShiftLeft') ||
         this.held.has('ShiftRight') ||
-        (this.faster.down && atTopSpeed),
-      brake: this.held.has('KeyX') || this.slower.down,
+        (this.faster.down && atTopSpeed) ||
+        (pad?.boost ?? false),
+      brake: this.held.has('KeyX') || this.slower.down || (pad?.brake ?? false),
     };
   }
 
