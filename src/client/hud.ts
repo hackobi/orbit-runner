@@ -15,7 +15,6 @@ import {
 } from '../shared/protocol.ts';
 import type { DeathEvent, GameEvent } from '../shared/protocol.ts';
 import {
-  MAX_LEVEL,
   MISSIONS,
   WARLORD_ID,
   levelOf,
@@ -23,7 +22,6 @@ import {
   npcKindOf,
   rankOf,
   shipName,
-  xpForLevel,
 } from '../shared/progress.ts';
 import type { Progress } from '../shared/progress.ts';
 import { STORE_ITEMS, STORE_PRICES } from '../shared/scoring.ts';
@@ -362,10 +360,6 @@ export class Hud {
     const level = levelOf(now.xp);
     shown.style(this.xpFill, 'width', `${levelProgress(now.xp) * 100}%`);
     shown.text(this.xp, `Lv ${level} · ${rankOf(level)}`);
-    this.xp.title =
-      level >= MAX_LEVEL
-        ? `${number(now.xp)} XP`
-        : `${number(now.xp)} XP · level ${level + 1} at ${number(xpForLevel(level + 1))}`;
     shown.text(this.xpGain, nowMs < this.xpGainUntilMs ? `+${number(this.xpGained)} XP` : '');
 
     const mission = MISSIONS[now.missionIndex];

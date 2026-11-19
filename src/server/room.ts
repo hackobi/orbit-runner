@@ -1038,7 +1038,8 @@ export class Room {
   private respawnNpc(player: Player, brain: NpcBrain): void {
     if (player.ship.alive) return;
     if (this.tick < player.respawnAtTick) return;
-    const ship = spawnShip(this.npcRng, player.ship.spawnSeq + 1);
+    // At its patrol height, clear of the rocks, which it would otherwise climb through.
+    const ship = { ...spawnShip(this.npcRng, player.ship.spawnSeq + 1), y: brain.orbitHeight };
     player.ship = brain.kind === 'warlord' ? { ...ship, shield: SIM.maxShield } : ship;
     player.spawnedAtTick = this.tick;
     player.damagedBy.clear();
@@ -1349,7 +1350,7 @@ export class Room {
       id,
       token,
       connection: null,
-      ship: spawnShip(npc ? this.npcRng : this.rng, 0),
+      ship: npc ? { ...spawnShip(this.npcRng, 0), y: npc.orbitHeight } : spawnShip(this.rng, 0),
       input: NEUTRAL_INPUT,
       pending: new Map(),
       firstInputTick: null,

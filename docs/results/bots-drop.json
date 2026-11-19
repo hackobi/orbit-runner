@@ -1,10 +1,10 @@
 {
-  "measuredAt": "2026-11-19T00:40:18.816Z",
+  "measuredAt": "2026-11-19T00:50:44.523Z",
   "data": {
     "seconds": 40,
-    "forwarded": 15416,
-    "dropped": 329,
-    "stalled": 10,
+    "forwarded": 15365,
+    "dropped": 332,
+    "stalled": 7,
     "hits": 42,
     "deaths": 6,
     "missedInputs": 0
