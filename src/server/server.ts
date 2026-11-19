@@ -20,7 +20,7 @@ import type { MemoryCrateStore } from './crates.ts';
 import type { PilotStore } from './pilots.ts';
 import { Recorder } from './recorder.ts';
 import { Room } from './room.ts';
-import type { RoomListener } from './room.ts';
+import type { RoomListener, RoomOptions } from './room.ts';
 import { ServerSocketTransport } from './wsTransport.ts';
 
 export interface ServerOptions {
@@ -52,6 +52,8 @@ export interface ServerOptions {
    * /api/redeem refuses everyone: crates can be won and shown, not moved.
    */
   bridgeSecret?: string;
+  /** Passed to the room (RoomOptions.crateOdds): for trying drops out, never for a public server. */
+  crateOdds?: RoomOptions['crateOdds'];
   /** Passed to the room. See RoomOptions. */
   onTick?: (tick: number, room: Room) => void;
   onWork?: (durationMs: number, ticks: number) => void;
@@ -147,6 +149,7 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
     npcs: options.npcs ?? false,
     ...(options.pilots ? { pilots: options.pilots } : {}),
     ...(options.crates ? { crates: options.crates } : {}),
+    ...(options.crateOdds ? { crateOdds: options.crateOdds } : {}),
     ...(recorder
       ? {
           listener: recorder.listener,

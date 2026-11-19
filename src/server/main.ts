@@ -27,6 +27,11 @@ const pilots = dataDir ? new FilePilotStore(dataDir) : new MemoryPilotStore();
 // codes with ORBIT_BRIDGE_SECRET; without one, crates drop but cannot be moved.
 const crates = dataDir ? new FileCrateStore(dataDir) : new MemoryCrateStore();
 const bridgeSecret = process.env.ORBIT_BRIDGE_SECRET;
+// For trying drops out: one chance, 0 to 1, in place of the real odds for
+// every source. Never set this on a public server.
+const tryOdds = Number(process.env.ORBIT_TRY_CRATE_ODDS ?? NaN);
+const crateOdds =
+  tryOdds > 0 && tryOdds <= 1 ? { orb: tryOdds, raider: tryOdds, boss: tryOdds } : undefined;
 
 const server = await startServer({
   port,
@@ -36,6 +41,7 @@ const server = await startServer({
   pilots,
   crates,
   ...(bridgeSecret ? { bridgeSecret } : {}),
+  ...(crateOdds ? { crateOdds } : {}),
   ...(clientDir ? { clientDir } : {}),
 });
 console.log(`orbit-runner server listening on http://${host}:${server.port} (game socket at /ws)`);
@@ -46,6 +52,8 @@ console.log(
     ? 'crate claims can be redeemed (ORBIT_BRIDGE_SECRET is set)'
     : 'crates drop but cannot be redeemed: set ORBIT_BRIDGE_SECRET to let SpaceFort claim them',
 );
+if (crateOdds)
+  console.log(`TRIAL ODDS: every orb, raider and boss drops a crate ${tryOdds * 100}% of the time`);
 console.log(npcs ? 'raiders and the Dreadnought are flying' : 'no server-flown ships');
 console.log(
   dataDir
