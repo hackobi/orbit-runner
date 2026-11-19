@@ -517,6 +517,21 @@ describe('salvage crates', () => {
     expect(other.events.some((e) => e.kind === 'crate')).toBe(false);
   });
 
+  it('a pilot still flying sees the count fall when the crates are claimed', () => {
+    const crates = new MemoryCrateStore();
+    crates.add(KEY_HEX, 'Rare', 'boss', 5);
+    crates.add(KEY_HEX, 'Common', 'orb', 5);
+    const world = new TestWorld(31, 150, true, { crates });
+    const pilot = world.addClient({ pilotKey: KEY });
+    world.run(1500);
+    expect(pilot.core.crates).toBe(2);
+    expect(crates.redeem(crates.issueCode(KEY_HEX)?.code ?? '')?.crates).toHaveLength(2);
+    world.room.refreshCrates();
+    world.run(500);
+    expect(pilot.core.crates).toBe(0);
+    expect(pilot.core.crateDrops).toHaveLength(0);
+  });
+
   it('at the real odds an orb almost never drops one, and a pilot without a key never', () => {
     const crates = new MemoryCrateStore();
     const world = new TestWorld(31, 150, true, { crates });

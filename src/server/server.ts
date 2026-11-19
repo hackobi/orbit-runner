@@ -243,6 +243,8 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
       const code =
         typeof body.code === 'string' ? body.code.replace(/[^A-Za-z0-9]/g, '').toUpperCase() : '';
       const redemption = crates.redeem(code);
+      // Pilots still flying see their count drop.
+      room.refreshCrates();
       if (redemption) sendJson(response, 200, { ok: true, ...redemption });
       else sendJson(response, 404, { ok: false, error: 'no such code, or it has expired' });
       return true;

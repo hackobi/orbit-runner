@@ -340,6 +340,8 @@ interface Player {
   readonly npc: NpcBrain | null;
   /** For a ship the server flies: the tick it comes back on. */
   respawnAtTick: number;
+  /** The crate count this player was last sent, or -1 for never. */
+  cratesTold: number;
   /** The players who have damaged this ship in this life, and by how much. */
   readonly damagedBy: Map<number, number>;
 }
@@ -935,12 +937,25 @@ export class Room {
     if (!hit) return;
     if (source !== 'boss' && !this.crates.underCap(player.pilotKey)) return;
     this.crates.add(player.pilotKey, tier, source, levelOf(player.progress.xp));
+    player.cratesTold = this.crates.count(player.pilotKey);
     player.outbox.push({
       kind: 'crate',
       tier: CRATE_TIERS.indexOf(tier),
       source: CRATE_SOURCES.indexOf(source),
-      held: this.crates.count(player.pilotKey),
+      held: player.cratesTold,
     });
+  }
+
+  /** Tells each seated pilot whose hold has changed, by a claim, how many crates they hold now. */
+  refreshCrates(): void {
+    if (!this.crates) return;
+    for (const player of this.players.values()) {
+      if (!player.pilotKey || player.cratesTold < 0) continue;
+      const held = this.crates.count(player.pilotKey);
+      if (held === player.cratesTold) continue;
+      player.cratesTold = held;
+      player.outbox.push({ kind: 'crate', tier: NO_CRATE, source: NO_CRATE, held });
+    }
   }
 
   /** How many crates a seated player holds (0 without a store or a pilot key). */
@@ -1440,6 +1455,7 @@ export class Room {
       beltTicks: 0,
       npc,
       respawnAtTick: 0,
+      cratesTold: -1,
       damagedBy: new Map(),
     };
   }
@@ -1499,11 +1515,12 @@ export class Room {
     }
     player.progressDue = true;
     if (this.crates && player.pilotKey) {
+      player.cratesTold = this.crates.count(player.pilotKey);
       player.outbox.push({
         kind: 'crate',
         tier: NO_CRATE,
         source: NO_CRATE,
-        held: this.crates.count(player.pilotKey),
+        held: player.cratesTold,
       });
     }
     for (const gone of this.ledger.asteroids.goneAt(this.tick)) {
