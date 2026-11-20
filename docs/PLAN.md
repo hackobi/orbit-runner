@@ -683,19 +683,23 @@ Measured on this Mac:
 | Press to fort shown (gate: 150 ms) | 29 ms Chromium, 47 ms WebKit in the suite; 21 ms at desktop and at phone size in `fort-look` |
 | Launch to ship flying, no respawn time owed (gate: 300 ms) | 65 ms Chromium, 41 ms WebKit; 35 and 31 ms in `fort-look` |
 | Own-ship corrections on a clean network | 0, as before (`npm run results`: every gate passes) |
-| Unit tests | 353 pass (33 new) |
+| Unit tests | 357 pass (37 new) |
 | Integration | 12 of 12 |
 | Browser suite | 36 of 36 (10 new: five fort tests in Chromium and in WebKit) |
 | Lint, typecheck | clean |
-| With a real SpaceFort server behind it (a trial one, own database, on-chain writes off) | The fort showed that pilot's two recruits, one on a mission counting down, and the first-visit report; no console errors. Looked at in pictures at 1280×720 and at an iPhone 15's landscape size |
+| With a real SpaceFort server behind it (a trial one with its own database, `ONCHAIN_ITEMS=off`; its log shows no transaction) | The fort showed that pilot's two recruits, one on a mission counting down, and the first-visit report; no console errors. Looked at in pictures at 1280×720 and at an iPhone 15's landscape size. A fort after a finished mission and with one item made was read back whole (0 entries left out). **A fort holding a crate was not read live**, only in SpaceFort's own tests |
 
 Found by the full suite and fixed before this entry: the fort screen asked the server again on every frame whenever the fort was not available (1,502 failed requests in the Mac app test). The background read is now one request, and a test counts them. The copy of the client packed into the Mac app has no server to ask, so its fort screen says no fort is connected.
 
 Not done in phase 1, and not claimed:
 
 - **A returning pilot does not open in the fort on first load.** The proposal put it in phase 1. With a read-only fort there is nothing to collect, so it is left for phase 2. A page reloaded while in the fort does open there.
-- Crates won in flight are still moved by the claim code. The fort says how many are waiting.
+- **Crates won in flight cannot reach the pilot's fort yet.** The claim code still works, but it moves crates to whoever is signed in on SpaceFort's own page, which is a different player from the pilot's fort. The fort screen says how many are waiting aboard and that they cannot be brought in yet. Phase 2 moves them.
 - Nothing in the fort can be done yet: no orders, no crates opened (phase 2).
 - No recall while flying (phase 4).
 
-**UNVERIFIED:** a real phone (the phone pictures are a phone's screen size in a desktop engine); a real controller (the tests replace the browser's list of pads); the Mac app with a fort behind it; SpaceFort's server anywhere but this Mac; whether it feels like one place, which only a person playing can say.
+Found in review after the first commit and fixed (`room.ts`, with a test each): a ship destroyed by a rock or a shot while its pilot was away, inside the ten seconds of grace, sent the pilot back into space instead of to the fort; a pilot taken out for idling who then went through the fort got no ship on Launch until a control moved. And the reader of SpaceFort's answer refused a whole fort over one entry it could not read; it now leaves that entry out, logs how many, and cuts long text to fit.
+
+To know before phase 2 writes anything: **the fort's id for a pilot is made with the bridge secret, so changing the secret gives every pilot a new, empty fort.** Either the secret is never rotated, or the id needs a key of its own.
+
+**UNVERIFIED:** the seat given up after five minutes in the fort, and launching again, is covered in virtual time only, and if the room is full at that moment the pilot has neither a ship nor a seat until one frees; a real phone (the phone pictures are a phone's screen size in a desktop engine); a real controller (the tests replace the browser's list of pads); the Mac app with a fort behind it; SpaceFort's server anywhere but this Mac; whether it feels like one place, which only a person playing can say.
