@@ -187,8 +187,8 @@ test('held upright, the page asks for the phone to be turned; sideways it does n
 
 // On an iPhone the left stick stayed over twice in a twenty-minute session
 // (2026-11-20). A phone can take a finger for a gesture of its own and never
-// tell the page it lifted. These are pointer events made in the page, so that
-// one can go down and simply never come up.
+// tell the page it lifted. These are events made in the page, so that a
+// finger can go down and simply never come up.
 test('a finger whose lift is never reported does not leave the stick or a button held', async ({
   page,
 }) => {
@@ -208,16 +208,30 @@ test('a finger whose lift is never reported does not leave the stick or a button
       },
       [type, id, x, y, selector] as const,
     );
-  const fingersGone = () =>
-    page.evaluate(() => window.dispatchEvent(new TouchEvent('touchend', { touches: [] })));
+  /** The browser's own count of fingers on the screen, as its touch events give it. */
+  const fingersOnScreen = (type: 'touchstart' | 'touchend', count: number) =>
+    page.evaluate(
+      ([kind, fingers]) => {
+        const target = document.body;
+        const touches = Array.from(
+          { length: fingers },
+          (_, identifier) => new Touch({ identifier, target }),
+        );
+        window.dispatchEvent(new TouchEvent(kind, { touches }));
+      },
+      [type, count] as const,
+    );
 
   // A finger steers hard over, and is then lost without a word.
   await finger('pointerdown', 71, 180, 220);
+  await fingersOnScreen('touchstart', 1);
   await finger('pointermove', 71, 236, 220);
   await expect.poll(() => controls(page)).toMatchObject({ yaw: -1 });
 
-  // The next finger on that side takes the stick, from where it lands.
+  // The next finger down is the only one on the screen, so the stick is its,
+  // from where it lands.
   await finger('pointerdown', 72, 150, 200);
+  await fingersOnScreen('touchstart', 1);
   await expect.poll(() => controls(page)).toMatchObject({ yaw: 0, pitch: 0 });
   await finger('pointermove', 72, 94, 200);
   await expect.poll(() => controls(page)).toMatchObject({ yaw: 1 });
@@ -228,21 +242,64 @@ test('a finger whose lift is never reported does not leave the stick or a button
   await expect.poll(() => controls(page)).toMatchObject({ yaw: 0 });
   await expect(page.locator('#knob')).toBeHidden();
 
-  // With no new finger: the browser saying no finger is left lets go of
-  // everything touched.
+  // A lost finger on a button: the next lone finger, on another button, is
+  // the only thing pressed.
   const fire = await centreOf(page, '#fire');
-  await finger('pointerdown', 73, 180, 220);
-  await finger('pointermove', 73, 236, 220);
-  await finger('pointerdown', 74, fire.x, fire.y, '#fire');
-  await expect.poll(() => controls(page)).toMatchObject({ yaw: -1, fire: true });
-  await fingersGone();
-  await expect.poll(() => controls(page)).toMatchObject({ yaw: 0, fire: false });
-  await expect(page.locator('#knob')).toBeHidden();
+  const heavy = await centreOf(page, '#heavy');
+  await finger('pointerdown', 73, fire.x, fire.y, '#fire');
+  await fingersOnScreen('touchstart', 1);
+  await expect.poll(() => controls(page)).toMatchObject({ fire: true });
+  await finger('pointerdown', 74, heavy.x, heavy.y, '#heavy');
+  await fingersOnScreen('touchstart', 1);
+  await expect.poll(() => controls(page)).toMatchObject({ fire: false, heavy: true });
   await expect(page.locator('#fire')).not.toHaveClass(/down/);
 
-  // A button pressed again after a lost finger answers to the new one.
-  await finger('pointerdown', 75, fire.x, fire.y, '#fire');
-  await finger('pointerdown', 76, fire.x, fire.y, '#fire');
-  await finger('pointerup', 76, fire.x, fire.y, '#fire');
+  // And with no new finger at all: the browser saying none is left lets go
+  // of everything touched.
+  await finger('pointerdown', 75, 180, 220);
+  await finger('pointermove', 75, 236, 220);
+  await expect.poll(() => controls(page)).toMatchObject({ yaw: -1, heavy: true });
+  await fingersOnScreen('touchend', 0);
+  await expect.poll(() => controls(page)).toMatchObject({ yaw: 0, heavy: false });
+  await expect(page.locator('#knob')).toBeHidden();
+  await expect(page.locator('#heavy')).not.toHaveClass(/down/);
+});
+
+test('a second finger on the stick side does not take the stick from the first', async ({
+  page,
+  context,
+}) => {
+  const cdp = await context.newCDPSession(page);
+  const thumb: Finger = { id: 1, x: 180, y: 220 };
+  await touch(cdp, 'touchStart', [thumb]);
+  const held: Finger = { ...thumb, x: thumb.x + 56 };
+  await touch(cdp, 'touchMove', [held]);
+  await expect.poll(() => controls(page)).toMatchObject({ yaw: -1 });
+
+  // Another finger brushes the same side, moves, and lifts.
+  const stray: Finger = { id: 2, x: 90, y: 120 };
+  await touch(cdp, 'touchStart', [held, stray]);
+  const strayed: Finger = { ...stray, x: 20 };
+  await touch(cdp, 'touchMove', [held, strayed]);
+  await expect.poll(() => controls(page)).toMatchObject({ yaw: -1 });
+  await touch(cdp, 'touchEnd', [strayed]);
+  // The thumb still steers.
+  expect(await controls(page)).toMatchObject({ yaw: -1 });
+  await touch(cdp, 'touchMove', [{ ...thumb, x: thumb.x - 56 }]);
+  await expect.poll(() => controls(page)).toMatchObject({ yaw: 1 });
+  await expect(page.locator('#knob')).toBeVisible();
+  await touch(cdp, 'touchEnd', []);
+  await expect.poll(() => controls(page)).toMatchObject({ yaw: 0 });
+
+  // Two fingers on one button: it stays pressed until both have lifted.
+  const fire = await centreOf(page, '#fire');
+  const first: Finger = { id: 3, ...fire };
+  const second: Finger = { id: 4, x: fire.x + 6, y: fire.y + 6 };
+  await touch(cdp, 'touchStart', [first]);
+  await touch(cdp, 'touchStart', [first, second]);
+  await expect.poll(() => controls(page)).toMatchObject({ fire: true });
+  await touch(cdp, 'touchEnd', [first]);
+  await expect.poll(() => controls(page)).toMatchObject({ fire: true });
+  await touch(cdp, 'touchEnd', []);
   await expect.poll(() => controls(page)).toMatchObject({ fire: false });
 });

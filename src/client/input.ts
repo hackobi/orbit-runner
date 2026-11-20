@@ -71,19 +71,15 @@ function element<T extends HTMLElement>(id: string, type: new () => T): T {
   return found;
 }
 
-/** A button that is "down" while the finger that pressed it stays down. */
+/** A button that is "down" while a finger that pressed it stays down. */
 class HeldButton {
-  down = false;
-  private pointerId = -1;
+  private readonly fingers = new Set<number>();
   private readonly node: HTMLElement;
 
   constructor(node: HTMLElement) {
     this.node = node;
     node.addEventListener('pointerdown', (event) => {
-      // The newest finger owns the press. A phone can take a finger away
-      // without ever saying it lifted, and the press must not wait for it.
-      this.down = true;
-      this.pointerId = event.pointerId;
+      this.fingers.add(event.pointerId);
       node.classList.add('down');
       // Keep the press if the finger slides off the button.
       try {
@@ -94,8 +90,8 @@ class HeldButton {
       event.preventDefault();
     });
     const up = (event: PointerEvent): void => {
-      if (event.pointerId !== this.pointerId) return;
-      this.release();
+      this.fingers.delete(event.pointerId);
+      this.show();
     };
     node.addEventListener('pointerup', up);
     node.addEventListener('pointercancel', up);
@@ -104,10 +100,25 @@ class HeldButton {
     });
   }
 
+  get down(): boolean {
+    return this.fingers.size > 0;
+  }
+
   release(): void {
-    this.down = false;
-    this.pointerId = -1;
-    this.node.classList.remove('down');
+    this.fingers.clear();
+    this.show();
+  }
+
+  /** Lets go of every finger but this one: the others are known to be gone. */
+  keepOnly(pointerId: number): void {
+    const held = this.fingers.has(pointerId);
+    this.fingers.clear();
+    if (held) this.fingers.add(pointerId);
+    this.show();
+  }
+
+  private show(): void {
+    this.node.classList.toggle('down', this.down);
   }
 }
 
@@ -131,6 +142,9 @@ export class InputDevices {
 
   // Touch stick: one finger, from where it went down.
   private stickPointer = -1;
+  /** The finger that went down last, and one that found the stick already taken. */
+  private newestFinger = -1;
+  private passedOver: { id: number; x: number; y: number } | null = null;
   private stickOriginX = 0;
   private stickOriginY = 0;
   private stickX = 0;
@@ -143,6 +157,8 @@ export class InputDevices {
   private readonly seek = new HeldButton(element('seek', HTMLButtonElement));
   private readonly faster = new HeldButton(element('faster', HTMLButtonElement));
   private readonly slower = new HeldButton(element('slower', HTMLButtonElement));
+  private readonly buttons = [this.fire, this.heavy, this.seek, this.faster, this.slower];
+  private readonly canvas: HTMLCanvasElement;
 
   // Tilt.
   private tiltYaw = 0;
@@ -169,6 +185,7 @@ export class InputDevices {
 
   constructor(canvas: HTMLCanvasElement, settings: Settings) {
     this.settings = settings;
+    this.canvas = canvas;
 
     window.addEventListener('keydown', (event) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -198,35 +215,44 @@ export class InputDevices {
       // The first touch shows the touch controls, on any device that has them.
       this.touchLayer.hidden = false;
       if (event.clientX > window.innerWidth * STICK_SIDE) return;
-      // A new finger on the stick's side takes the stick, even if an earlier
-      // one never reported lifting: iOS can swallow that (a swipe from the
-      // screen's edge, a system gesture), and the stick would stay over.
-      this.stickPointer = event.pointerId;
-      this.stickOriginX = event.clientX;
-      this.stickOriginY = event.clientY;
-      this.moveStick(event);
-      try {
-        canvas.setPointerCapture(event.pointerId);
-      } catch {
-        // The stick still follows the finger while it stays over the picture.
-      }
+      const finger = { id: event.pointerId, x: event.clientX, y: event.clientY };
+      // One finger has the stick. Another on that side is left alone, unless
+      // it turns out to be the only one there is (see `onlyFinger`).
+      if (this.stickPointer === -1) this.takeStick(finger);
+      else this.passedOver = finger;
     });
     canvas.addEventListener('pointermove', (event) => {
       if (event.pointerType === 'mouse') this.trackMouse(event);
-      else if (event.pointerId === this.stickPointer) this.moveStick(event);
+      else if (event.pointerId === this.stickPointer) this.moveStick(event.clientX, event.clientY);
     });
     const up = (event: PointerEvent): void => {
       if (event.pointerType === 'mouse') this.mouseDown = false;
       else if (event.pointerId === this.stickPointer) this.releaseStick();
+      if (event.pointerId === this.passedOver?.id) this.passedOver = null;
     };
     canvas.addEventListener('pointerup', up);
     canvas.addEventListener('pointercancel', up);
     canvas.addEventListener('lostpointercapture', (event) => {
       if (event.pointerId === this.stickPointer) this.releaseStick();
     });
-    // A second account of the fingers, kept by the browser separately from
-    // the pointer events: once it says none is on the screen, nothing touched
-    // is held, whatever went unreported.
+
+    // A phone can take a finger for a gesture of its own and never report it
+    // lifted; the stick or a button would then stay held. The browser keeps a
+    // second account of the fingers, in its touch events, and that one is
+    // believed: with no finger on the screen nothing touched is held, and a
+    // finger that is the only one on the screen is the only one holding.
+    window.addEventListener(
+      'pointerdown',
+      (event) => {
+        if (event.pointerType !== 'mouse') this.newestFinger = event.pointerId;
+      },
+      true,
+    );
+    // Browsers send a finger's pointerdown before its touchstart, so by now
+    // `newestFinger` is the finger this touchstart is about.
+    window.addEventListener('touchstart', (event) => {
+      if (event.touches.length === 1) this.onlyFinger(this.newestFinger);
+    });
     const fingersGone = (event: TouchEvent): void => {
       if (event.touches.length === 0) this.releaseTouch();
     };
@@ -330,9 +356,21 @@ export class InputDevices {
     this.mouseY = clampAxis((event.clientY / window.innerHeight) * 2 - 1);
   }
 
-  private moveStick(event: PointerEvent): void {
-    const dx = event.clientX - this.stickOriginX;
-    const dy = event.clientY - this.stickOriginY;
+  private takeStick(finger: { id: number; x: number; y: number }): void {
+    this.stickPointer = finger.id;
+    this.stickOriginX = finger.x;
+    this.stickOriginY = finger.y;
+    this.moveStick(finger.x, finger.y);
+    try {
+      this.canvas.setPointerCapture(finger.id);
+    } catch {
+      // The stick still follows the finger while it stays over the picture.
+    }
+  }
+
+  private moveStick(x: number, y: number): void {
+    const dx = x - this.stickOriginX;
+    const dy = y - this.stickOriginY;
     this.stickX = stickAxis(dx);
     this.stickY = stickAxis(dy);
     // Draw the base where the finger went down and the knob under the finger.
@@ -348,6 +386,18 @@ export class InputDevices {
     this.stick.hidden = true;
   }
 
+  /** This finger is the only one on the screen: whatever another held is let go. */
+  private onlyFinger(pointerId: number): void {
+    if (this.stickPointer !== -1 && this.stickPointer !== pointerId) this.releaseStick();
+    // It came down on the stick's side and was passed over for a finger that
+    // was not there: the stick is its.
+    if (this.passedOver?.id === pointerId && this.stickPointer === -1) {
+      this.takeStick(this.passedOver);
+    }
+    this.passedOver = null;
+    for (const button of this.buttons) button.keepOnly(pointerId);
+  }
+
   private release(): void {
     this.held.clear();
     this.mouseDown = false;
@@ -356,11 +406,8 @@ export class InputDevices {
 
   private releaseTouch(): void {
     this.releaseStick();
-    this.fire.release();
-    this.heavy.release();
-    this.seek.release();
-    this.faster.release();
-    this.slower.release();
+    this.passedOver = null;
+    for (const button of this.buttons) button.release();
   }
 }
 
