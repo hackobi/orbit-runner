@@ -174,7 +174,7 @@ export class FortScreen {
     const waiting = context.cratesInFlight;
     const holdNote =
       waiting > 0
-        ? `${waiting} crate${waiting === 1 ? '' : 's'} won in flight ${waiting === 1 ? 'is' : 'are'} still aboard your ship. Bring ${waiting === 1 ? 'it' : 'them'} in with a claim code from ⚙ for now.`
+        ? `${waiting} crate${waiting === 1 ? '' : 's'} won in flight ${waiting === 1 ? 'is' : 'are'} still aboard your ship. ${waiting === 1 ? 'It' : 'They'} cannot be brought into this hold yet.`
         : '';
     const status = fort
       ? this.problem && !this.problem.ok && this.problem.reason === 'unreachable'

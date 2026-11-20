@@ -588,6 +588,44 @@ describe('the fort', () => {
     expect(world.room.shipOf(id)?.alive).toBe(true);
   });
 
+  it('a ship destroyed by something else while its pilot was away also ends in the fort', () => {
+    const world = new TestWorld(3, 0, false);
+    const pilot = world.addClient({});
+    world.run(500);
+    const id = pilot.core.playerId;
+    pilot.core.setAway(true);
+    world.run(1000);
+    // Into the planet, well inside the ten seconds of grace.
+    destroyed(world, id);
+    expect(world.deaths[0]?.cause).not.toBe(CAUSE_DISCONNECT);
+    expect(world.room.inFort(id)).toBe(false);
+
+    world.run((AWAY_GRACE_TICKS + 600) * TICK_MS);
+    expect(world.room.inFort(id)).toBe(true);
+    pilot.core.setAway(false);
+    world.run(RESPAWN_MS + 2000);
+    expect(pilot.core.fort).toBe(true);
+    expect(world.room.shipOf(id)?.alive).toBe(false);
+    expect(world.deaths).toHaveLength(1);
+  });
+
+  it('a pilot taken out for idling who goes through the fort flies again on Launch, hands off the stick', () => {
+    const world = new TestWorld(3, 0, false);
+    const pilot = world.addClient({});
+    world.run(500);
+    const id = pilot.core.playerId;
+    world.place(id, { x: 0, y: 400, z: 7000, yaw: 1.5, pitch: 0, speed: 5, targetSpeed: 5 });
+    world.run((IDLE_TICKS + 600) * TICK_MS);
+    expect(world.room.shipOf(id)?.alive).toBe(false);
+
+    pilot.core.setFort(true);
+    world.run(1000);
+    expect(pilot.core.fort).toBe(true);
+    pilot.core.setFort(false);
+    world.run(500);
+    expect(world.room.shipOf(id)?.alive).toBe(true);
+  });
+
   it('a pilot who was only away for a moment still has their ship and is not in the fort', () => {
     const world = new TestWorld(3, 0, false);
     const pilot = world.addClient({});

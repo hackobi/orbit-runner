@@ -211,23 +211,56 @@ describe('checking what the fort sent', () => {
     expect(parseFortReply({ ok: false, reason: 'off' })).toEqual({ ok: false, reason: 'off' });
   });
 
-  it('refuses a fort with a part missing or of the wrong kind', () => {
-    const [first] = FORT.crew;
+  it('refuses what is not a fort at all', () => {
     const broken: unknown[] = [
       null,
       'fort',
       { ...FORT, now: -1 },
       { ...FORT, currencies: { ...FORT.currencies, credits: '100' } },
-      { ...FORT, crew: [{ ...first, state: 'asleep' }] },
-      { ...FORT, crew: [{ ...first, until: 'soon' }] },
-      { ...FORT, crew: [{ ...first, name: '' }] },
-      { ...FORT, hold: { ...FORT.hold, crates: [{ id: 'x' }] } },
-      { ...FORT, reports: [{ id: 'in_1', at: 1, title: 7, detail: null }] },
+      { ...FORT, crew: 'everyone' },
+      { ...FORT, hold: { ...FORT.hold, itemCount: -1 } },
+      { ...FORT, reports: undefined },
       { ...FORT, hold: undefined },
     ];
     for (const value of broken) expect(parseFortView(value)).toBeNull();
     expect(parseFortReply({ ok: true, fort: null })).toBeNull();
     expect(parseFortReply({ ok: false, reason: 'because' })).toBeNull();
     expect(parseFortReply({ fort: FORT })).toBeNull();
+  });
+
+  it('leaves out an entry it cannot read, keeps the rest, and says how many', () => {
+    const [first, second] = FORT.crew;
+    let leftOut = 0;
+    const fort = parseFortView(
+      {
+        ...FORT,
+        crew: [{ ...first, state: 'asleep' }, second, { ...first, until: 'soon' }],
+        hold: { ...FORT.hold, crates: [{ id: 'x' }, ...FORT.hold.crates] },
+        reports: [{ id: 'in_0', at: 1, title: 7, detail: null }, ...FORT.reports],
+      },
+      (entries) => {
+        leftOut = entries;
+      },
+    );
+    expect(fort?.crew).toEqual([second]);
+    expect(fort?.hold.crates).toEqual(FORT.hold.crates);
+    expect(fort?.reports).toEqual(FORT.reports);
+    expect(leftOut).toBe(4);
+    // A whole fort reports nothing left out.
+    leftOut = -1;
+    parseFortView(FORT, (entries) => {
+      leftOut = entries;
+    });
+    expect(leftOut).toBe(-1);
+  });
+
+  it('cuts long words to fit instead of refusing them', () => {
+    const [first] = FORT.reports;
+    const fort = parseFortView({
+      ...FORT,
+      reports: [{ ...first, title: 't'.repeat(900), detail: 'd'.repeat(900) }],
+    });
+    expect(fort?.reports[0]?.title).toHaveLength(200);
+    expect(fort?.reports[0]?.detail).toHaveLength(400);
   });
 });

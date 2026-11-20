@@ -75,18 +75,31 @@ const count = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 const text = (value: unknown, max: number): string | null =>
   typeof value === 'string' && value.length > 0 && value.length <= max ? value : null;
-const optionalText = (value: unknown, max: number): string | null | undefined =>
-  value === null || value === undefined ? null : (text(value, max) ?? undefined);
+/** Words for a person to read: any length is taken, and cut to fit. */
+const words = (value: unknown, max: number): string | null =>
+  typeof value === 'string' && value.length > 0 ? value.slice(0, max) : null;
+const optionalWords = (value: unknown, max: number): string | null | undefined =>
+  value === null || value === undefined || value === '' ? null : (words(value, max) ?? undefined);
 
-/** Every entry of a list read by `one`, or null if the list or any entry is wrong. */
-function list<T>(value: unknown, max: number, one: (entry: unknown) => T | null): T[] | null {
-  if (!Array.isArray(value) || value.length > max) return null;
+/**
+ * The entries of a list that `one` can read, or null if it is not a list.
+ * An entry that cannot be read is left out and counted, so that one odd
+ * report does not cost the pilot the sight of their whole fort.
+ */
+function list<T>(
+  value: unknown,
+  max: number,
+  one: (entry: unknown) => T | null,
+  left: { out: number },
+): T[] | null {
+  if (!Array.isArray(value)) return null;
   const read: T[] = [];
-  for (const entry of value) {
+  for (const entry of value.slice(0, max)) {
     const item = one(entry);
-    if (item === null) return null;
-    read.push(item);
+    if (item === null) left.out += 1;
+    else read.push(item);
   }
+  left.out += Math.max(0, value.length - max);
   return read;
 }
 
@@ -94,12 +107,12 @@ function crewMember(value: unknown): CrewMember | null {
   const f = fields(value);
   if (!f) return null;
   const id = text(f.id, 80);
-  const name = text(f.name, 120);
-  const className = text(f.className, 60);
+  const name = words(f.name, 120);
+  const className = words(f.className, 60);
   const level = count(f.level);
   const state = CREW_STATES.find((known) => known === f.state);
   const until = f.until === null ? null : count(f.until);
-  const doing = optionalText(f.doing, 200);
+  const doing = optionalWords(f.doing, 200);
   if (id === null || name === null || className === null || level === null) return null;
   if (!state) return null;
   if (f.until !== null && until === null) return null;
@@ -118,9 +131,9 @@ function crate(value: unknown): FortCrate | null {
 function item(value: unknown): FortItem | null {
   const f = fields(value);
   const id = text(f?.id, 80);
-  const name = text(f?.name, 120);
+  const name = words(f?.name, 120);
   const rarity = text(f?.rarity, 20);
-  const slot = optionalText(f?.slot, 40);
+  const slot = optionalWords(f?.slot, 40);
   return id !== null && name !== null && rarity !== null && slot !== undefined
     ? { id, name, rarity, slot }
     : null;
@@ -130,15 +143,22 @@ function report(value: unknown): FortReport | null {
   const f = fields(value);
   const id = text(f?.id, 80);
   const at = count(f?.at);
-  const title = text(f?.title, 200);
-  const detail = optionalText(f?.detail, 400);
+  const title = words(f?.title, 200);
+  const detail = optionalWords(f?.detail, 400);
   return id !== null && at !== null && title !== null && detail !== undefined
     ? { id, at, title, detail }
     : null;
 }
 
-/** A fort as SpaceFort's server sends it, checked. Null for anything else. */
-export function parseFortView(value: unknown): FortView | null {
+/**
+ * A fort as SpaceFort's server sends it, checked. Null if it is not a fort at
+ * all. Entries of its lists that cannot be read are left out, and `onLeftOut`
+ * is told how many, so whoever asked can say so.
+ */
+export function parseFortView(
+  value: unknown,
+  onLeftOut?: (entries: number) => void,
+): FortView | null {
   const f = fields(value);
   const currencies = fields(f?.currencies);
   const hold = fields(f?.hold);
@@ -147,14 +167,16 @@ export function parseFortView(value: unknown): FortView | null {
   const credits = count(currencies.credits);
   const upgradePoints = count(currencies.upgradePoints);
   const renown = count(currencies.renown);
-  const crew = list(f.crew, 200, crewMember);
-  const crates = list(hold.crates, 2000, crate);
+  const left = { out: 0 };
+  const crew = list(f.crew, 200, crewMember, left);
+  const crates = list(hold.crates, 2000, crate, left);
   const itemCount = count(hold.itemCount);
-  const items = list(hold.items, 200, item);
-  const reports = list(f.reports, 50, report);
+  const items = list(hold.items, 200, item, left);
+  const reports = list(f.reports, 50, report, left);
   if (now === null || credits === null || upgradePoints === null || renown === null) return null;
   if (itemCount === null) return null;
   if (!crew || !crates || !items || !reports) return null;
+  if (left.out > 0) onLeftOut?.(left.out);
   return {
     now,
     currencies: { credits, upgradePoints, renown },

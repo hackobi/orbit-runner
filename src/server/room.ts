@@ -1093,10 +1093,11 @@ export class Room {
       if ((graceOver || player.idle) && player.ship.alive) {
         player.ship = destroyShip(player.ship);
         this.recordDeath(player, null, CAUSE_DISCONNECT);
-        // Whoever comes back from being away comes back to the fort, not
-        // into space with a ship they were not there to fly.
-        if (player.away) this.setFort(player, true);
       }
+      // Whoever comes back from being away with no ship comes back to the
+      // fort, not into space with a ship they were not there to fly. That
+      // holds however the ship went: the grace running out, a rock, a shot.
+      if (graceOver && !player.ship.alive && !player.inFort) this.setFort(player, true);
       // Nobody keeps one of the sixteen seats for ever without playing.
       const outSince = player.away
         ? player.awaySinceTick
@@ -1591,8 +1592,10 @@ export class Room {
     if (player.inFort !== held) {
       player.inFort = held;
       player.fortSinceTick = this.tick;
-      // Launching is a hand on the controls.
+      // Launching is a hand on the controls: a pilot taken out for idling
+      // who then went through the fort flies again without touching the stick.
       player.unchangedTicks = 0;
+      if (!held) player.idle = false;
     }
     player.outbox.push({ kind: 'fort', held });
   }

@@ -46,6 +46,9 @@ export async function readFort(link: FortLink, pilotKey: string): Promise<FortRe
   } catch {
     return { ok: false, reason: 'unreachable' };
   }
-  const fort = parseFortView((body as { fort?: unknown } | null)?.fort);
+  const fort = parseFortView((body as { fort?: unknown } | null)?.fort, (entries) => {
+    // Shown to the pilot without them; said here so it does not pass unseen.
+    console.warn(`fort: ${entries} entries from SpaceFort could not be read and were left out`);
+  });
   return fort ? { ok: true, fort } : { ok: false, reason: 'unreachable' };
 }
