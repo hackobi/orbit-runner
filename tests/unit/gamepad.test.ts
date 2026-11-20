@@ -52,6 +52,7 @@ describe('the controller layout', () => {
       boost: false,
       brake: false,
       menu: false,
+      view: false,
     });
   });
 
@@ -73,6 +74,7 @@ describe('the controller layout', () => {
     expect(only(0)).toEqual(['boost']);
     expect(only(1)).toEqual(['brake']);
     expect(only(9)).toEqual(['menu']);
+    expect(only(4)).toEqual(['view']);
   });
 
   it('counts a trigger as held from a light pull, and a resting one as not', () => {

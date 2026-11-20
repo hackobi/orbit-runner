@@ -47,6 +47,35 @@ body {
   touch-action: none;
 }
 
+#cockpit {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+#cockpit[hidden] {
+  display: none;
+}
+
+#cockpit .frame {
+  fill: rgb(6 10 20 / 88%);
+  fill-rule: evenodd;
+}
+
+#cockpit .strut,
+#cockpit .reticle {
+  fill: none;
+  stroke: rgb(120 170 255 / 45%);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+}
+
+#cockpit .reticle {
+  stroke: rgb(170 230 255 / 85%);
+}
+
 #hud {
   position: fixed;
   inset: 0;

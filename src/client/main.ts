@@ -283,6 +283,24 @@ window.addEventListener('gamepadconnected', showPad);
 window.addEventListener('gamepaddisconnected', showPad);
 showPad();
 devices.onPadMenu = toggleSettings;
+
+// The cockpit view: L1 / LB on a controller or the C key, in and out.
+const cockpitFrame = document.getElementById('cockpit');
+const showCockpit = (on: boolean): void => {
+  scene.cockpit = on;
+  cockpitFrame?.toggleAttribute('hidden', !on);
+};
+const toggleCockpit = (): void => {
+  settings.cockpit = !settings.cockpit;
+  saveSettings(settings);
+  showCockpit(settings.cockpit);
+};
+showCockpit(settings.cockpit);
+devices.onPadView = toggleCockpit;
+window.addEventListener('keydown', (event) => {
+  if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
+  if (event.code === 'KeyC') toggleCockpit();
+});
 invertBox.checked = settings.invertPitch;
 invertBox.addEventListener('change', () => {
   settings.invertPitch = invertBox.checked;

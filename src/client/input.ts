@@ -114,6 +114,9 @@ export class InputDevices {
   /** Called once each time the controller's menu button goes down. */
   onPadMenu: (() => void) | null = null;
   private padMenuDown = false;
+  /** Called once each time the controller's view button (L1 / LB) goes down. */
+  onPadView: (() => void) | null = null;
+  private padViewDown = false;
 
   // Mouse: steers while its button is down.
   private mouseDown = false;
@@ -236,6 +239,9 @@ export class InputDevices {
     const menu = pad?.menu ?? false;
     if (menu && !this.padMenuDown) this.onPadMenu?.();
     this.padMenuDown = menu;
+    const viewButton = pad?.view ?? false;
+    if (viewButton && !this.padViewDown) this.onPadView?.();
+    this.padViewDown = viewButton;
     // The stick: right turns right, as the D key; up is the Up key.
     const pitch = up - down + mousePitch - this.stickY + this.tiltPitch + (pad?.pitch ?? 0);
     return {
