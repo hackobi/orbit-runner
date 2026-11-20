@@ -75,10 +75,13 @@ function element<T extends HTMLElement>(id: string, type: new () => T): T {
 class HeldButton {
   down = false;
   private pointerId = -1;
+  private readonly node: HTMLElement;
 
   constructor(node: HTMLElement) {
+    this.node = node;
     node.addEventListener('pointerdown', (event) => {
-      if (this.down) return;
+      // The newest finger owns the press. A phone can take a finger away
+      // without ever saying it lifted, and the press must not wait for it.
       this.down = true;
       this.pointerId = event.pointerId;
       node.classList.add('down');
@@ -93,7 +96,6 @@ class HeldButton {
     const up = (event: PointerEvent): void => {
       if (event.pointerId !== this.pointerId) return;
       this.release();
-      node.classList.remove('down');
     };
     node.addEventListener('pointerup', up);
     node.addEventListener('pointercancel', up);
@@ -105,6 +107,7 @@ class HeldButton {
   release(): void {
     this.down = false;
     this.pointerId = -1;
+    this.node.classList.remove('down');
   }
 }
 
@@ -194,7 +197,10 @@ export class InputDevices {
       }
       // The first touch shows the touch controls, on any device that has them.
       this.touchLayer.hidden = false;
-      if (this.stickPointer !== -1 || event.clientX > window.innerWidth * STICK_SIDE) return;
+      if (event.clientX > window.innerWidth * STICK_SIDE) return;
+      // A new finger on the stick's side takes the stick, even if an earlier
+      // one never reported lifting: iOS can swallow that (a swipe from the
+      // screen's edge, a system gesture), and the stick would stay over.
       this.stickPointer = event.pointerId;
       this.stickOriginX = event.clientX;
       this.stickOriginY = event.clientY;
@@ -215,6 +221,17 @@ export class InputDevices {
     };
     canvas.addEventListener('pointerup', up);
     canvas.addEventListener('pointercancel', up);
+    canvas.addEventListener('lostpointercapture', (event) => {
+      if (event.pointerId === this.stickPointer) this.releaseStick();
+    });
+    // A second account of the fingers, kept by the browser separately from
+    // the pointer events: once it says none is on the screen, nothing touched
+    // is held, whatever went unreported.
+    const fingersGone = (event: TouchEvent): void => {
+      if (event.touches.length === 0) this.releaseTouch();
+    };
+    window.addEventListener('touchend', fingersGone);
+    window.addEventListener('touchcancel', fingersGone);
     canvas.addEventListener('contextmenu', (event) => {
       event.preventDefault();
     });
@@ -334,6 +351,10 @@ export class InputDevices {
   private release(): void {
     this.held.clear();
     this.mouseDown = false;
+    this.releaseTouch();
+  }
+
+  private releaseTouch(): void {
     this.releaseStick();
     this.fire.release();
     this.heavy.release();

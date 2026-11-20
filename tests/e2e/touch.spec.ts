@@ -184,3 +184,65 @@ test('held upright, the page asks for the phone to be turned; sideways it does n
   await page.setViewportSize(size);
   await expect(page.locator('#rotate')).toBeHidden();
 });
+
+// On an iPhone the left stick stayed over twice in a twenty-minute session
+// (2026-11-20). A phone can take a finger for a gesture of its own and never
+// tell the page it lifted. These are pointer events made in the page, so that
+// one can go down and simply never come up.
+test('a finger whose lift is never reported does not leave the stick or a button held', async ({
+  page,
+}) => {
+  const finger = (type: string, id: number, x: number, y: number, selector = '#game') =>
+    page.evaluate(
+      ([kind, pointerId, clientX, clientY, target]) => {
+        document.querySelector(target)?.dispatchEvent(
+          new PointerEvent(kind, {
+            pointerType: 'touch',
+            pointerId,
+            clientX,
+            clientY,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      },
+      [type, id, x, y, selector] as const,
+    );
+  const fingersGone = () =>
+    page.evaluate(() => window.dispatchEvent(new TouchEvent('touchend', { touches: [] })));
+
+  // A finger steers hard over, and is then lost without a word.
+  await finger('pointerdown', 71, 180, 220);
+  await finger('pointermove', 71, 236, 220);
+  await expect.poll(() => controls(page)).toMatchObject({ yaw: -1 });
+
+  // The next finger on that side takes the stick, from where it lands.
+  await finger('pointerdown', 72, 150, 200);
+  await expect.poll(() => controls(page)).toMatchObject({ yaw: 0, pitch: 0 });
+  await finger('pointermove', 72, 94, 200);
+  await expect.poll(() => controls(page)).toMatchObject({ yaw: 1 });
+  // The lost finger turning up again moves nothing.
+  await finger('pointermove', 71, 400, 400);
+  expect(await controls(page)).toMatchObject({ yaw: 1, pitch: 0 });
+  await finger('pointerup', 72, 94, 200);
+  await expect.poll(() => controls(page)).toMatchObject({ yaw: 0 });
+  await expect(page.locator('#knob')).toBeHidden();
+
+  // With no new finger: the browser saying no finger is left lets go of
+  // everything touched.
+  const fire = await centreOf(page, '#fire');
+  await finger('pointerdown', 73, 180, 220);
+  await finger('pointermove', 73, 236, 220);
+  await finger('pointerdown', 74, fire.x, fire.y, '#fire');
+  await expect.poll(() => controls(page)).toMatchObject({ yaw: -1, fire: true });
+  await fingersGone();
+  await expect.poll(() => controls(page)).toMatchObject({ yaw: 0, fire: false });
+  await expect(page.locator('#knob')).toBeHidden();
+  await expect(page.locator('#fire')).not.toHaveClass(/down/);
+
+  // A button pressed again after a lost finger answers to the new one.
+  await finger('pointerdown', 75, fire.x, fire.y, '#fire');
+  await finger('pointerdown', 76, fire.x, fire.y, '#fire');
+  await finger('pointerup', 76, fire.x, fire.y, '#fire');
+  await expect.poll(() => controls(page)).toMatchObject({ fire: false });
+});
