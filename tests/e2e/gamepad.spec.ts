@@ -82,7 +82,7 @@ test('a controller flies the ship, to the same values as the keys', async ({ pag
   await setPad(page, { connected: true });
   await expect(page.locator('#pad-status')).toHaveText('Controller: DualSense Wireless Controller');
   await expect(page.locator('#pad-layout')).toBeVisible();
-  await expect(page.locator('#pad-layout dt')).toHaveCount(8);
+  await expect(page.locator('#pad-layout dt')).toHaveCount(9);
   await expect(page.locator('#banner')).toContainText('DualSense Wireless Controller connected');
 
   // At rest it asks for nothing.

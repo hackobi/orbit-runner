@@ -22,9 +22,11 @@ const BUTTON = {
   rightBumper: 5,
   leftTrigger: 6,
   rightTrigger: 7,
+  view: 8,
   menu: 9,
   dpadUp: 12,
   dpadDown: 13,
+  touchpad: 17,
 } as const;
 const AXIS = { leftX: 0, leftY: 1, rightY: 3 } as const;
 
@@ -38,6 +40,7 @@ export const PAD_LAYOUT: readonly { control: string; action: string }[] = [
   { control: '○ / B', action: 'Brake' },
   { control: 'D-pad or right stick, up and down', action: 'Speed' },
   { control: 'Options / Menu', action: 'Open or close settings' },
+  { control: 'Touchpad or Create / View', action: 'The fort when your ship is down, and launch' },
 ];
 
 /** The parts of a Gamepad this file reads, so tests can pass plain objects. */
@@ -56,8 +59,8 @@ export function padAxis(value: number): number {
   return (Math.sign(value) * (size - PAD_DEAD_ZONE)) / (1 - PAD_DEAD_ZONE);
 }
 
-/** The controls a pad is asking for, plus its menu button. Pitch is before any inversion. */
-export function padControls(pad: PadLike): Required<Controls> & { menu: boolean } {
+/** The controls a pad is asking for, plus its menu and fort buttons. Pitch is before any inversion. */
+export function padControls(pad: PadLike): Required<Controls> & { menu: boolean; fort: boolean } {
   const held = (index: number, threshold = 0.5): boolean => {
     const button = pad.buttons[index];
     return !!button && (button.pressed || button.value > threshold);
@@ -77,6 +80,7 @@ export function padControls(pad: PadLike): Required<Controls> & { menu: boolean 
     boost: held(BUTTON.south),
     brake: held(BUTTON.east),
     menu: held(BUTTON.menu),
+    fort: held(BUTTON.view) || held(BUTTON.touchpad),
   };
 }
 

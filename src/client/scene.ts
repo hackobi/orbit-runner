@@ -55,6 +55,13 @@ export interface WorldView {
 // Camera values are v1's.
 const CAMERA_OFFSET = new Vector3(0, 3.7, -10.8); // main.js:4498
 const LOOK_AHEAD = 20; // main.js:8875
+// The fort's view: from above and behind where the ship was, drifting slowly
+// round it, looking at the planet.
+const FORT_EYE_DISTANCE = 90;
+const FORT_EYE_HEIGHT = 45;
+const FORT_ORBIT_RATE = 0.035; // radians a second
+/** How quickly the camera goes between the cockpit's view and the fort's. */
+const FORT_CAMERA_FOLLOW = 2.6;
 const BASE_FOV = 70; // main.js:333
 const FOV_SPEED_FLOOR = 14; // main.js:8729
 const FOV_PER_SPEED = 0.7;
@@ -314,6 +321,10 @@ export class GameScene {
   private exhaustOwed = 0;
   private slowMotionSeconds = 0;
   private shakeAmount = 0;
+  private fort = false;
+  /** 0 in the cockpit's view, 1 in the fort's, and in between while the camera moves. */
+  private fortBlend = 0;
+  private readonly fortEye = new Vector3();
   private wormholes: InstancedMesh | null = null;
   private wormholeIds: number[] = [];
   /** Seconds since the scene was made. Turns the wormholes' arms. */
@@ -494,6 +505,14 @@ export class GameScene {
       );
   }
 
+  /**
+   * The fort's view or the cockpit's. The camera glides from one to the other
+   * over about a second; nothing else about the picture changes.
+   */
+  setFort(on: boolean): void {
+    this.fort = on;
+  }
+
   /** Jolts the camera (main.js:8865-8869). Amounts are v1's, 0.08 to 1.2. */
   shake(amount: number): void {
     this.shakeAmount = Math.min(SHAKE_MAX, this.shakeAmount + amount);
@@ -523,6 +542,21 @@ export class GameScene {
     this.camera.position.copy(ship.position).add(this.offset);
     this.forward.set(0, 0, 1).applyQuaternion(this.orientation);
     this.lookAt.copy(ship.position).addScaledVector(this.forward, LOOK_AHEAD);
+    this.fortBlend +=
+      ((this.fort ? 1 : 0) - this.fortBlend) * (1 - Math.exp(-FORT_CAMERA_FOLLOW * elapsedSeconds));
+    if (this.fortBlend > 0.001) {
+      const angle = this.seconds.value * FORT_ORBIT_RATE;
+      this.fortEye.set(
+        view.x + Math.cos(angle) * FORT_EYE_DISTANCE,
+        view.y + FORT_EYE_HEIGHT,
+        view.z + Math.sin(angle) * FORT_EYE_DISTANCE,
+      );
+      // Ease in and out, so the move starts and stops gently.
+      const eased = this.fortBlend * this.fortBlend * (3 - 2 * this.fortBlend);
+      this.camera.position.lerp(this.fortEye, eased);
+      // The planet sits at the middle of the world.
+      this.lookAt.multiplyScalar(1 - eased);
+    }
     if (this.shakeAmount > 0) {
       const shake = this.shakeAmount;
       this.camera.position.x += (Math.random() * 2 - 1) * shake;

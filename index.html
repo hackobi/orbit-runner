@@ -16,6 +16,7 @@
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <title>Orbit Runner</title>
     <link rel="stylesheet" href="/src/client/style.css" />
+    <link rel="stylesheet" href="/src/client/fort.css" />
   </head>
   <body>
     <canvas id="game" tabindex="0" aria-label="Orbit Runner"></canvas>
@@ -86,6 +87,7 @@
         <p id="death-detail"></p>
         <p id="death-best"></p>
         <p id="death-respawn"></p>
+        <button type="button" id="death-fort">Fort <kbd>Tab</kbd></button>
       </div>
 
       <div id="help"></div>
@@ -117,6 +119,61 @@
 
       <div id="rotate"><p>Turn your phone sideways to fly.</p></div>
     </div>
+
+    <!-- The fort: where a pilot is while they have no ship. Same page, same sky. -->
+    <section id="fort" aria-label="The fort" tabindex="-1" hidden>
+      <header id="fort-top">
+        <h1>The Fort</h1>
+        <dl id="fort-readouts">
+          <div>
+            <dt>Pilot</dt>
+            <dd id="fort-pilot"></dd>
+          </div>
+          <div>
+            <dt>Upgrade points</dt>
+            <dd id="fort-upgrade"></dd>
+          </div>
+          <div>
+            <dt>Credits</dt>
+            <dd id="fort-credits"></dd>
+          </div>
+          <div>
+            <dt>Renown</dt>
+            <dd id="fort-renown"></dd>
+          </div>
+          <div>
+            <dt>Crates</dt>
+            <dd id="fort-crates"></dd>
+          </div>
+        </dl>
+      </header>
+
+      <div id="fort-deck">
+        <article class="fort-plate" id="fort-debrief" aria-labelledby="fort-debrief-title">
+          <h2 id="fort-debrief-title"></h2>
+          <p id="fort-debrief-note"></p>
+          <dl id="fort-debrief-lines"></dl>
+          <h3>Reports</h3>
+          <ul id="fort-reports" class="fort-well"></ul>
+        </article>
+
+        <article class="fort-plate" id="fort-crew-plate" aria-labelledby="fort-crew-title">
+          <h2 id="fort-crew-title">Crew</h2>
+          <ul id="fort-crew" class="fort-well"></ul>
+        </article>
+
+        <article class="fort-plate" id="fort-hold-plate" aria-labelledby="fort-hold-title">
+          <h2 id="fort-hold-title">Hold</h2>
+          <p id="fort-hold-note"></p>
+          <ul id="fort-hold" class="fort-well"></ul>
+        </article>
+      </div>
+
+      <footer id="fort-foot">
+        <p id="fort-state" role="status" aria-live="polite"></p>
+        <button type="button" id="fort-launch">Launch <kbd>Tab</kbd></button>
+      </footer>
+    </section>
     <script type="module" src="/src/client/main.ts"></script>
   </body>
 </html>

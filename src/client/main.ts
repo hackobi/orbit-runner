@@ -1,11 +1,15 @@
 import { Session } from '../net/session.ts';
 import { WebSocketTransport } from '../net/wsTransport.ts';
 import { SIM } from '../shared/constants.ts';
-import { REJECT_IDLE, REJECT_VERSION } from '../shared/protocol.ts';
+import { NEUTRAL_CONTROLS } from '../shared/sim/ship.ts';
+import { NO_CRATE, REJECT_FORT, REJECT_IDLE, REJECT_VERSION } from '../shared/protocol.ts';
 import type { GameEvent } from '../shared/protocol.ts';
 import type { BulletView } from '../net/client.ts';
 import { createDebugRecorder } from './debugHook.ts';
 import { PAD_LAYOUT, activePad, padName, unusablePad } from './gamepad.ts';
+import { FortScreen } from './fort.ts';
+import { SortieTracker, askFort, askLaunch, stepFortGate } from './fortModel.ts';
+import type { FortGate } from './fortModel.ts';
 import { InputDevices } from './input.ts';
 import { loadSettings, saveSettings } from './settings.ts';
 import { watchForUpdates } from './update.ts';
@@ -94,6 +98,7 @@ function shakeFor(event: GameEvent): void {
 
 function onGameEvent(event: GameEvent): void {
   recorder?.onGameEvent(event);
+  if (event.kind === 'crate' && event.tier !== NO_CRATE) cratesWon += 1;
   hud.onEvent(event, session.core, performance.now());
   shakeFor(event);
   const core = session.core;
@@ -147,6 +152,9 @@ function keepToken(token: Uint8Array): void {
   }
 }
 
+const hexOf = (bytes: Uint8Array): string =>
+  Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+
 // The pilot's key: made once and kept in this browser, so experience and
 // missions carry over between visits. Whoever holds it is that pilot.
 const PILOT_KEY = 'orbit-runner.pilot';
@@ -188,7 +196,11 @@ const session: Session = new Session({
   onSessionToken: keepToken,
   pilotKey: pilotKey(),
   now: () => performance.now(),
-  controls: (tick) => recorder?.controls(tick, session.core) ?? devices.read(throttleOpen()),
+  // In the fort nothing reaches the ship: keys pressed there are not flying.
+  controls: (tick) => {
+    const controls = recorder?.controls(tick, session.core) ?? devices.read(throttleOpen());
+    return fortGate.open ? NEUTRAL_CONTROLS : controls;
+  },
   onGameEvent,
   // This player's own shots flash the moment they meet a ship on this screen.
   onViewHit: (hit) => {
@@ -206,6 +218,105 @@ recorder?.attach(
   () => TIERS[quality.tier]?.name ?? '',
 );
 
+// --- The fort -------------------------------------------------------------------
+//
+// Where the pilot is while they have no ship. One control goes in and comes
+// out: Tab, the controller's touchpad or View button, or the button on screen.
+
+let fortGate: FortGate = { open: false, launching: false };
+/** The tab has been hidden since the ship last flew. */
+let beenAway = false;
+/** True when the ship was lost with the pilot away, which the fort says. */
+let lostWhileAway = false;
+let launchAskedAtMs = -Infinity;
+/** Crates won since the page opened, for the sortie report. */
+let cratesWon = 0;
+const sorties = new SortieTracker();
+const ownKey = pilotKey();
+
+function fortFacts(): { playing: boolean; shipAlive: boolean; held: boolean } {
+  const core = session.core;
+  return {
+    playing: core.status === 'playing',
+    shipAlive: core.state?.alive ?? false,
+    held: core.fort,
+  };
+}
+
+/** Launch: the server brings the ship back, or seats the pilot again if the seat went. */
+function launch(): void {
+  fortGate = askLaunch(fortGate);
+  launchAskedAtMs = -Infinity;
+  canvas.focus();
+}
+
+function toggleFort(): void {
+  if (fortGate.open) {
+    launch();
+    return;
+  }
+  const asked = askFort(fortGate, fortFacts());
+  if (asked.open) {
+    session.core.setFort(true);
+    lostWhileAway = false;
+  }
+  fortGate = asked;
+}
+
+const fort = new FortScreen({
+  pilotKey: ownKey ? hexOf(ownKey) : null,
+  onLaunch: launch,
+  // The copy packed into the Mac app is not served by the game's server, so
+  // it has nowhere to ask: its fort screen says no fort is connected.
+  ...(window.orbitApp?.serverUrl
+    ? { fetchFort: () => Promise.resolve({ ok: false, reason: 'off' } as const) }
+    : {}),
+});
+element('death-fort', HTMLButtonElement).addEventListener('click', toggleFort);
+devices.onPadFort = toggleFort;
+window.addEventListener('keydown', (event) => {
+  if (event.code !== 'Tab' || event.metaKey || event.ctrlKey || event.altKey) return;
+  // Tab never moves the focus about a game.
+  event.preventDefault();
+  if (!event.repeat) toggleFort();
+});
+
+/** How often a launch is asked for again while the server has not answered. */
+const LAUNCH_RETRY_MS = 500;
+
+/** Keeps the fort screen, the server and the camera in step. Once a frame. */
+function updateFort(nowMs: number): void {
+  const core = session.core;
+  const facts = fortFacts();
+  if (core.status === 'away') beenAway = true;
+  if (facts.playing && facts.shipAlive) beenAway = false;
+  const wasOpen = fortGate.open;
+  fortGate = stepFortGate(fortGate, facts);
+  // Opened by the server, not by a press: the ship went while the pilot was away.
+  if (fortGate.open && !wasOpen) lostWhileAway = beenAway;
+  if (fortGate.launching && nowMs - launchAskedAtMs >= LAUNCH_RETRY_MS) {
+    launchAskedAtMs = nowMs;
+    if (core.status === 'rejected' && core.rejectReason === REJECT_FORT) session.rejoin();
+    else if (facts.playing) core.setFort(false);
+  }
+  if (facts.playing) fort.warm(nowMs);
+  const seatGone = core.status === 'rejected' && core.rejectReason === REJECT_FORT;
+  const context = {
+    xp: core.progress?.xp ?? null,
+    cratesInFlight: core.crates,
+    sortie: sorties.last,
+    lostWhileAway,
+    launchNote: seatGone
+      ? 'Your seat in the fight was given up while you were here. Launch takes a new one.'
+      : facts.playing
+        ? ''
+        : 'Not connected to the fight. Launch will fly as soon as it is.',
+  };
+  fort.setOpen(fortGate.open, context, nowMs);
+  fort.update(context, nowMs);
+  scene.setFort(fortGate.open);
+}
+
 // --- Settings panel -----------------------------------------------------------
 
 const settingsButton = element('settings-button', HTMLButtonElement);
@@ -218,7 +329,7 @@ const tiltRow = element('tilt-row', HTMLLabelElement);
 const claimButton = element('claim-button', HTMLButtonElement);
 const claimText = element('claim-text', HTMLParagraphElement);
 claimButton.addEventListener('click', () => {
-  const key = pilotKey();
+  const key = ownKey;
   if (!key) {
     claimText.textContent = 'This browser keeps no pilot, so it holds no crates.';
     return;
@@ -230,9 +341,7 @@ claimButton.addEventListener('click', () => {
   void fetch('/api/claim-code', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      pilotKey: Array.from(key, (byte) => byte.toString(16).padStart(2, '0')).join(''),
-    }),
+    body: JSON.stringify({ pilotKey: hexOf(key) }),
   })
     .then((response) => response.json() as Promise<{ code?: string; crates?: number }>)
     .then((reply) => {
@@ -324,6 +433,8 @@ function statusText(): string {
           ? 'This copy of the game is older than the server. Get the current app.'
           : 'This copy of the game is out of date. Reload to update.';
       }
+      // The fort screen says what happened to the seat, and launches again.
+      if (core.rejectReason === REJECT_FORT) return '';
       return core.rejectReason === REJECT_IDLE
         ? 'You were away, and your seat was given to someone else. Reload to play again.'
         : 'The room is full. Try again in a moment.';
@@ -374,6 +485,7 @@ function frame(nowMs: number): void {
   if (quality.frame(elapsedMs)) applyQuality();
 
   session.update();
+  devices.pollPad();
   const core = session.core;
   const view = core.view();
   const remotes = view ? core.remoteViews() : [];
@@ -386,12 +498,20 @@ function frame(nowMs: number): void {
     bullets.push(...core.bulletViews());
     const world = core.world ? { world: core.world, tick: core.drawTick, state: core } : null;
     if (view.alive) nearMiss(nowMs, view.x, view.y, view.z);
+    sorties.update(
+      view.alive,
+      { score: core.score, kills: core.kills, xp: core.progress?.xp ?? 0, crateDrops: cratesWon },
+      nowMs,
+    );
     scene.render(view, remotes, bullets, core.playerId, elapsedMs / 1000, world);
     recorder?.frame(nowMs, elapsedMs, core, view, remotes, bullets.length);
   }
 
   hud.update(core, statusText(), view, remotes, project, nowMs);
-  if (shouldApplyUpdate(updates.ready, core.status, view?.alive ?? false)) updates.apply();
+  updateFort(nowMs);
+  if (shouldApplyUpdate(updates.ready, core.status, view?.alive ?? false, fortGate.open)) {
+    updates.apply();
+  }
 
   requestAnimationFrame(frame);
 }

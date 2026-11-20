@@ -15,7 +15,7 @@ function pad(axes: Record<number, number> = {}, buttons: Record<number, number> 
     connected: true,
     mapping: 'standard',
     axes: [0, 1, 2, 3].map((index) => axes[index] ?? 0),
-    buttons: Array.from({ length: 17 }, (_, index) => {
+    buttons: Array.from({ length: 18 }, (_, index) => {
       const value = buttons[index] ?? 0;
       return { pressed: value >= 0.5, value };
     }),
@@ -52,6 +52,7 @@ describe('the controller layout', () => {
       boost: false,
       brake: false,
       menu: false,
+      fort: false,
     });
   });
 
@@ -73,6 +74,9 @@ describe('the controller layout', () => {
     expect(only(0)).toEqual(['boost']);
     expect(only(1)).toEqual(['brake']);
     expect(only(9)).toEqual(['menu']);
+    // The fort: Create / View on any pad, and the DualSense's touchpad.
+    expect(only(8)).toEqual(['fort']);
+    expect(only(17)).toEqual(['fort']);
   });
 
   it('counts a trigger as held from a light pull, and a resting one as not', () => {

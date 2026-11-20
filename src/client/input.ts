@@ -114,6 +114,9 @@ export class InputDevices {
   /** Called once each time the controller's menu button goes down. */
   onPadMenu: (() => void) | null = null;
   private padMenuDown = false;
+  /** Called once each time the controller's fort button goes down. */
+  onPadFort: (() => void) | null = null;
+  private padFortDown = false;
 
   // Mouse: steers while its button is down.
   private mouseDown = false;
@@ -217,6 +220,25 @@ export class InputDevices {
   }
 
   /**
+   * Notices the controller's menu and fort buttons going down. `read` does
+   * this too, but only runs while the game is being simulated; this is for
+   * every frame, so the buttons work on any screen.
+   */
+  pollPad(): void {
+    const connected = activePad();
+    this.padPresses(connected ? padControls(connected) : null);
+  }
+
+  private padPresses(pad: { menu: boolean; fort: boolean } | null): void {
+    const menu = pad?.menu ?? false;
+    if (menu && !this.padMenuDown) this.onPadMenu?.();
+    this.padMenuDown = menu;
+    const fort = pad?.fort ?? false;
+    if (fort && !this.padFortDown) this.onPadFort?.();
+    this.padFortDown = fort;
+  }
+
+  /**
    * The controls as they stand right now. `atTopSpeed` says the ship's
    * throttle is fully open, which is when a held ▲ becomes the boost.
    */
@@ -233,9 +255,7 @@ export class InputDevices {
     // A controller is read afresh on every call: it has no events for sticks.
     const connected = activePad();
     const pad = connected ? padControls(connected) : null;
-    const menu = pad?.menu ?? false;
-    if (menu && !this.padMenuDown) this.onPadMenu?.();
-    this.padMenuDown = menu;
+    this.padPresses(pad);
     // The stick: right turns right, as the D key; up is the Up key.
     const pitch = up - down + mousePitch - this.stickY + this.tiltPitch + (pad?.pitch ?? 0);
     return {

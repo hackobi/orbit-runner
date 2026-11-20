@@ -5,19 +5,26 @@ import { TestWorld } from '../support/harness.ts';
 
 describe('loading a new version', () => {
   it('never happens while the ship is flying', () => {
-    expect(shouldApplyUpdate(true, 'playing', true)).toBe(false);
+    expect(shouldApplyUpdate(true, 'playing', true, false)).toBe(false);
   });
 
   it('happens between lives, and whenever there is no game to interrupt', () => {
-    expect(shouldApplyUpdate(true, 'playing', false)).toBe(true);
+    expect(shouldApplyUpdate(true, 'playing', false, false)).toBe(true);
     for (const status of ['connecting', 'away', 'closed', 'rejected'] as const) {
-      expect(shouldApplyUpdate(true, status, false)).toBe(true);
+      expect(shouldApplyUpdate(true, status, false, false)).toBe(true);
+    }
+  });
+
+  it('waits while the fort is open, whatever else is true', () => {
+    expect(shouldApplyUpdate(true, 'playing', false, true)).toBe(false);
+    for (const status of ['connecting', 'away', 'closed', 'rejected'] as const) {
+      expect(shouldApplyUpdate(true, status, false, true)).toBe(false);
     }
   });
 
   it('does nothing when no new version is waiting', () => {
-    expect(shouldApplyUpdate(false, 'playing', false)).toBe(false);
-    expect(shouldApplyUpdate(false, 'closed', false)).toBe(false);
+    expect(shouldApplyUpdate(false, 'playing', false, false)).toBe(false);
+    expect(shouldApplyUpdate(false, 'closed', false, false)).toBe(false);
   });
 });
 
@@ -69,6 +76,10 @@ describe('a page that reloads (as an update does)', () => {
     expect(second.session.core.status).toBe('playing');
     expect(second.session.core.playerId).toBe(id);
     expect(second.session.core.score).toBeGreaterThanOrEqual(4321);
+    // Their ship went while the page was gone: they are in the fort until they launch.
+    expect(second.session.core.fort).toBe(true);
+    second.session.core.setFort(false);
+    world.run(500);
     expect(second.session.core.state?.alive).toBe(true);
   });
 });
