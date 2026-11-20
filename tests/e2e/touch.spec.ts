@@ -173,6 +173,31 @@ test('"Invert pitch" flips the stick and the keys alike, and is remembered', asy
   await page.locator('#invert-pitch').uncheck();
 });
 
+test("the settings panel stays on a phone's screen, and a finger scrolls it to its last row", async ({
+  page,
+  context,
+}) => {
+  await page.locator('#settings-button').tap();
+  const screen = page.viewportSize()?.height ?? 0;
+  const panel = await page.locator('#settings').boundingBox();
+  expect(panel).not.toBeNull();
+  expect((panel?.y ?? 0) + (panel?.height ?? 0)).toBeLessThanOrEqual(screen);
+  // The panel holds more than fits: the last row starts out below its edge.
+  await expect(page.locator('#claim-button')).not.toBeInViewport();
+
+  const cdp = await context.newCDPSession(page);
+  const x = (panel?.x ?? 0) + 40;
+  const from = (panel?.y ?? 0) + (panel?.height ?? 0) - 30;
+  await touch(cdp, 'touchStart', [{ id: 1, x, y: from }]);
+  for (let moved = 10; moved <= 200; moved += 10) {
+    await touch(cdp, 'touchMove', [{ id: 1, x, y: from - moved }]);
+  }
+  await touch(cdp, 'touchEnd', []);
+  await expect(page.locator('#claim-button')).toBeInViewport({ ratio: 1 });
+  // Scrolling the panel is not steering.
+  expect((await controls(page)).pitch).toBe(0);
+});
+
 test('held upright, the page asks for the phone to be turned; sideways it does not', async ({
   page,
 }) => {

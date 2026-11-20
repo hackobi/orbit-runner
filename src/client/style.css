@@ -704,6 +704,15 @@ body {
     right: calc(132px + var(--inset-right));
   }
 
+  /* With the two looks the panel is taller than a phone on its side, so it scrolls. */
+  #settings {
+    box-sizing: border-box;
+    max-height: calc(100vh - 70px - var(--inset-top) - var(--inset-bottom));
+    max-height: calc(100dvh - 70px - var(--inset-top) - var(--inset-bottom));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
   #death {
     top: 18%;
   }
