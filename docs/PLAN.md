@@ -16,6 +16,7 @@ This file is the running checkpoint. A new session should read it first, then `d
 | New look (user request, 2026-11-19) | **Built and tested 2026-11-19 on `feature/visuals`, local only.** Sky, planet, rocks, ships, orbs and particles redrawn; client only, wire format and simulation untouched. See the log | The user looks at it and decides on a merge |
 | Cockpit view (user request, 2026-11-20) | **Built and tested 2026-11-20 on `feature/cockpit`; pushed to `feature/v2-rebuild` at 03:52 the same day, and merged into `feature/fort` (`1471644`).** L1 / LB or the C key goes into the cockpit and out (D30). No real controller has been used | None |
 | One game with SpaceFort (user request, 2026-11-20) | **Phases 1 and 2 of six are built and tested on `feature/fort`, local only, not merged or deployed.** Phase 1 (the transition): the user tried it and said yes. Phase 2 (orders): open crates, wear gear, spend skill points, send crew on jobs, crates brought in without a code, reports as banners in flight. Decisions D31 and D32; wire format 14. Needs SpaceFort's `feat/fort-backend`. See the log | The user tries the orders; then phase 3 (cross rewards). Before any deploy: `ORBIT_FORT_ID_KEY` chosen once and kept, a Railway volume, SpaceFort hosted |
+| Ship looks (user request, 2026-11-20) | **Built and tested 2026-11-21 on `feature/skins` (off `feature/fort`), local only, not merged or deployed.** Nine looks: three for the ship, three for the Fenix, three special ones for both. Client only. See the [log](#2026-11-21-nine-looks-for-the-ship-d33) | The user looks at the pictures and plays them |
 | 5. Demos integration | Not started. Direction from the user recorded under Phase 5 (reuse v1's payment flow; King of the Hill) | Separate approval, and a payment proposal first |
 
 **Next action:** the user looks at `feature/visuals` (it sits on the role-playing, drops and controller branches, none of them deployed) and decides what to merge. Before that, still open: the user chooses between step 2 of [Dogfight feel](#dogfight-feel-before-phase-5) (matches) and Phase 5. Their direction on 2026-11-16: the open room stays the normal game, everyone with the same abilities; rules, timing, groups and teams come later, for tournaments. Phases 1 to 4 are built. Phase 5 (Demos) needs separate approval and starts with a written payment proposal, not code. Open items that need the user: `npm run dev:lan` (it changes the Mac's keychain) and the phone checklist in `docs/DEVICE-TESTING.md`; opening the Mac app themselves.
@@ -753,3 +754,43 @@ After that run, a last pass (`61cdda7`): empty gear slots and skills with no poi
 
 **UNVERIFIED:** any of this on a real phone or controller; the orders with a controller alone (the buttons take keyboard focus, but nothing moves focus from a pad: phase 6); a fort with many crew or a long hold (only one or two crew were seen); SpaceFort under many pilots reading every 30 s; the Mac app with a fort behind it (its packed copy still says no fort is connected).
 
+### 2026-11-21: nine looks for the ship (D33)
+
+The user asked for nine skins: three that fit the normal ship, three that fit the Fenix, and three special ones different enough to read as very rare. Branch `feature/skins`, off `feature/fort` (`8df21e6`), in its own worktree (`../orbit-runner-v2-skins`), local only. Client only: nothing under `src/shared`, `src/server` or `src/net` changed, and the wire format is still 13.
+
+**The looks** (`src/client/skins.ts` is the list, `src/client/models.ts` builds them):
+
+| Look | Tier | Dresses | What it is |
+|---|---|---|---|
+| Comet | Rare | ship | Pearl white, two red stripes nose to tail, red rim and engines |
+| Tidal | Rare | ship | Sea-green metal, brass rings and trim, the rim cut into sixteen panels |
+| Hornet | Rare | ship | Warning yellow, black chevrons round the rim, amber canopy |
+| Frostbite | Rare | Fenix | Ice white deepening to glacier blue, ruled with frost lines, cyan edges |
+| Venom | Rare | Fenix | Green scales banded in black, acid wing tips, lime edges |
+| Dusk | Rare | Fenix | Violet at the root through magenta to orange at the tips, pink edges |
+| Prism | Epic | both | A cut gem with eight sides whose colours go round it, six shards circling; as a Fenix, wings of four crystals a side |
+| Solar Crown | Legendary | both | Polished gold cut with burning rays, a crown of spikes and a turning halo; as a Fenix, the firebird: feathered gold wings, tail feathers, a crest and a wheel of light |
+| Phantom | Mythic | both | No hull: a lens of rose light with the ship drawn on it in lines, spokes turning inside, a white heart in a tumbling cage; as a Fenix, wings of light |
+
+- The six plain looks are paint: a hull's colours are worked out once into a small picture (as the sky is), so a painted ship costs the same draws as the standard one. The standard look is built by the same code and is unchanged.
+- The three special ones each have a part that moves and their own engine and trail colour (Prism's goes round the colour wheel). Engine colour is now kept for each shape; a ship in the standard look glows as before.
+- Settings has two new rows, "Ship look" and "Fenix look"; the choice is kept with the other settings. A stored look that this build does not have, or that belongs to the other shape, is the standard one.
+- `scripts/skins.ts <directory> [webkit] [only=<look>,…]` takes every look in both views (as flown, and close on another ship) and a line-up, and writes one sheet. The pictures are in `../orbit-runner-v2-looks/skins/` (`sheet.png`, `sheet.html`, and `-webkit` copies from Safari's engine).
+
+**Found on the way, and left:** the standard saucer's hull has always been turned top to bottom, which faces its skin inwards, so from above a player sees the inside of its belly (a shallow bowl under the dome, with the trim ring hovering over it) and not a domed disc. It is the look the user approved, so it is kept, and the three painted saucers are painted the same on both skins. `turned(SAUCER_PROFILE, 48, true)` in `buildSaucer` is the one place: dropping the `true` turns it the right way out. The special ships are the right way out.
+
+**Measured on this Mac, on the finished tree:**
+
+| What | Result |
+|---|---|
+| Lint, typecheck | clean |
+| Unit tests | 397 pass (27 new: every look in both shapes is no bigger than the standard ship at five moments of its animation, and is at most five draws) |
+| Integration | 12 of 12 |
+| Browser suite | 48 of 48 (6.5 min), with 4 new: every look chosen in the settings panel and drawn in both shapes with no console error, in Chromium and WebKit; a choice kept over a reload; a bad stored choice falling back |
+| Pictures | all looks in Chromium and in WebKit, no console problems; looked at one by one, and the paint was darkened twice because the sun washed light colours out |
+
+The size test caught two parts that reached past the standard ship (Phantom's nose light, Solar Crown's wing edge); both were pulled in.
+
+**Not done, on purpose:** other players do not see a pilot's look (that needs the wire format, and a new answer to "which ship is mine": lights are cyan on your own ship and amber on others today). Looks are not earned: every pilot can wear all nine. `GameScene.setRemoteLooks` exists so that the pictures can dress other ships, and is reached only through the test hook.
+
+**UNVERIFIED:** a real phone (fill rate with Phantom's see-through hull close to the camera, and whether the paint reads on a small screen); frames a second (not measured; a look adds no draws to the standard ship's five, and one or two small pictures); the Mac app (it needs a rebuild to have the picker); how the looks feel in play, which only the user can say.
