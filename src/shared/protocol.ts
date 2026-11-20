@@ -23,7 +23,7 @@ import type { StoreItem } from './scoring.ts';
 import { inputFromWire } from './sim/ship.ts';
 import type { Input, ShipState, ShotKind } from './sim/ship.ts';
 
-export const PROTOCOL_VERSION = 13;
+export const PROTOCOL_VERSION = 14;
 
 /** Inputs carried per message: the tick's own plus the ones before it. */
 export const INPUT_REDUNDANCY = 3;
@@ -38,6 +38,7 @@ const CLIENT_HELLO = 1;
 const CLIENT_INPUT = 2;
 const CLIENT_PRESENCE = 3;
 const CLIENT_BUY = 4;
+const CLIENT_FORT = 5;
 
 const SERVER_WELCOME = 1;
 const SERVER_REJECT = 2;
@@ -53,7 +54,13 @@ export const REJECT_FULL = 2;
  * straight back.
  */
 export const REJECT_IDLE = 3;
-export type RejectReason = typeof REJECT_VERSION | typeof REJECT_FULL | typeof REJECT_IDLE;
+/**
+ * The player stayed in the fort for so long that the seat was given up. The
+ * fort is still theirs to use; launching asks for a seat again.
+ */
+export const REJECT_FORT = 4;
+export type RejectReason =
+  typeof REJECT_VERSION | typeof REJECT_FULL | typeof REJECT_IDLE | typeof REJECT_FORT;
 
 /** No player: used for "killed by nobody". */
 export const NO_PLAYER = 255;
@@ -104,13 +111,24 @@ export interface PresenceMessage {
   readonly clientTimeMs: number;
 }
 
+/**
+ * The player has gone into the fort, or is launching from it. While they are
+ * in the fort their ship is not brought back. The server decides whether it
+ * holds, and says so with a FortEvent.
+ */
+export interface FortMessage {
+  readonly type: 'fort';
+  readonly held: boolean;
+}
+
 /** Asks for something from the store. The server decides whether the player can have it. */
 export interface BuyMessage {
   readonly type: 'buy';
   readonly item: StoreItem;
 }
 
-export type ClientMessage = HelloMessage | InputMessage | PresenceMessage | BuyMessage;
+export type ClientMessage =
+  HelloMessage | InputMessage | PresenceMessage | BuyMessage | FortMessage;
 
 export interface WelcomeMessage {
   readonly type: 'welcome';
@@ -288,8 +306,19 @@ export interface CrateEvent {
 
 export const NO_CRATE = 255;
 
+/**
+ * Whether this player is in the fort, sent to them alone: with every welcome,
+ * and when it changes. The server may put a player there itself (their ship
+ * was lost while they were away), so the client follows this, not its own guess.
+ */
+export interface FortEvent {
+  readonly kind: 'fort';
+  readonly held: boolean;
+}
+
 export type GameEvent =
   | CrateEvent
+  | FortEvent
   | BulletEvent
   | HitEvent
   | DeathEvent
@@ -650,6 +679,13 @@ export function encodeBuy(item: StoreItem): Uint8Array {
   return w.finish();
 }
 
+export function encodeFort(held: boolean): Uint8Array {
+  const w = new Writer(2);
+  w.u8(CLIENT_FORT);
+  w.u8(held ? 1 : 0);
+  return w.finish();
+}
+
 export function decodeClientMessage(data: Uint8Array): ClientMessage | null {
   if (data.byteLength === 0 || data.byteLength > MAX_CLIENT_MESSAGE_BYTES) return null;
   try {
@@ -710,6 +746,11 @@ export function decodeClientMessage(data: Uint8Array): ClientMessage | null {
       const item = STORE_ITEMS[r.u8()];
       if (!r.atEnd() || !item) return null;
       return { type: 'buy', item };
+    }
+    if (type === CLIENT_FORT) {
+      const held = r.u8();
+      if (!r.atEnd() || held > 1) return null;
+      return { type: 'fort', held: held === 1 };
     }
     return null;
   } catch {
@@ -800,6 +841,7 @@ const EVENT_ORB = 6;
 const EVENT_GRANT = 7;
 const EVENT_PROGRESS = 8;
 const EVENT_CRATE = 9;
+const EVENT_FORT = 10;
 
 const MAX_EVENT_BYTES = 27;
 
@@ -862,6 +904,10 @@ export function encodeEvents(events: readonly GameEvent[]): Uint8Array {
         w.u8(event.tier);
         w.u8(event.source);
         w.u16(Math.min(65535, event.held));
+        break;
+      case 'fort':
+        w.u8(EVENT_FORT);
+        w.u8(event.held ? 1 : 0);
         break;
       case 'progress':
         w.u8(EVENT_PROGRESS);
@@ -948,6 +994,10 @@ function readEvent(r: Reader): GameEvent | null {
     if (!none && (tier >= CRATE_TIERS.length || source >= CRATE_SOURCES.length)) return null;
     return { kind: 'crate', tier, source, held };
   }
+  if (kind === EVENT_FORT) {
+    const held = r.u8();
+    return held > 1 ? null : { kind: 'fort', held: held === 1 };
+  }
   if (kind === EVENT_PROGRESS) {
     const xp = r.u32();
     const missionIndex = r.u8();
@@ -999,7 +1049,10 @@ export function decodeServerMessage(data: Uint8Array): ServerMessage | null {
       const reason = r.u8();
       if (
         !r.atEnd() ||
-        (reason !== REJECT_VERSION && reason !== REJECT_FULL && reason !== REJECT_IDLE)
+        (reason !== REJECT_VERSION &&
+          reason !== REJECT_FULL &&
+          reason !== REJECT_IDLE &&
+          reason !== REJECT_FORT)
       ) {
         return null;
       }

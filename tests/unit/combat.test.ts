@@ -670,6 +670,12 @@ describe('reconnect', () => {
     expect(player.session.core.playerId).toBe(id);
     expect(player.session.core.sessionToken).toEqual(firstToken);
     expect(world.room.scoreOf(id)).toBeGreaterThanOrEqual(777);
+    // The ship was lost while they were gone, so they are in the fort, and
+    // fly again when they launch.
+    expect(player.session.core.fort).toBe(true);
+    expect(world.room.shipOf(id)?.alive).toBe(false);
+    player.session.core.setFort(false);
+    world.run(500);
     expect(world.room.shipOf(id)).toMatchObject({ hp: 100, alive: true });
     expect(world.room.playerCount).toBe(1);
   });
@@ -798,7 +804,7 @@ describe('hidden tab', () => {
     expect(world.room.playerCount).toBe(1);
   });
 
-  it('hidden for longer than the grace period: the ship dies, and respawns when the player returns', () => {
+  it('hidden for longer than the grace period: the ship dies, the player returns to the fort and launches', () => {
     const world = new TestWorld(12);
     const player = world.addSession({});
     world.run(2000);
@@ -812,6 +818,10 @@ describe('hidden tab', () => {
     player.session.setHidden(false);
     world.run(1500);
     expect(player.session.core.status).toBe('playing');
+    expect(player.session.core.fort).toBe(true);
+    expect(world.room.shipOf(id)?.alive).toBe(false);
+    player.session.core.setFort(false);
+    world.run(500);
     expect(world.room.shipOf(id)).toMatchObject({ alive: true, hp: 100 });
     expect(player.session.core.state?.alive).toBe(true);
   });

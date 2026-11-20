@@ -16,7 +16,9 @@ import {
   SESSION_TOKEN_BYTES,
 } from '../shared/protocol.ts';
 import type { ShipState } from '../shared/sim/ship.ts';
+import type { FortReply } from '../shared/fort.ts';
 import type { MemoryCrateStore } from './crates.ts';
+import { readFort } from './fort.ts';
 import type { PilotStore } from './pilots.ts';
 import { Recorder } from './recorder.ts';
 import { Room } from './room.ts';
@@ -52,6 +54,12 @@ export interface ServerOptions {
    * /api/redeem refuses everyone: crates can be won and shown, not moved.
    */
   bridgeSecret?: string;
+  /**
+   * SpaceFort's server, where pilots' forts live. With it and `bridgeSecret`,
+   * /api/fort reads a pilot's fort for them. Without either the fort screen
+   * says the fort is not connected, and the game is otherwise unchanged.
+   */
+  fortUrl?: string;
   /** Passed to the room (RoomOptions.crateOdds): for trying drops out, never for a public server. */
   crateOdds?: RoomOptions['crateOdds'];
   /** Passed to the room. See RoomOptions. */
@@ -252,6 +260,27 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
     return false;
   };
 
+  /** A pilot's fort, read from SpaceFort for the pilot who holds this key. */
+  const handleFort = async (
+    url: URL,
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<boolean> => {
+    if (request.method !== 'POST' || url.pathname !== '/api/fort') return false;
+    const body = JSON.parse(await readBody(request)) as { pilotKey?: unknown };
+    if (typeof body.pilotKey !== 'string' || !/^[0-9a-f]{32}$/.test(body.pilotKey)) {
+      sendJson(response, 400, { ok: false, error: 'not a pilot key' });
+      return true;
+    }
+    let reply: FortReply;
+    if (!options.fortUrl || !options.bridgeSecret) reply = { ok: false, reason: 'off' };
+    else if (!room.knowsPilot(body.pilotKey)) reply = { ok: false, reason: 'no-pilot' };
+    else
+      reply = await readFort({ url: options.fortUrl, secret: options.bridgeSecret }, body.pilotKey);
+    sendJson(response, 200, reply);
+    return true;
+  };
+
   const http = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://localhost');
     if (request.method === 'GET' && url.pathname === '/health') {
@@ -276,6 +305,7 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
       if (options.crates && (await handleCrates(options.crates, url, request, response))) {
         return true;
       }
+      if (await handleFort(url, request, response)) return true;
       if (recorder && (await handleDebug(recorder, url, request, response))) return true;
       if (clientDir && (request.method === 'GET' || request.method === 'HEAD')) {
         return serveClientFile(clientDir, url.pathname, response);

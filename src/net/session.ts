@@ -97,6 +97,14 @@ export class Session {
     this.resumeDeadlineMs = hidden ? null : this.now() + this.resumeTimeoutMs;
   }
 
+  /**
+   * Asks for a seat again after the server gave this one up. Only the fort
+   * uses it: its pilot was told why the seat went and chose to launch.
+   */
+  rejoin(): void {
+    if (this.core.status === 'rejected') this.replace(this.now());
+  }
+
   close(): void {
     this.hidden = true;
     this.core.close();

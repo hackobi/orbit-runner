@@ -14,6 +14,7 @@ import {
   PROTOCOL_VERSION,
   decodeServerMessage,
   encodeBuy,
+  encodeFort,
   encodeHello,
   encodeInput,
   encodePresence,
@@ -317,6 +318,8 @@ export class ClientCore implements WorldState {
   scoreboard: readonly ScoreEntry[] = [];
   /** This pilot's experience and mission, as last sent. Null until the server has said. */
   progress: Progress | null = null;
+  /** In the fort, as the server last said: no ship comes back until the player launches. */
+  fort = false;
   /** Salvage crates held and not yet claimed, as last sent. */
   crates = 0;
   /** Crates won since the display last took them (tier and source index drops.ts). */
@@ -461,6 +464,14 @@ export class ClientCore implements WorldState {
   /** Asks the store for something. Whether the player gets it is the server's decision. */
   buy(item: StoreItem): void {
     if (this.status === 'playing') this.transport.send(encodeBuy(item), 'reliable');
+  }
+
+  /**
+   * Goes into the fort, or launches from it. The answer comes back as `fort`:
+   * the server refuses a pilot whose ship is still flying.
+   */
+  setFort(held: boolean): void {
+    if (this.status === 'playing') this.transport.send(encodeFort(held), 'reliable');
   }
 
   /**
@@ -1051,6 +1062,9 @@ export class ClientCore implements WorldState {
 
   private applyEvent(event: GameEvent): void {
     switch (event.kind) {
+      case 'fort':
+        this.fort = event.held;
+        break;
       case 'crate':
         this.crates = event.held;
         if (event.tier !== NO_CRATE)

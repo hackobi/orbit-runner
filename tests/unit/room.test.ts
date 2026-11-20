@@ -3,6 +3,7 @@ import { TICK_MS } from '../../src/shared/constants.ts';
 import {
   CAUSE_DISCONNECT,
   PROTOCOL_VERSION,
+  REJECT_FORT,
   REJECT_FULL,
   REJECT_IDLE,
   REJECT_VERSION,
@@ -12,7 +13,7 @@ import {
 } from '../../src/shared/protocol.ts';
 import { SIM_FINGERPRINT } from '../../src/shared/sim/fingerprint.ts';
 import { quantiseControls, shipStatesEqual, stepShip } from '../../src/shared/sim/ship.ts';
-import { IDLE_TICKS, Room, SEAT_TICKS } from '../../src/server/room.ts';
+import { AWAY_GRACE_TICKS, IDLE_TICKS, Room, SEAT_TICKS } from '../../src/server/room.ts';
 import { TestWorld } from '../support/harness.ts';
 import { RawClient, joined } from '../support/rawClient.ts';
 import { createLink } from '../support/loopback.ts';
@@ -462,5 +463,160 @@ describe('room rules', () => {
     expect(welcomes()).toBeGreaterThanOrEqual(11);
     expect(welcomes()).toBeLessThanOrEqual(13);
     expect(world.room.stats.malformedMessages).toBe(0);
+  });
+});
+
+describe('the fort', () => {
+  // Inside the planet: the ship is destroyed on the next tick.
+  const IN_THE_PLANET = { x: 0, y: 0, z: 0 };
+  const RESPAWN_MS = 180 * TICK_MS;
+
+  function destroyed(world: TestWorld, id: number): void {
+    world.place(id, IN_THE_PLANET);
+    world.run(3 * TICK_MS);
+    expect(world.room.shipOf(id)?.alive).toBe(false);
+  }
+
+  it('holds the ship back for a pilot who went in, and brings it back when they launch', () => {
+    const world = new TestWorld(3, 0, false);
+    const pilot = world.addClient({});
+    world.run(500);
+    const id = pilot.core.playerId;
+    destroyed(world, id);
+
+    pilot.core.setFort(true);
+    world.run(RESPAWN_MS + 30_000);
+    expect(world.room.shipOf(id)?.alive).toBe(false);
+    expect(world.room.inFort(id)).toBe(true);
+    expect(pilot.core.fort).toBe(true);
+
+    pilot.core.setFort(false);
+    world.run(200);
+    expect(world.room.shipOf(id)?.alive).toBe(true);
+    expect(pilot.core.fort).toBe(false);
+    expect(pilot.core.status).toBe('playing');
+  });
+
+  it('never shortens the three seconds: launching early waits out the rest', () => {
+    const world = new TestWorld(3, 0, false);
+    const pilot = world.addClient({});
+    world.run(500);
+    const id = pilot.core.playerId;
+    destroyed(world, id);
+    pilot.core.setFort(true);
+    world.run(500);
+    pilot.core.setFort(false);
+    world.run(RESPAWN_MS - 500 - 20 * TICK_MS);
+    expect(world.room.shipOf(id)?.alive).toBe(false);
+    world.run(40 * TICK_MS);
+    expect(world.room.shipOf(id)?.alive).toBe(true);
+  });
+
+  it('refuses a pilot whose ship is flying, and says so', () => {
+    const world = new TestWorld(3, 0, false);
+    const pilot = world.addClient({});
+    world.run(500);
+    const id = pilot.core.playerId;
+    pilot.core.fort = true; // what an eager screen would have assumed
+    pilot.core.setFort(true);
+    world.run(200);
+    expect(world.room.inFort(id)).toBe(false);
+    expect(pilot.core.fort).toBe(false);
+    expect(world.room.shipOf(id)?.alive).toBe(true);
+    expect(world.room.stats.malformedMessages).toBe(0);
+  });
+
+  it('does not count a pilot in the fort as idle: launching needs no hand on the stick', () => {
+    const world = new TestWorld(3, 0, false);
+    const pilot = world.addClient({});
+    world.run(500);
+    const id = pilot.core.playerId;
+    destroyed(world, id);
+    pilot.core.setFort(true);
+    // Longer than the idle rule, shorter than the seat rule.
+    world.run((IDLE_TICKS + 1200) * TICK_MS);
+    pilot.core.setFort(false);
+    world.run(200);
+    expect(world.room.shipOf(id)?.alive).toBe(true);
+    expect(world.deaths).toHaveLength(1);
+  });
+
+  it('gives the seat up after five minutes in the fort, says why, and seats the pilot again on launch', () => {
+    const world = new TestWorld(3, 0, false);
+    const pilot = world.addSession({});
+    world.run(500);
+    const id = pilot.session.core.playerId;
+    destroyed(world, id);
+    pilot.session.core.setFort(true);
+    world.run((SEAT_TICKS - 600) * TICK_MS);
+    expect(world.room.playerCount).toBe(1);
+    world.run(1200 * TICK_MS);
+    expect(world.room.playerCount).toBe(0);
+    expect(pilot.session.core.status).toBe('rejected');
+    expect(pilot.session.core.rejectReason).toBe(REJECT_FORT);
+    // Left alone, it does not come back by itself.
+    world.run(10_000);
+    expect(world.room.playerCount).toBe(0);
+
+    pilot.session.rejoin();
+    world.run(1000);
+    expect(pilot.session.core.status).toBe('playing');
+    expect(world.room.playerCount).toBe(1);
+    expect(world.room.shipOf(pilot.session.core.playerId)?.alive).toBe(true);
+    expect(pilot.session.core.fort).toBe(false);
+  });
+
+  it('a pilot whose ship was lost while they were away comes back to the fort, not into space', () => {
+    const world = new TestWorld(3, 0, false);
+    const pilot = world.addClient({});
+    world.run(500);
+    const id = pilot.core.playerId;
+    world.place(id, { x: 0, y: 400, z: 7000, yaw: 1.5, pitch: 0, speed: 5, targetSpeed: 5 });
+    pilot.core.setAway(true);
+    world.run((AWAY_GRACE_TICKS + 600) * TICK_MS);
+    expect(world.deaths).toHaveLength(1);
+    expect(world.deaths[0]).toMatchObject({ victimId: id, cause: CAUSE_DISCONNECT });
+
+    pilot.core.setAway(false);
+    world.run(RESPAWN_MS + 2000);
+    expect(pilot.core.status).toBe('playing');
+    expect(pilot.core.fort).toBe(true);
+    expect(world.room.shipOf(id)?.alive).toBe(false);
+
+    pilot.core.setFort(false);
+    world.run(200);
+    expect(world.room.shipOf(id)?.alive).toBe(true);
+  });
+
+  it('a pilot who was only away for a moment still has their ship and is not in the fort', () => {
+    const world = new TestWorld(3, 0, false);
+    const pilot = world.addClient({});
+    world.run(500);
+    const id = pilot.core.playerId;
+    world.place(id, { x: 0, y: 400, z: 7000, yaw: 1.5, pitch: 0, speed: 5, targetSpeed: 5 });
+    pilot.core.setAway(true);
+    world.run(3000);
+    pilot.core.setAway(false);
+    world.run(2000);
+    expect(world.room.shipOf(id)?.alive).toBe(true);
+    expect(pilot.core.fort).toBe(false);
+  });
+
+  it('a reloaded page finds itself still in the fort', () => {
+    const world = new TestWorld(3, 0, false);
+    let token: Uint8Array | null = null;
+    const first = world.addSession({ onSessionToken: (issued) => (token = issued) });
+    world.run(500);
+    const id = first.session.core.playerId;
+    destroyed(world, id);
+    first.session.core.setFort(true);
+    world.run(500);
+    first.session.close();
+
+    const second = world.addSession({ sessionToken: token });
+    world.run(RESPAWN_MS + 3000);
+    expect(second.session.core.playerId).toBe(id);
+    expect(second.session.core.fort).toBe(true);
+    expect(world.room.shipOf(id)?.alive).toBe(false);
   });
 });

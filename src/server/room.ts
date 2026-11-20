@@ -17,6 +17,7 @@ import {
   NO_PLAYER,
   PROTOCOL_VERSION,
   REJECT_FULL,
+  REJECT_FORT,
   REJECT_IDLE,
   REJECT_VERSION,
   SESSION_TOKEN_BYTES,
@@ -295,6 +296,13 @@ interface Player {
   /** Held out of the game for not touching the controls. Ends when one moves. */
   idle: boolean;
   idleSinceTick: number;
+  /**
+   * In the fort: the player chose it over flying again, or their ship was
+   * lost while they were away. A ship is not brought back until they launch,
+   * and they do not count as idle. The seat is held for SEAT_TICKS.
+   */
+  inFort: boolean;
+  fortSinceTick: number;
   lastWelcomeTick: number;
   /** The tick the newest input message arrived on. */
   lastInputAtTick: number;
@@ -628,7 +636,8 @@ export class Room {
         input.pitch === last.pitch &&
         input.throttle === last.throttle &&
         input.fire === last.fire;
-      player.unchangedTicks = unchanged && !player.npc ? player.unchangedTicks + 1 : 0;
+      player.unchangedTicks =
+        unchanged && !player.npc && !player.inFort ? player.unchangedTicks + 1 : 0;
       if (!unchanged) player.idle = false;
       player.input = input;
 
@@ -958,6 +967,21 @@ export class Room {
     }
   }
 
+  /**
+   * Whether this pilot key belongs to someone the room has seated, now or
+   * (with a store) before. The fort is read only for pilots the game knows,
+   * so nobody can make forts by inventing keys.
+   */
+  knowsPilot(key: string): boolean {
+    for (const player of this.players.values()) if (player.pilotKey === key) return true;
+    return this.pilots?.load(key) !== undefined;
+  }
+
+  /** Whether a seated player is in the fort. */
+  inFort(id: number): boolean {
+    return this.players.get(id)?.inFort ?? false;
+  }
+
   /** How many crates a seated player holds (0 without a store or a pilot key). */
   cratesOf(id: number): number {
     const key = this.players.get(id)?.pilotKey;
@@ -1069,15 +1093,25 @@ export class Room {
       if ((graceOver || player.idle) && player.ship.alive) {
         player.ship = destroyShip(player.ship);
         this.recordDeath(player, null, CAUSE_DISCONNECT);
+        // Whoever comes back from being away comes back to the fort, not
+        // into space with a ship they were not there to fly.
+        if (player.away) this.setFort(player, true);
       }
       // Nobody keeps one of the sixteen seats for ever without playing.
-      const outSince = player.away ? player.awaySinceTick : player.idle ? player.idleSinceTick : -1;
+      const outSince = player.away
+        ? player.awaySinceTick
+        : player.idle
+          ? player.idleSinceTick
+          : player.inFort
+            ? player.fortSinceTick
+            : -1;
       if (outSince >= 0 && this.tick - outSince >= SEAT_TICKS) {
         const connection = player.connection;
+        const reason = player.inFort ? REJECT_FORT : REJECT_IDLE;
         this.remove(player);
         if (connection) {
           // Say why, so the client does not simply reconnect and take a seat again.
-          this.send(connection, encodeReject(REJECT_IDLE), 'reliable');
+          this.send(connection, encodeReject(reason), 'reliable');
           connection.player = null;
           this.close(connection);
         }
@@ -1093,8 +1127,15 @@ export class Room {
           this.welcomeBack(player, due.connection, due.clientTimeMs);
         }
       }
-      // A dead ship comes back after its timer, but not while its player is away or idle.
-      if (!player.ship.alive && player.ship.respawnTicks === 0 && !player.away && !player.idle) {
+      // A dead ship comes back after its timer, but not while its player is
+      // away, idle or in the fort.
+      if (
+        !player.ship.alive &&
+        player.ship.respawnTicks === 0 &&
+        !player.away &&
+        !player.idle &&
+        !player.inFort
+      ) {
         player.ship = spawnShip(this.rng, player.ship.spawnSeq + 1);
         player.killsThisLife = 0;
         player.spawnedAtTick = this.tick;
@@ -1306,6 +1347,11 @@ export class Room {
       this.acceptInputs(player, message);
     } else if (message.type === 'buy') {
       if (!player.away) this.buy(player, message.item);
+    } else if (message.type === 'fort') {
+      // Only a pilot without a ship can go in: the fort is never a way out
+      // of a fight. A refusal is said too, so the client's screen follows.
+      if (message.held && player.ship.alive) player.outbox.push({ kind: 'fort', held: false });
+      else this.setFort(player, message.held);
     } else if (message.away) {
       this.markAway(player);
     } else if (this.tick - player.lastWelcomeTick >= WELCOME_EVERY_TICKS) {
@@ -1429,6 +1475,8 @@ export class Room {
       unchangedTicks: 0,
       idle: false,
       idleSinceTick: 0,
+      inFort: false,
+      fortSinceTick: 0,
       lastWelcomeTick: 0,
       lastInputAtTick: -TOKEN_IN_USE_TICKS,
       claim: null,
@@ -1514,6 +1562,7 @@ export class Room {
       player.outbox.push({ kind: 'grant', item: grant.item, applyTick: grant.applyTick });
     }
     player.progressDue = true;
+    player.outbox.push({ kind: 'fort', held: player.inFort });
     if (this.crates && player.pilotKey) {
       player.cratesTold = this.crates.count(player.pilotKey);
       player.outbox.push({
@@ -1535,6 +1584,17 @@ export class Room {
     }
     for (const live of this.bullets) player.outbox.push(live.announcement);
     this.flushEvents();
+  }
+
+  /** Puts a player in the fort or lets them launch, and tells them. */
+  private setFort(player: Player, held: boolean): void {
+    if (player.inFort !== held) {
+      player.inFort = held;
+      player.fortSinceTick = this.tick;
+      // Launching is a hand on the controls.
+      player.unchangedTicks = 0;
+    }
+    player.outbox.push({ kind: 'fort', held });
   }
 
   private markAway(player: Player): void {

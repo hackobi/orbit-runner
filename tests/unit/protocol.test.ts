@@ -18,6 +18,7 @@ import {
   encodeEvents,
   encodeHello,
   encodeInput,
+  encodeFort,
   encodePresence,
   encodeReject,
   encodeScores,
@@ -119,6 +120,15 @@ describe('client messages', () => {
       away: false,
       clientTimeMs: 7,
     });
+  });
+
+  it('going into the fort and launching round-trip, and anything else in that byte is refused', () => {
+    expect(decodeClientMessage(encodeFort(true))).toEqual({ type: 'fort', held: true });
+    expect(decodeClientMessage(encodeFort(false))).toEqual({ type: 'fort', held: false });
+    const odd = encodeFort(true);
+    odd[1] = 2;
+    expect(decodeClientMessage(odd)).toBeNull();
+    expect(decodeClientMessage(Uint8Array.from([...encodeFort(true), 0]))).toBeNull();
   });
 
   it('a store request round-trips, and one for something the store does not sell is refused', () => {
@@ -297,6 +307,8 @@ describe('server messages', () => {
       { kind: 'orb', orbId: 2, tick: 1015, playerId: NO_PLAYER, spawnTick: 990, byBullet: true },
       { kind: 'death', deathId: 79, victimId: 6, killerId: NO_PLAYER, cause: CAUSE_EDGE, tick: 9 },
       { kind: 'grant', item: 'fenix', applyTick: 1044 },
+      { kind: 'fort', held: true },
+      { kind: 'fort', held: false },
       { kind: 'progress', xp: 123456, missionIndex: 7, missionProgress: 59, missionsDone: 300 },
       { kind: 'crate', tier: 3, source: 2, held: 4 },
       { kind: 'crate', tier: 255, source: 255, held: 0 },
