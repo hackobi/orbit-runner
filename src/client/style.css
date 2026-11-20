@@ -637,6 +637,16 @@ body {
   height: 20px;
 }
 
+#settings select {
+  margin-left: auto;
+  padding: 6px 8px;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  background: rgb(10 20 40 / 80%);
+  color: var(--ink);
+  font: inherit;
+}
+
 /* A phone held upright is too narrow to fly in (iOS cannot lock the orientation). */
 #rotate {
   display: none;

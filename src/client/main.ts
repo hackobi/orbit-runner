@@ -12,6 +12,7 @@ import { SortieTracker, askFort, askLaunch, stepFortGate } from './fortModel.ts'
 import type { FortGate } from './fortModel.ts';
 import { InputDevices } from './input.ts';
 import { loadSettings, saveSettings } from './settings.ts';
+import { skinOr, skinsFor } from './skins.ts';
 import { watchForUpdates } from './update.ts';
 import { shouldApplyUpdate } from './updatePolicy.ts';
 import { asteroidPosition, asteroidTouching } from '../shared/sim/belt.ts';
@@ -216,6 +217,9 @@ recorder?.attach(
   session,
   () => devices.read(),
   () => TIERS[quality.tier]?.name ?? '',
+  (id, looks) => {
+    scene.setRemoteLooks(id, looks);
+  },
 );
 
 // --- The fort -------------------------------------------------------------------
@@ -414,6 +418,28 @@ window.addEventListener('keydown', (event) => {
   if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
   if (event.code === 'KeyC') toggleCockpit();
 });
+// What the ship wears, in each of its two shapes. Every look is open to every
+// pilot, and only this screen shows it: other players see the standard ship.
+const wear = (): void => {
+  scene.setLooks({ saucer: settings.saucerSkin, fenix: settings.fenixSkin });
+};
+for (const form of ['saucer', 'fenix'] as const) {
+  const picker = element(form === 'saucer' ? 'ship-look' : 'fenix-look', HTMLSelectElement);
+  for (const skin of skinsFor(form)) {
+    const rare = skin.tier === 'Common' || skin.tier === 'Rare' ? '' : ` · ${skin.tier}`;
+    picker.add(new Option(`${skin.name}${rare}`, skin.id));
+  }
+  picker.value = form === 'saucer' ? settings.saucerSkin : settings.fenixSkin;
+  picker.addEventListener('change', () => {
+    const skin = skinOr(picker.value, form);
+    if (form === 'saucer') settings.saucerSkin = skin;
+    else settings.fenixSkin = skin;
+    saveSettings(settings);
+    wear();
+    canvas.focus();
+  });
+}
+wear();
 invertBox.checked = settings.invertPitch;
 invertBox.addEventListener('change', () => {
   settings.invertPitch = invertBox.checked;

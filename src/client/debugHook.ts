@@ -18,6 +18,7 @@ import type { Session } from '../net/session.ts';
 import type { GameEvent } from '../shared/protocol.ts';
 import { SIM_FINGERPRINT, fusedMultiplyProbe, runTrace } from '../shared/sim/fingerprint.ts';
 import type { Controls, ShipState } from '../shared/sim/ship.ts';
+import type { Looks } from './skins.ts';
 
 /** One other ship as drawn in one frame: id, x, y, z, the server tick drawn, flags. */
 export interface RemoteFrame {
@@ -86,6 +87,8 @@ export interface DebugHook {
   setBehaviour(spec: BehaviourSpec | null): void;
   /** What the keyboard, mouse, touch controls and tilt add up to right now. */
   readControls(): Controls;
+  /** Draws another player's ship in a look, on this screen only. */
+  dress(id: number, looks: Looks): void;
   /** Forgets everything recorded so far, to start a measurement. */
   clear(): void;
 }
@@ -103,7 +106,12 @@ export interface DebugRecorder {
   onGameEvent: (event: GameEvent) => void;
   /** The scripted controls for a tick, or null when the keyboard is in charge. */
   controls: (tick: number, core: ClientCore) => Controls | null;
-  attach: (session: Session, readControls: () => Controls, quality: () => string) => void;
+  attach: (
+    session: Session,
+    readControls: () => Controls,
+    quality: () => string,
+    dress: (id: number, looks: Looks) => void,
+  ) => void;
   frame: (
     timeMs: number,
     elapsedMs: number,
@@ -128,9 +136,10 @@ export function createDebugRecorder(): DebugRecorder {
     onViewHit: (hit) => viewHits.push(hit),
     onGameEvent: (event) => events.push(event),
     controls: (tick, core) => (behaviour ? behaviour(tick, core) : null),
-    attach(session, readControls, quality) {
+    attach(session, readControls, quality, dress) {
       window.__orbit = {
         readControls,
+        dress,
         frames,
         corrections,
         snapshots,

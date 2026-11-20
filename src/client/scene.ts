@@ -37,8 +37,9 @@ import { SIM } from '../shared/constants.ts';
 import { Rng } from '../shared/rng.ts';
 import { SUN_DIRECTION, buildBackdrop } from './backdrop.ts';
 import type { Backdrop } from './backdrop.ts';
-import { buildShip, showAs } from './models.ts';
+import { buildShip, disposeShip, showAs } from './models.ts';
 import type { ShipModel } from './models.ts';
+import type { Looks } from './skins.ts';
 import { Particles, SpriteBatch } from './particles.ts';
 import { TIERS } from './quality.ts';
 import type { QualityTier } from './quality.ts';
@@ -80,7 +81,6 @@ const MAX_BULLETS = 512;
 const MAX_SPARKS = 24;
 const MAX_PARTICLES = 1400;
 /** v1's exhaust (main.js:5947-5976, 9685): a pale blue trail, denser the faster the ship goes. */
-const EXHAUST_COLOR = 0x66ccff;
 const EXHAUST_BASE_RATE = 50;
 const EXHAUST_RATE_PER_SPEED = 4;
 /** Other ships leave a trail too, so that where one is heading can be read. v1 drew none. */
@@ -289,7 +289,9 @@ export class GameScene {
   private readonly scene = new Scene();
   private readonly camera: PerspectiveCamera;
   // The same light hull as other players: v1's near-black one vanished against space.
-  private readonly ship = buildShip('own');
+  private ship = buildShip('own');
+  /** What other players' ships wear, for those that wear anything. */
+  private readonly remoteLooks = new Map<number, Looks>();
   private readonly backdrop: Backdrop;
   /** Lights redrawn every frame: engine glows and the halo round each shot. */
   private readonly lights = new SpriteBatch(MAX_LIGHTS);
@@ -434,6 +436,27 @@ export class GameScene {
     window.addEventListener('resize', () => {
       this.resize();
     });
+  }
+
+  /** Dresses the player's own ship. It is built again; a look is chosen in settings, not in a fight. */
+  setLooks(looks: Looks): void {
+    this.scene.remove(this.ship.group);
+    disposeShip(this.ship);
+    this.ship = buildShip('own', looks);
+    this.scene.add(this.ship.group);
+  }
+
+  /**
+   * Dresses another player's ship. Nothing tells this screen what other
+   * pilots chose, so today only the pictures made for judging looks use it.
+   */
+  setRemoteLooks(id: number, looks: Looks): void {
+    this.remoteLooks.set(id, looks);
+    const model = this.remoteShips.get(id);
+    if (!model) return;
+    this.scene.remove(model.group);
+    disposeShip(model);
+    this.remoteShips.delete(id);
   }
 
   /** Draws more or less finely from now on. The quality controller decides when. */
@@ -588,6 +611,7 @@ export class GameScene {
     const effectSeconds = slow ? elapsedSeconds * SLOW_MOTION_RATE : elapsedSeconds;
 
     if (view.alive) {
+      this.ship.animate(this.seconds.value);
       this.emitExhaust(view, elapsedSeconds);
       this.engineGlow(this.ship, view.fenix, view.speed, view.boosting, 1);
       // From inside, the ship's own smoke would fill the screen.
@@ -632,6 +656,7 @@ export class GameScene {
     if (count === 0) return;
     const back = this.forward; // set by render: the nose direction
     const engines = view.fenix ? this.ship.fenixEngines : this.ship.engines;
+    const color = (view.fenix ? this.ship.fenixEngineColor : this.ship.engineColor).getHex();
     const behind = Math.min(8, view.speed * 0.04);
     const thrown = 14 + view.speed * 0.55;
     for (let i = 0; i < count; i++) {
@@ -648,7 +673,7 @@ export class GameScene {
         back.z * (view.speed - thrown) + jitter() * 6,
         0.35 + Math.random() * 0.25,
         0.1 * (0.6 + Math.random() * 0.5),
-        EXHAUST_COLOR,
+        color,
       );
     }
   }
@@ -663,6 +688,7 @@ export class GameScene {
   ): void {
     // A big ship's glow grows by less than the ship does.
     const size = (0.42 + speed * 0.004 + (boosting ? 0.4 : 0)) * scale ** 0.6;
+    const color = fenix ? model.fenixEngineColor : model.engineColor;
     for (const engine of fenix ? model.fenixEngines : model.engines) {
       this.position.copy(engine).multiplyScalar(scale).applyQuaternion(model.group.quaternion);
       this.position.add(model.group.position);
@@ -671,7 +697,7 @@ export class GameScene {
         this.position.y,
         this.position.z,
         size * (0.9 + Math.random() * 0.2),
-        model.engineColor,
+        color,
         0.7,
       );
     }
@@ -918,7 +944,7 @@ export class GameScene {
       let model = this.remoteShips.get(remote.id);
       if (!model) {
         // The server's own ships have shapes of their own; the Warlock is three times the size.
-        model = buildShip(npcKindOf(remote.id) ?? 'other');
+        model = buildShip(npcKindOf(remote.id) ?? 'other', this.remoteLooks.get(remote.id));
         model.group.scale.setScalar(REMOTE_SHIP_SCALE * hullScaleOf(remote.id));
         this.remoteShips.set(remote.id, model);
         this.scene.add(model.group);
@@ -931,14 +957,14 @@ export class GameScene {
         this.euler.set(remote.pitch, remote.yaw, remote.roll, 'YXZ');
         mesh.quaternion.setFromEuler(this.euler);
         mesh.position.set(remote.x, remote.y, remote.z);
-        if (model.spinner) model.spinner.rotation.z = this.seconds.value * 0.8;
+        model.animate(this.seconds.value);
         const scale = REMOTE_SHIP_SCALE * hullScaleOf(remote.id);
         this.engineGlow(model, remote.fenix, REMOTE_GLOW_SPEED, remote.boosting, scale);
         // Its trail: puffs left where its engines were, which the ship flies away from.
         const rate = REMOTE_EXHAUST_RATE * (remote.boosting ? 2 : 1) * elapsedSeconds;
         const puffs = Math.floor(rate + Math.random());
         const engines = remote.fenix ? model.fenixEngines : model.engines;
-        const hex = model.engineColor.getHex();
+        const hex = (remote.fenix ? model.fenixEngineColor : model.engineColor).getHex();
         for (let i = 0; i < puffs; i++) {
           const engine = engines[i % engines.length];
           if (!engine) break;
