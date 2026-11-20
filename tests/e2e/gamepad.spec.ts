@@ -82,7 +82,7 @@ test('a controller flies the ship, to the same values as the keys', async ({ pag
   await setPad(page, { connected: true });
   await expect(page.locator('#pad-status')).toHaveText('Controller: DualSense Wireless Controller');
   await expect(page.locator('#pad-layout')).toBeVisible();
-  await expect(page.locator('#pad-layout dt')).toHaveCount(9);
+  await expect(page.locator('#pad-layout dt')).toHaveCount(8);
   await expect(page.locator('#banner')).toContainText('DualSense Wireless Controller connected');
 
   // At rest it asks for nothing.
@@ -110,20 +110,6 @@ test('a controller flies the ship, to the same values as the keys', async ({ pag
     heavy: false,
     brake: false,
   });
-
-  // L1 held turns the right stick into a second, softer steering input, as
-  // the mouse is beside the keys: here it eases a full turn and adds pitch.
-  await setPad(page, { axes: [1, 0, 1, -1], buttons: buttons({}) });
-  expect(await controls(page)).toMatchObject({ yaw: -1, pitch: 0, throttle: 1 });
-  await setPad(page, { axes: [1, 0, 1, -1], buttons: buttons({ 4: 1 }) });
-  const eased = await controls(page);
-  expect(eased.yaw).toBeCloseTo(-0.4);
-  expect(eased.pitch).toBeCloseTo(0.6);
-  expect(eased.throttle).toBe(0);
-  // Both sticks the same way still turn no faster than a key.
-  await setPad(page, { axes: [1, 0, -1, 0], buttons: buttons({ 4: 1 }) });
-  expect((await controls(page)).yaw).toBe(-1);
-  await setPad(page, { axes: [0, -1, 0, 0], buttons: buttons({ 7: 1, 0: 1, 12: 1 }) });
 
   // Inverted pitch applies to the controller as to everything else.
   await page.locator('#invert-pitch').check();

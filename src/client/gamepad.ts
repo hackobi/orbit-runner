@@ -14,17 +14,11 @@ export const PAD_DEAD_ZONE = 0.15;
 const TRIGGER_HELD = 0.3;
 /** The right stick pushed past this changes speed. */
 const THROTTLE_HELD = 0.5;
-/**
- * How hard the right stick steers while L1 / LB is held: the mouse's share
- * of the full rate (POINTER_GAIN in input.ts).
- */
-export const PAD_TRIM_GAIN = 0.6;
 
 // Indices in the standard layout (w3c.github.io/gamepad/#remapping).
 const BUTTON = {
   south: 0,
   east: 1,
-  leftBumper: 4,
   rightBumper: 5,
   leftTrigger: 6,
   rightTrigger: 7,
@@ -32,7 +26,7 @@ const BUTTON = {
   dpadUp: 12,
   dpadDown: 13,
 } as const;
-const AXIS = { leftX: 0, leftY: 1, rightX: 2, rightY: 3 } as const;
+const AXIS = { leftX: 0, leftY: 1, rightY: 3 } as const;
 
 /** What each control does, for the list shown in settings. Names: PlayStation, then Xbox. */
 export const PAD_LAYOUT: readonly { control: string; action: string }[] = [
@@ -43,7 +37,6 @@ export const PAD_LAYOUT: readonly { control: string; action: string }[] = [
   { control: '✕ / A', action: 'Boost' },
   { control: '○ / B', action: 'Brake' },
   { control: 'D-pad or right stick, up and down', action: 'Speed' },
-  { control: 'L1 / LB held, with the right stick', action: 'Second steering, as the mouse' },
   { control: 'Options / Menu', action: 'Open or close settings' },
 ];
 
@@ -63,32 +56,20 @@ export function padAxis(value: number): number {
   return (Math.sign(value) * (size - PAD_DEAD_ZONE)) / (1 - PAD_DEAD_ZONE);
 }
 
-/**
- * The controls a pad is asking for, plus its menu button. Pitch is before any
- * inversion. Yaw and pitch can pass ±1 when both sticks steer the same way;
- * the caller clamps the sum of every device.
- */
+/** The controls a pad is asking for, plus its menu button. Pitch is before any inversion. */
 export function padControls(pad: PadLike): Required<Controls> & { menu: boolean } {
   const held = (index: number, threshold = 0.5): boolean => {
     const button = pad.buttons[index];
     return !!button && (button.pressed || button.value > threshold);
   };
-  const rightX = pad.axes[AXIS.rightX] ?? 0;
   const rightY = pad.axes[AXIS.rightY] ?? 0;
-  // With L1 / LB held the right stick stops changing speed and steers as the
-  // mouse does with its button down: where the stick is pushed is where the
-  // pointer would be, so it has the mouse's strength and the mouse's
-  // directions (decision D12), and it adds to the left stick.
-  const trim = held(BUTTON.leftBumper);
-  const trimYaw = trim ? padAxis(rightX) * PAD_TRIM_GAIN : 0;
-  const trimPitch = trim ? -padAxis(rightY) * PAD_TRIM_GAIN : 0;
-  const faster = held(BUTTON.dpadUp) || (!trim && rightY < -THROTTLE_HELD);
-  const slower = held(BUTTON.dpadDown) || (!trim && rightY > THROTTLE_HELD);
+  const faster = held(BUTTON.dpadUp) || rightY < -THROTTLE_HELD;
+  const slower = held(BUTTON.dpadDown) || rightY > THROTTLE_HELD;
   return {
     // Stick right turns right, which is negative yaw, as the D key.
-    yaw: -padAxis(pad.axes[AXIS.leftX] ?? 0) + trimYaw || 0,
+    yaw: -padAxis(pad.axes[AXIS.leftX] ?? 0) || 0,
     // Stick forward is the Up key. Forward reads as negative.
-    pitch: -padAxis(pad.axes[AXIS.leftY] ?? 0) + trimPitch || 0,
+    pitch: -padAxis(pad.axes[AXIS.leftY] ?? 0) || 0,
     throttle: (faster ? 1 : 0) - (slower ? 1 : 0),
     fire: held(BUTTON.rightTrigger, TRIGGER_HELD),
     heavy: held(BUTTON.rightBumper),
