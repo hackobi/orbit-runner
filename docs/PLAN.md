@@ -14,8 +14,8 @@ This file is the running checkpoint. A new session should read it first, then `d
 | Dogfight feel (user request, 2026-11-15) | **Step 1 is live** (merged and deployed 2026-11-16 with the user's approval; they found physics and gameplay fine). Tasks are in [Dogfight feel](#dogfight-feel-before-phase-5) | The user picks what comes next |
 | Role-playing layer (user request, 2026-11-19) | **Built and tested 2026-11-19 on `feature/rpg-layer`, local only, not merged or deployed.** Experience, levels, missions, raiders and the boss (shown as the Warlock), progress kept per pilot. See [Role-playing layer](#role-playing-layer) | The user plays it and decides on a merge |
 | New look (user request, 2026-11-19) | **Built and tested 2026-11-19 on `feature/visuals`, local only.** Sky, planet, rocks, ships, orbs and particles redrawn; client only, wire format and simulation untouched. See the log | The user looks at it and decides on a merge |
-| Cockpit view (user request, 2026-11-20) | **Built and tested 2026-11-20 on `feature/cockpit`, off `feature/visuals`, local only, not merged or deployed.** L1 / LB or the C key goes into the cockpit and out (D30). No real controller has been used | The user tries it and decides on a merge |
-| One game with SpaceFort (user request, 2026-11-20) | **Proposal approved 2026-11-20. Phase 1 of six (the transition, with a read-only fort) is built and tested on `feature/fort`, off `feature/visuals`, local only, not merged or deployed.** Decision D31; wire format 14. See the log | The user tries it and says whether it feels like one place; then phase 2 |
+| Cockpit view (user request, 2026-11-20) | **Built and tested 2026-11-20 on `feature/cockpit`; pushed to `feature/v2-rebuild` at 03:52 the same day, and merged into `feature/fort` (`1471644`).** L1 / LB or the C key goes into the cockpit and out (D30). No real controller has been used | None |
+| One game with SpaceFort (user request, 2026-11-20) | **Phases 1 and 2 of six are built and tested on `feature/fort`, local only, not merged or deployed.** Phase 1 (the transition): the user tried it and said yes. Phase 2 (orders): open crates, wear gear, spend skill points, send crew on jobs, crates brought in without a code, reports as banners in flight. Decisions D31 and D32; wire format 14. Needs SpaceFort's `feat/fort-backend`. See the log | The user tries the orders; then phase 3 (cross rewards). Before any deploy: `ORBIT_FORT_ID_KEY` chosen once and kept, a Railway volume, SpaceFort hosted |
 | 5. Demos integration | Not started. Direction from the user recorded under Phase 5 (reuse v1's payment flow; King of the Hill) | Separate approval, and a payment proposal first |
 
 **Next action:** the user looks at `feature/visuals` (it sits on the role-playing, drops and controller branches, none of them deployed) and decides what to merge. Before that, still open: the user chooses between step 2 of [Dogfight feel](#dogfight-feel-before-phase-5) (matches) and Phase 5. Their direction on 2026-11-16: the open room stays the normal game, everyone with the same abilities; rules, timing, groups and teams come later, for tournaments. Phases 1 to 4 are built. Phase 5 (Demos) needs separate approval and starts with a written payment proposal, not code. Open items that need the user: `npm run dev:lan` (it changes the Mac's keychain) and the phone checklist in `docs/DEVICE-TESTING.md`; opening the Mac app themselves.
@@ -39,7 +39,7 @@ This file is the running checkpoint. A new session should read it first, then `d
 | `npm run update-check` | A real update from one build to the next, in Chromium with a kept profile and in the Mac app. About two minutes; opens windows |
 | `npm run results` | Rewrites the latest-results section of this file from `docs/results/` and fails if a gate fails |
 | `npm run screenshot -- <dir> [phone]` | Stages a few moments and takes pictures of them |
-| `node scripts/fort-look.ts <dir> [phone]` | Stages a death, goes into the fort and out again, takes pictures and times both presses. With `ORBIT_FORT_URL` and `ORBIT_BRIDGE_SECRET` set it shows a real fort from a SpaceFort server |
+| `node scripts/fort-look.ts <dir> [phone]` | Stages a death, goes into the fort and out again, takes pictures and times both presses. With `ORBIT_FORT_URL`, `ORBIT_BRIDGE_SECRET` and `ORBIT_FORT_ID_KEY` set it brings two crates in, opens one, wears what it held and sends the recruit out, and shows a real fort from a SpaceFort server |
 | `npm run icons` | Redraws the app icons into `public/icons/` |
 | `npm run spike:webgl` | Re-runs the headless WebGL measurement |
 
@@ -714,3 +714,40 @@ Found in review after the first commit and fixed (`room.ts`, with a test each): 
 To know before phase 2 writes anything: **the fort's id for a pilot is made with the bridge secret, so changing the secret gives every pilot a new, empty fort.** Either the secret is never rotated, or the id needs a key of its own.
 
 **UNVERIFIED:** the seat given up after five minutes in the fort, and launching again, is covered in virtual time only, and if the room is full at that moment the pilot has neither a ship nor a seat until one frees; a real phone (the phone pictures are a phone's screen size in a desktop engine); a real controller (the tests replace the browser's list of pads); the Mac app with a fort behind it; SpaceFort's server anywhere but this Mac; whether it feels like one place, which only a person playing can say.
+
+### 2026-11-20: the cockpit merged in, a stuck stick on an iPhone, and the fort's orders (phase 2, D32)
+
+The user said yes to phase 1, reported that the left stick stuck twice in twenty minutes on an iPhone, and asked whether this branch was behind the cockpit work.
+
+**Behind:** `feature/fort` was 7 commits behind `feature/cockpit` (the cockpit view, its aiming-mark fix, the L1 steering that was added and reverted, and two log commits). Merged here as `1471644`. Both views together: the fort keeps its own camera whichever view the pilot flies with, the canopy frame is hidden while the fort is open, L1 / LB is the view and Create / View or the touchpad is the fort (ten rows in the controller list). After a fetch, nothing else in this repository or in SpaceFort's is ahead of these branches. `origin/main` is the old v1 history.
+
+**The stick (`caf7366`):** the stick ended only on the lift of the finger that started it, and ignored every other finger on its side until then, so one lift the phone never reported left it held until the page lost focus. Now the browser's touch events are a second account of the fingers: with none on the screen everything touched is let go, and a finger that is the only one on the screen takes over what a missing one held. A second finger beside a thumb that is still down changes nothing (the first version of the fix got this wrong; review caught it). Buttons hold a set of fingers. Two new tests in `tests/e2e/touch.spec.ts`. **UNVERIFIED on a real iPhone, and the cause is inferred, not observed.** The fix is on this branch only: the deployed game does not have it.
+
+**Orders (D32), on screen and behind it:**
+
+- `src/shared/fort.ts`: the fort view grew skills, skill points and gear per crew member, each item's bonus, wearer and who may wear it, and the jobs open now; `parseFortOrder` knows five orders and nothing else.
+- `src/server/fort.ts`, `server.ts`: `POST /api/fort/order` (same pilot check as `/api/fort`), `bankCrates`, and fort names made with `ORBIT_FORT_ID_KEY`. With any of the three settings missing the fort is off, as before.
+- `src/server/crates.ts` `take`, `room.ts` `flying`: crates go to the fort when it is read and the pilot is not flying.
+- `src/client/fort.ts`: each crew member's line opens their orders (jobs, gear, skills); crates have an Open button; what the fort said shows by the Launch button for six seconds; the item a crate opened into is picked out; clocks tick in place so that buttons are not rebuilt under a finger, and the keyboard keeps its place when a list is redrawn. One order at a time.
+- In flight the page reads the fort every 30 s and shows each new report as a banner.
+
+**Measured on this Mac, on the finished tree:**
+
+| What | Result |
+|---|---|
+| Lint, typecheck | clean |
+| Unit tests | 370 pass |
+| Integration | 12 of 12 |
+| Browser suite | 42 of 42 (6.1 min): 6 touch, 14 fort (7 tests in Chromium and WebKit), the Mac app, Firefox |
+| SpaceFort jest | 188 pass |
+| Live, against a trial SpaceFort server (own database, `ONCHAIN_ITEMS=off`), `fort-look` at desktop and phone size | two crates brought in (0 left aboard), one opened, its item worn, the recruit sent out; press to fort shown 25 and 24 ms, Launch to flying 30 and 27 ms; no console problems |
+| Live: three of SpaceFort's public routes called with a pilot id | 403 each |
+
+An earlier run of the whole suite, made while files were still being edited, failed the Mac app test (page closed) and one integration test; both pass on the quiet tree. Not investigated further.
+
+Found by a test written for it: a crate won while the fort was being asked would have been removed without being sent (the list handed over was the live one). Fixed with a copy, and the test now adds a crate at exactly that moment.
+
+**Changed for the player without being asked:** with a fort connected, crates no longer wait for a claim code, so "Claim salvage crates" in settings finds none (D32 amends D28). On a level 3 recruit a rare item from a crate cannot be worn yet (it asks for level 4); the hold says "Nobody in your crew can wear this yet".
+
+**UNVERIFIED:** any of this on a real phone or controller; the orders with a controller alone (the buttons take keyboard focus, but nothing moves focus from a pad: phase 6); a fort with many crew or a long hold (only one or two crew were seen); SpaceFort under many pilots reading every 30 s; the Mac app with a fort behind it (its packed copy still says no fort is connected).
+
