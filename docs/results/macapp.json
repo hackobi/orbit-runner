@@ -1,5 +1,5 @@
 {
-  "measuredAt": "2026-11-19T14:15:24.127Z",
+  "measuredAt": "2026-11-20T03:22:49.333Z",
   "data": {
     "electron": "45.3.2",
     "chrome": "156.0.8078.100",
@@ -10,14 +10,14 @@
       "scale": 2
     },
     "frames": 1500,
-    "seconds": 14.9899,
-    "framesPerSecond": 100.00066711585801,
+    "seconds": 14.9882,
+    "framesPerSecond": 100.01200944743198,
     "frameMsP50": 10,
-    "frameMsP99": 10.900000000000091,
-    "frameMsMax": 11.100000000000364,
+    "frameMsP99": 11.900000000000546,
+    "frameMsMax": 12,
     "corrections": 0,
     "largestCorrection": 0,
-    "moved": 201.14291081845266,
+    "moved": 201.2656192356597,
     "shotsFired": 13,
     "quality": "high"
   }

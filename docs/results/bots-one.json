@@ -1,12 +1,12 @@
 {
-  "measuredAt": "2026-11-19T13:57:15.349Z",
+  "measuredAt": "2026-11-20T03:17:07.128Z",
   "data": {
     "seconds": 60,
     "inputs": 3598,
     "snapshots": 1800,
     "corrections": 0,
     "missedInputs": 0,
-    "roundTripMs": 1.935159327564509,
-    "inputSlackTicks": 3.3736268647511904
+    "roundTripMs": 1.60067780082024,
+    "inputSlackTicks": 3.3703188784917364
   }
 }

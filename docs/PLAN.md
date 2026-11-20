@@ -14,7 +14,7 @@ This file is the running checkpoint. A new session should read it first, then `d
 | Dogfight feel (user request, 2026-11-15) | **Step 1 is live** (merged and deployed 2026-11-16 with the user's approval; they found physics and gameplay fine). Tasks are in [Dogfight feel](#dogfight-feel-before-phase-5) | The user picks what comes next |
 | Role-playing layer (user request, 2026-11-19) | **Built and tested 2026-11-19 on `feature/rpg-layer`, local only, not merged or deployed.** Experience, levels, missions, raiders and the boss (shown as the Warlock), progress kept per pilot. See [Role-playing layer](#role-playing-layer) | The user plays it and decides on a merge |
 | New look (user request, 2026-11-19) | **Built and tested 2026-11-19 on `feature/visuals`, local only.** Sky, planet, rocks, ships, orbs and particles redrawn; client only, wire format and simulation untouched. See the log | The user looks at it and decides on a merge |
-| One game with SpaceFort (user request, 2026-11-20) | **Proposal approved 2026-11-20 with its five recommendations; phase 1 (the transition) is being built on `feature/fort`, off `feature/visuals`.** `dwarf-fortress-nft-game/claudedocs/MERGE_PROPOSAL_2026-11-20.md` | Phase 1's measured gates, then the user tries it |
+| One game with SpaceFort (user request, 2026-11-20) | **Proposal approved 2026-11-20. Phase 1 of six (the transition, with a read-only fort) is built and tested on `feature/fort`, off `feature/visuals`, local only, not merged or deployed.** Decision D31; wire format 14. See the log | The user tries it and says whether it feels like one place; then phase 2 |
 | 5. Demos integration | Not started. Direction from the user recorded under Phase 5 (reuse v1's payment flow; King of the Hill) | Separate approval, and a payment proposal first |
 
 **Next action:** the user looks at `feature/visuals` (it sits on the role-playing, drops and controller branches, none of them deployed) and decides what to merge. Before that, still open: the user chooses between step 2 of [Dogfight feel](#dogfight-feel-before-phase-5) (matches) and Phase 5. Their direction on 2026-11-16: the open room stays the normal game, everyone with the same abilities; rules, timing, groups and teams come later, for tournaments. Phases 1 to 4 are built. Phase 5 (Demos) needs separate approval and starts with a written payment proposal, not code. Open items that need the user: `npm run dev:lan` (it changes the Mac's keychain) and the phone checklist in `docs/DEVICE-TESTING.md`; opening the Mac app themselves.
@@ -38,6 +38,7 @@ This file is the running checkpoint. A new session should read it first, then `d
 | `npm run update-check` | A real update from one build to the next, in Chromium with a kept profile and in the Mac app. About two minutes; opens windows |
 | `npm run results` | Rewrites the latest-results section of this file from `docs/results/` and fails if a gate fails |
 | `npm run screenshot -- <dir> [phone]` | Stages a few moments and takes pictures of them |
+| `node scripts/fort-look.ts <dir> [phone]` | Stages a death, goes into the fort and out again, takes pictures and times both presses. With `ORBIT_FORT_URL` and `ORBIT_BRIDGE_SECRET` set it shows a real fort from a SpaceFort server |
 | `npm run icons` | Redraws the app icons into `public/icons/` |
 | `npm run spike:webgl` | Re-runs the headless WebGL measurement |
 
@@ -308,18 +309,18 @@ Acceptance:
 
 ### Latest results, with all content switched on
 
-The Phase 2 suite run again on the current build: 2,000 rocks, 1,360 orbs, Fenix ships, scoring and the store all in play. Measured on this Mac (M3 Ultra) with headless browsers. Browser suite: 2026-11-19T00:47Z. Load test: 2026-11-14. Thresholds are in `tests/thresholds.ts`; raw numbers are in `docs/results/`. Distances are world units; a ship is 4.0 long. This section is generated from those files by `npm run results`.
+The Phase 2 suite run again on the current build: 2,000 rocks, 1,360 orbs, Fenix ships, scoring and the store all in play. Measured on this Mac (M3 Ultra) with headless browsers. Browser suite: 2026-11-20T03:21Z. Load test: 2026-11-14. Thresholds are in `tests/thresholds.ts`; raw numbers are in `docs/results/`. Distances are world units; a ship is 4.0 long. This section is generated from those files by `npm run results`.
 
 **Thresholds from the brief**
 
 | Threshold | Limit | Measured | Result |
 |---|---|---|---|
 | Remote position error p95, 100 ms profile | < 2.0 | 0.007 (worst of four clients) | Pass |
-| Remote position error max, 100 ms profile | < 8.0 | 0.016 (worst of four) | Pass |
+| Remote position error max, 100 ms profile | < 8.0 | 0.017 (worst of four) | Pass |
 | No visible snaps, every profile | 0 frames over 3 × speed limit × frame time | 0 (worst of four clients on three profiles) | Pass |
-| Own-ship corrections, 200 ms lossy profile | p95 < 4.0 | 0.859 (worst of four) | Pass |
+| Own-ship corrections, 200 ms lossy profile | p95 < 4.0 | 0.860 (worst of four) | Pass |
 | Own-ship corrections, clean network | none over 0.01 | largest 0.000; 0 corrections of any size | Pass |
-| Hit agreement, 100 ms profile (ships kept alive) | ≥ 95% | 100.0% (lowest of four; fewest hits seen by one client: 104; server hits not shown: 0) | Pass |
+| Hit agreement, 100 ms profile (ships kept alive) | ≥ 95% | 100.0% (lowest of four; fewest hits seen by one client: 102; server hits not shown: 0) | Pass |
 | Load: tick time p99, 16 bots, 300 s | ≤ 8.33 ms | 2.21 ms (p50 1.24, worst single tick 8.48) | Pass |
 | Load: heap after garbage collection, end against 1 minute | growth ≤ 10% | 14.5 MB → 10.0 MB (-31.2%) | Pass |
 | Load: bandwidth per client | reported | 16.3 kB/s down in 40 messages/s | Reported |
@@ -330,28 +331,28 @@ No threshold failed.
 
 | Client | Frames/s | Remote error p95 | Remote error max | Drawn past newest sample | Snaps | Own corrections | Correction p95 | Correction max | Hits confirmed of seen | Server hits not shown | Late inputs | View delay | Interp. delay |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Chromium desktop | 60 | 0.007 | 0.014 | 0.0% | 0 | 0 | 0.000 | 0.000 | 86 of 86 (100.0%) | 0 | 0.0% | 139 ms | 67 ms |
-| WebKit desktop | 100 | 0.007 | 0.017 | 0.0% | 0 | 0 | 0.000 | 0.000 | 79 of 79 (100.0%) | 0 | 0.0% | 122 ms | 67 ms |
-| iPhone 15 (WebKit) | 100 | 0.007 | 0.018 | 0.0% | 0 | 0 | 0.000 | 0.000 | 104 of 104 (100.0%) | 0 | 0.0% | 132 ms | 67 ms |
-| Pixel 7 (Chromium) | 60 | 0.007 | 0.011 | 0.0% | 0 | 0 | 0.000 | 0.000 | 107 of 107 (100.0%) | 0 | 0.0% | 120 ms | 67 ms |
+| Chromium desktop | 60 | 0.007 | 0.015 | 0.0% | 0 | 0 | 0.000 | 0.000 | 90 of 90 (100.0%) | 0 | 0.0% | 115 ms | 67 ms |
+| WebKit desktop | 100 | 0.007 | 0.017 | 0.0% | 0 | 0 | 0.000 | 0.000 | 79 of 79 (100.0%) | 0 | 0.0% | 129 ms | 67 ms |
+| iPhone 15 (WebKit) | 100 | 0.007 | 0.017 | 0.0% | 0 | 0 | 0.000 | 0.000 | 104 of 104 (100.0%) | 0 | 0.0% | 129 ms | 67 ms |
+| Pixel 7 (Chromium) | 60 | 0.007 | 0.011 | 0.0% | 0 | 0 | 0.000 | 0.000 | 96 of 96 (100.0%) | 0 | 0.0% | 132 ms | 67 ms |
 
 **100ms profile (100 ms round trip ± 20 ms)**
 
 | Client | Frames/s | Remote error p95 | Remote error max | Drawn past newest sample | Snaps | Own corrections | Correction p95 | Correction max | Hits confirmed of seen | Server hits not shown | Late inputs | View delay | Interp. delay |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Chromium desktop | 60 | 0.007 | 0.016 | 0.0% | 0 | 0 | 0.000 | 0.000 | 120 of 120 (100.0%) | 0 | 0.0% | 238 ms | 71 ms |
-| WebKit desktop | 100 | 0.007 | 0.016 | 0.0% | 0 | 0 | 0.000 | 0.000 | 136 of 136 (100.0%) | 0 | 0.0% | 232 ms | 72 ms |
-| iPhone 15 (WebKit) | 100 | 0.007 | 0.016 | 0.0% | 0 | 0 | 0.000 | 0.000 | 104 of 104 (100.0%) | 0 | 0.0% | 234 ms | 70 ms |
-| Pixel 7 (Chromium) | 60 | 0.007 | 0.010 | 0.0% | 0 | 0 | 0.000 | 0.000 | 125 of 125 (100.0%) | 0 | 0.0% | 219 ms | 71 ms |
+| Chromium desktop | 60 | 0.007 | 0.016 | 0.0% | 0 | 0 | 0.000 | 0.000 | 116 of 116 (100.0%) | 0 | 0.0% | 236 ms | 71 ms |
+| WebKit desktop | 100 | 0.007 | 0.017 | 0.0% | 0 | 0 | 0.000 | 0.000 | 136 of 136 (100.0%) | 0 | 0.0% | 234 ms | 70 ms |
+| iPhone 15 (WebKit) | 100 | 0.007 | 0.017 | 0.0% | 0 | 0 | 0.000 | 0.000 | 102 of 102 (100.0%) | 0 | 0.0% | 235 ms | 72 ms |
+| Pixel 7 (Chromium) | 60 | 0.007 | 0.009 | 0.0% | 0 | 0 | 0.000 | 0.000 | 124 of 124 (100.0%) | 0 | 0.0% | 223 ms | 70 ms |
 
 **200ms-lossy profile (200 ms round trip ± 50 ms, 2% loss as an in-order 260 ms stall).** Only the snap and correction columns are gated on this profile; the rest is reported.
 
 | Client | Frames/s | Remote error p95 | Remote error max | Drawn past newest sample | Snaps | Own corrections | Correction p95 | Correction max | Hits confirmed of seen | Server hits not shown | Late inputs | View delay | Interp. delay |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Chromium desktop | 60 | 0.049 | 1.982 | 8.2% | 0 | 145 | 0.530 | 0.785 | 54 of 54 (100.0%) | 0 | 18.4% | 350 ms | 250 ms |
-| WebKit desktop | 100 | 0.027 | 0.655 | 4.9% | 0 | 125 | 0.344 | 1.219 | 49 of 50 (98.0%) | 0 | 14.8% | 350 ms | 250 ms |
-| iPhone 15 (WebKit) | 100 | 0.047 | 0.661 | 7.5% | 0 | 134 | 0.211 | 0.406 | 28 of 32 (87.5%) | 0 | 15.5% | 350 ms | 250 ms |
-| Pixel 7 (Chromium) | 60 | 0.023 | 0.299 | 5.2% | 0 | 102 | 0.859 | 1.936 | 38 of 39 (97.4%) | 0 | 15.6% | 350 ms | 250 ms |
+| Chromium desktop | 60 | 0.050 | 1.469 | 8.4% | 0 | 125 | 0.505 | 0.531 | 62 of 62 (100.0%) | 0 | 18.5% | 350 ms | 250 ms |
+| WebKit desktop | 100 | 0.027 | 0.513 | 5.0% | 0 | 119 | 0.312 | 0.754 | 72 of 74 (97.3%) | 0 | 15.0% | 350 ms | 250 ms |
+| iPhone 15 (WebKit) | 100 | 0.042 | 0.583 | 7.6% | 0 | 133 | 0.323 | 1.295 | 37 of 40 (92.5%) | 0 | 15.3% | 350 ms | 250 ms |
+| Pixel 7 (Chromium) | 60 | 0.022 | 0.248 | 4.6% | 0 | 101 | 0.860 | 1.815 | 42 of 42 (100.0%) | 0 | 15.2% | 350 ms | 250 ms |
 
 How to read the tables:
 
@@ -360,25 +361,25 @@ How to read the tables:
 - "Late inputs" is the share of the client's inputs that reached the server after their tick had been simulated.
 - "View delay" is how far behind its own ship a client sees the others. The server honours up to 350 ms of it. "Interp. delay" is the part of that spent waiting so there are two samples to draw between.
 - "Hits confirmed of seen" counts the hits a shooter's screen showed and whether the server agreed. "Server hits not shown" is the other direction: hits the server counted that the shooter's own test did not find, so the bullet vanishes and the damage lands without a hit flash.
-- On the lossy profile the shooters' screens showed 175 hits and the server confirmed 169 of them (96.6%), and the server counted 0 hits that were not shown (0.0% of the server's hits; worst client 0). Neither figure is gated on this profile, where the view delay is pinned at the 350 ms cap.
+- On the lossy profile the shooters' screens showed 218 hits and the server confirmed 213 of them (97.7%), and the server counted 0 hits that were not shown (0.0% of the server's hits; worst client 0). Neither figure is gated on this profile, where the view delay is pinned at the 350 ms cap.
 - A correction of size 0.000 moved nothing; a field other than position differed. Here it is the hull: the fights run among the rocks, a client rightly predicts the hull lost in a crash, and the test's keep-alive hook then gives it back on the server. One crash under the hook is one such correction (checked in virtual time: none without the hook).
 - Frame rates are headless browsers on a desktop GPU. They say nothing about phones.
 
 **Hit agreement in real play (reported, not gated)**
 
-Four hunter bots over real sockets through the proxy on the 100 ms profile, with real kills, regrouped every 12 s, 60 s: **145 of 153 hits seen by shooters were confirmed (94.8%)**, with 20 kills. Of the 8 not confirmed, 8 were on a ship another player had already destroyed on the server. The server decided 0 hits that the shooter's screen did not show. The gated figure above is higher because its ships cannot die; this run is below the 95% line and is the number to expect in a free-for-all.
+Four hunter bots over real sockets through the proxy on the 100 ms profile, with real kills, regrouped every 12 s, 60 s: **138 of 147 hits seen by shooters were confirmed (93.9%)**, with 19 kills. Of the 9 not confirmed, 6 were on a ship another player had already destroyed on the server. The server decided 1 hits that the shooter's screen did not show. The gated figure above is higher because its ships cannot die; this run is below the 95% line and is the number to expect in a free-for-all.
 
 **Other acceptance checks**
 
 | Check | Measured |
 |---|---|
-| One bot, real socket, 60 s | 3598 inputs, 1800 snapshots, 0 corrections, 0 late inputs, round trip 1.9 ms |
-| Four hunters, real sockets, no added latency, 60 s | all joined and saw each other; 111 bullets, 35 server hits, 35 of 36 seen hits confirmed (97.2%), 5 kills |
-| Loss mode `drop`: four hunters, 200 ms, 2% of inputs and snapshots discarded, 40 s | 330 messages dropped of 15787; 42 hits, 6 deaths; the server ran 0 ticks without an input; every bot ended in the right life of its ship and had heard of every death |
+| One bot, real socket, 60 s | 3598 inputs, 1800 snapshots, 0 corrections, 0 late inputs, round trip 1.6 ms |
+| Four hunters, real sockets, no added latency, 60 s | all joined and saw each other; 71 bullets, 28 server hits, 28 of 29 seen hits confirmed (96.6%), 4 kills |
+| Loss mode `drop`: four hunters, 200 ms, 2% of inputs and snapshots discarded, 40 s | 328 messages dropped of 15739; 42 hits, 6 deaths; the server ran 0 ticks without an input; every bot ended in the right life of its ship and had heard of every death |
 | Tab hidden for 3 s, 100 ms profile | the other player saw 0 snaps and at most 0.010 units of error over 481 frames; the hidden client resumed in its seat without reconnecting |
 | Connections cut, 100 ms profile | both clients reconnected once and kept their player ids; nobody died (asserted by the test; no numbers) |
 | Late joiner, 100 ms profile | drew both other ships within 0.002 units (p95) of the server, 0 snaps, and drew their bullets |
-| Firefox 159.0 smoke run | WebGL2 yes, 59 frames a second, saw 1 other player, 0 corrections |
+| Firefox 159.0 smoke run | WebGL2 yes, 98 frames a second, saw 1 other player, 0 corrections |
 | Same simulation bits as Node: chromium 158.0.8127.18 | 10,000-tick hash equal, 0 fused multiply-adds in 2,000,000 tries, handshake fingerprint equal |
 | Same simulation bits as Node: webkit 27.2 | 10,000-tick hash equal, 0 fused multiply-adds in 2,000,000 tries, handshake fingerprint equal |
 | Same simulation bits as Node: firefox 159.0 | 10,000-tick hash equal, 0 fused multiply-adds in 2,000,000 tries, handshake fingerprint equal |
@@ -386,7 +387,7 @@ Four hunter bots over real sockets through the proxy on the 100 ms profile, with
 | Can it be installed? The browser's own verdict, same headed run, production build | objections to the game: none; to a control page with no manifest: no-manifest |
 | A real update in Chromium, profile kept between visits (`npm run update-check`) | first visit: build A. Build B put on the server. Second visit: build A opens and is still flying 3 s later (A) with the new one waiting; when the ship is destroyed the page loads build B, in the same seat (yes) with its points (yes). Third visit: build B |
 | The same update in the Mac app, four starts with one profile | builds shown: A, B, B, B; service workers registered: 0 |
-| Mac app from source, in a window on this Mac's 100 Hz display, 15 s of flying | Electron 45.3.2 (Chromium 156.0.8078.100); 100.0 frames a second; frame time p50 10.1 ms, p99 11.9 ms, worst 12.0 ms; 0 corrections, largest 0.000 |
+| Mac app from source, in a window on this Mac's 100 Hz display, 15 s of flying | Electron 45.3.2 (Chromium 156.0.8078.100); 100.0 frames a second; frame time p50 10.0 ms, p99 11.9 ms, worst 12.0 ms; 0 corrections, largest 0.000 |
 | The packaged, ad hoc signed app (`npm run package:mac`), started once | release/Orbit Runner-darwin-arm64/Orbit Runner.app, 254 MB; opened, connected (1 player in the room), showed "Hull 100"; packaged build yes; debug hook in it no; 0 console warnings or errors |
 
 Load test detail: 16 bots in one place firing without pause for 300 s, about 137 bullets a second, each tested against 15 targets every tick. The server held 60.00 ticks a second with 0 catch-ups and 0 dropped ticks; 0.00% of inputs were late. Bandwidth is payload bytes handed to the sockets; WebSocket and TCP framing are extra.
@@ -664,3 +665,37 @@ The user asked for the best-looking ships and scenery that cost nothing in gamep
 - Checked in this code for it: there is no docking; the 3 s respawn is a condition in `room.ts`, outside the shared step, so holding it until the player launches needs one new presence value (wire format 14, Mac app rebuild) and leaves the pinned trace hash alone; a waiting update reloads the page whenever the ship is not alive, which would interrupt a fort visit; whether the Mac app would show an embedded second site is not verified (its top-level navigation is held to one origin).
 - It amends D5 (respawn waits for Launch once the fort is opened) and D16 (a pilot in the fort is not idle), and touches D25 (kept: no power from the fort), D27 (kept: a guest plays both halves and nothing of value hangs on the key) and D28 (crates would move without a typed code; the code stays for SpaceFort's own page).
 - **The user said yes to the proposal and its five recommendations the same day.** Work is on `feature/fort`, off `feature/visuals`, so it does not carry the cockpit view (`feature/cockpit`), which is still the user's to judge. The same two log entries were first committed on `feature/cockpit` (`a341420`, `bd81916`).
+
+### 2026-11-20: the fort, phase 1: the transition (D31)
+
+Built on `feature/fort`. Wire format 14, so the Mac app must be rebuilt after a merge. The simulation step is untouched: the pinned trace hash is the same and three browsers still agree with Node on it.
+
+- **What it is.** When the ship is destroyed the death screen has a **Fort** button. Tab, the controller's touchpad or Create / View button, or that button opens the fort over the game, which keeps drawing: the camera rises from where the ship was and turns to the planet. **Launch** (the same controls) brings the ship back. A pilot who presses nothing respawns after 3 s as before.
+- **Server** (`room.ts`). A new client message and a new event, both `fort`. A pilot in the fort gets no ship, is not idle, and keeps the seat five minutes; then the seat is freed with a new reason (`REJECT_FORT`), the fort stays open, and Launch seats them again (`Session.rejoin`). Only a pilot without a ship is let in. A ship lost while its pilot was away puts them in the fort, so they come back to it and not into space. The three seconds are never shortened.
+- **The fort's contents** come from SpaceFort (`feat/fort-backend` there). `POST /api/fort` on this server takes the pilot key, refuses pilots the room has never seated, and asks SpaceFort for `pilot_<32 hex>`, an id made from the key with the bridge secret (`src/server/fort.ts`). What comes back is checked field by field (`src/shared/fort.ts`). Set `ORBIT_FORT_URL` and `ORBIT_BRIDGE_SECRET`; without them the fort screen says no fort is connected and shows the sortie report only.
+- **Screen** (`src/client/fort.ts`, `fortModel.ts`, `fort.css`): the sortie report (time flown, points, experience, kills, crates), the fort's reports, the crew with what each is doing and a countdown, the hold, and one strip of currencies. Read-only. The look is SpaceFort's steel materials, copied into `fort.css`.
+- A waiting update no longer reloads the page while the fort is open.
+
+Measured on this Mac:
+
+| Check | Result |
+|---|---|
+| Press to fort shown (gate: 150 ms) | 29 ms Chromium, 47 ms WebKit in the suite; 21 ms at desktop and at phone size in `fort-look` |
+| Launch to ship flying, no respawn time owed (gate: 300 ms) | 65 ms Chromium, 41 ms WebKit; 35 and 31 ms in `fort-look` |
+| Own-ship corrections on a clean network | 0, as before (`npm run results`: every gate passes) |
+| Unit tests | 353 pass (33 new) |
+| Integration | 12 of 12 |
+| Browser suite | 36 of 36 (10 new: five fort tests in Chromium and in WebKit) |
+| Lint, typecheck | clean |
+| With a real SpaceFort server behind it (a trial one, own database, on-chain writes off) | The fort showed that pilot's two recruits, one on a mission counting down, and the first-visit report; no console errors. Looked at in pictures at 1280×720 and at an iPhone 15's landscape size |
+
+Found by the full suite and fixed before this entry: the fort screen asked the server again on every frame whenever the fort was not available (1,502 failed requests in the Mac app test). The background read is now one request, and a test counts them. The copy of the client packed into the Mac app has no server to ask, so its fort screen says no fort is connected.
+
+Not done in phase 1, and not claimed:
+
+- **A returning pilot does not open in the fort on first load.** The proposal put it in phase 1. With a read-only fort there is nothing to collect, so it is left for phase 2. A page reloaded while in the fort does open there.
+- Crates won in flight are still moved by the claim code. The fort says how many are waiting.
+- Nothing in the fort can be done yet: no orders, no crates opened (phase 2).
+- No recall while flying (phase 4).
+
+**UNVERIFIED:** a real phone (the phone pictures are a phone's screen size in a desktop engine); a real controller (the tests replace the browser's list of pads); the Mac app with a fort behind it; SpaceFort's server anywhere but this Mac; whether it feels like one place, which only a person playing can say.
