@@ -415,6 +415,24 @@ body.fort-open #cockpit {
   transform: translateY(1px);
 }
 
+/* A row with one order: the words on the left, the key on the right. */
+.fort-well li.with-order {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 10px;
+  align-items: center;
+}
+
+.fort-well li.with-order > * {
+  grid-column: 1;
+}
+
+.fort-well li.with-order > .fort-order {
+  grid-column: 2;
+  grid-row: 1 / span 4;
+  margin: 0;
+}
+
 /* One order at a time: the rest wait for the fort's answer. */
 #fort.ordering .fort-order {
   opacity: 0.55;

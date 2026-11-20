@@ -42,6 +42,8 @@ const FLIGHT_REFRESH_MS = 30_000;
 const DUE_REFRESH_MS = 1500;
 /** Clocks on the screen tick once a second, not once a frame. */
 const REDRAW_MS = 250;
+/** The jobs offered to a crew member at once: the shortest ones open to them. */
+const JOBS_OFFERED = 3;
 /** How long what the fort said about an order stays on the screen. */
 const SAID_MS = 6000;
 
@@ -373,7 +375,7 @@ export class FortScreen {
                 `Unopened · from ${sourceText(crate.source)}`,
               ]);
               item.dataset.rarity = crate.tier.toLowerCase();
-              item.append(orderButton('Open', { kind: 'open', crateId: crate.id }));
+              beside(item, orderButton('Open', { kind: 'open', crateId: crate.id }));
               return item;
             }),
             ...items.map((gear) => {
@@ -381,7 +383,11 @@ export class FortScreen {
                 [gear.rarity, gear.slot ? plainWords(gear.slot) : null, `+${gear.bonus}`]
                   .filter(Boolean)
                   .join(' · '),
-                gear.wornBy ? `Worn by ${nameOf(gear.wornBy)}` : '',
+                gear.wornBy
+                  ? `Worn by ${nameOf(gear.wornBy)}`
+                  : gear.fits.length === 0
+                    ? 'Nobody in your crew can wear this yet'
+                    : '',
               ]);
               item.dataset.rarity = gear.rarity.toLowerCase();
               if (gear.id === this.fresh) item.classList.add('fresh');
@@ -451,11 +457,12 @@ export class FortScreen {
           ? [plainRow('Busy until they are back.')]
           : jobs.length === 0
             ? [plainRow('No job is open to them just now. More come up every few minutes.')]
-            : jobs.map(({ job, line, blocked }) => {
+            : jobs.slice(0, JOBS_OFFERED).map(({ job, line, blocked }) => {
                 const entry = row(job.title, [line, blocked]);
                 entry.dataset.rarity = job.rarity.toLowerCase();
                 if (!blocked) {
-                  entry.append(
+                  beside(
+                    entry,
                     orderButton('Send', { kind: 'send', unitId: member.id, jobId: job.id }),
                   );
                 }
@@ -471,7 +478,7 @@ export class FortScreen {
           if (worn) {
             const entry = row(worn.name, [plainWords(slot)]);
             entry.dataset.rarity = worn.rarity.toLowerCase();
-            entry.append(orderButton('Take off', { kind: 'unequip', unitId: member.id, slot }));
+            beside(entry, orderButton('Take off', { kind: 'unequip', unitId: member.id, slot }));
             return entry;
           }
           const choices = gearChoices(fort, member, slot);
@@ -506,7 +513,8 @@ export class FortScreen {
         member.skills.map((skill) => {
           const entry = plainRow(`${plainWords(skill.name)} ${skill.value}`);
           if (member.points > 0 && skill.value < 100) {
-            entry.append(
+            beside(
+              entry,
               orderButton('+1', {
                 kind: 'train',
                 unitId: member.id,
@@ -533,6 +541,12 @@ function orderButton(label: string, order: FortOrder): HTMLButtonElement {
   button.dataset.order = JSON.stringify(order);
   button.dataset.key = button.dataset.order;
   return button;
+}
+
+/** Puts a row's one order beside its words, not under them. */
+function beside(entry: HTMLLIElement, button: HTMLButtonElement): void {
+  entry.classList.add('with-order');
+  entry.append(button);
 }
 
 function heading(text: string): HTMLElement {
