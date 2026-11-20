@@ -791,6 +791,8 @@ The user asked for nine skins: three that fit the normal ship, three that fit th
 
 The size test caught two parts that reached past the standard ship (Phantom's nose light, Solar Crown's wing edge); both were pulled in.
 
+**The settings panel on a phone.** The two new rows made the panel 348 points tall, on a phone screen 343 to 390 tall on its side, so "Claim salvage crates" fell off the bottom. On a short screen the panel now stops 8 points above the bottom edge and scrolls. A new test in `tests/e2e/touch.spec.ts` checks that it stays on the screen and that a finger drag (a real touch event) brings the last row into view without steering the ship. Rerun after it: lint clean, and the Chromium, WebKit and touch projects, 39 of 39 (7 touch). The multiplayer, Mac app and Firefox projects were not rerun after this change, which is CSS and one test.
+
 **Not done, on purpose:** other players do not see a pilot's look (that needs the wire format, and a new answer to "which ship is mine": lights are cyan on your own ship and amber on others today). Looks are not earned: every pilot can wear all nine. `GameScene.setRemoteLooks` exists so that the pictures can dress other ships, and is reached only through the test hook.
 
 **UNVERIFIED:** a real phone (fill rate with Phantom's see-through hull close to the camera, and whether the paint reads on a small screen); frames a second (not measured; a look adds no draws to the standard ship's five, and one or two small pictures); the Mac app (it needs a rebuild to have the picker); how the looks feel in play, which only the user can say.
