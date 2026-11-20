@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   PAD_DEAD_ZONE,
+  PAD_TRIM_GAIN,
   activePad,
   padAxis,
   padControls,
@@ -87,6 +88,36 @@ describe('the controller layout', () => {
     expect(padControls(pad({ 3: -0.9 })).throttle).toBe(1);
     expect(padControls(pad({ 3: 0.9 })).throttle).toBe(-1);
     expect(padControls(pad({ 3: 0.9 }, { 12: 1 })).throttle).toBe(0);
+  });
+
+  it('leaves the right stick as speed only until L1 / LB is held', () => {
+    expect(padControls(pad({ 2: 1, 3: -1 }))).toMatchObject({ yaw: 0, pitch: 0, throttle: 1 });
+    // L1 alone does nothing.
+    expect(padControls(pad({}, { 4: 1 }))).toMatchObject({ yaw: 0, pitch: 0, throttle: 0 });
+  });
+
+  it('steers from the right stick as the mouse does while L1 / LB is held', () => {
+    // Stick right is the pointer right of centre: a turn to the left, at the mouse's strength.
+    expect(padControls(pad({ 2: 1 }, { 4: 1 })).yaw).toBeCloseTo(PAD_TRIM_GAIN);
+    expect(padControls(pad({ 2: -1 }, { 4: 1 })).yaw).toBeCloseTo(-PAD_TRIM_GAIN);
+    // Stick back is the pointer below centre.
+    expect(padControls(pad({ 3: 1 }, { 4: 1 })).pitch).toBeCloseTo(-PAD_TRIM_GAIN);
+    expect(padControls(pad({ 3: -1 }, { 4: 1 })).pitch).toBeCloseTo(PAD_TRIM_GAIN);
+    // It no longer changes speed, and the D-pad still does.
+    expect(padControls(pad({ 3: -1 }, { 4: 1 })).throttle).toBe(0);
+    expect(padControls(pad({ 3: -1 }, { 4: 1, 13: 1 })).throttle).toBe(-1);
+    // A worn right stick at rest adds nothing.
+    expect(padControls(pad({ 2: 0.1, 3: -0.1 }, { 4: 1 }))).toMatchObject({ yaw: 0, pitch: 0 });
+  });
+
+  it('adds the right stick to the left one', () => {
+    // Left stick hard right, right stick pulled the way that eases the turn.
+    expect(padControls(pad({ 0: 1, 2: 1 }, { 4: 1 })).yaw).toBeCloseTo(-1 + PAD_TRIM_GAIN);
+    // Left stick turns, right stick adds pitch: a diagonal.
+    expect(padControls(pad({ 0: 1, 3: -1 }, { 4: 1 }))).toMatchObject({
+      yaw: -1,
+      pitch: PAD_TRIM_GAIN,
+    });
   });
 
   it('survives a pad that reports fewer buttons and axes than the layout has', () => {
