@@ -244,3 +244,205 @@ test('a page reloaded in the fort opens in the fort', async ({ page }) => {
   await expect(page.locator('#fort')).toBeHidden();
   await expect(page.locator('#hull')).toHaveText('Hull 100', { timeout: 6000 });
 });
+
+// Orders. The game's server is stood in for at /api/fort and /api/fort/order,
+// with a small fort that answers each order as SpaceFort would, so what is
+// tested is the screen: that each button sends the order it names, once, and
+// that the screen then shows the fort as it stands after it.
+test('orders: a crate is opened, its item worn, a point spent, and a crew member sent out and heard from in flight', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const problems = problemsOf(page);
+  const gear = (worn: { id: string; name: string; rarity: string } | null) => [
+    { slot: 'PRIMARY_WEAPON', item: worn },
+    { slot: 'SECONDARY_WEAPON', item: null },
+    { slot: 'ARMOR_SYSTEM', item: null },
+    { slot: 'UTILITY_MODULE', item: null },
+  ];
+  const rifle = { id: 'upg_9', name: 'Rare Plasma Rifle', rarity: 'rare' };
+  const fort = {
+    now: Date.now(),
+    currencies: { credits: 100, upgradePoints: 50, renown: 0 },
+    crew: [
+      {
+        id: 'nft_1',
+        name: 'Maya "Comet" Ranger',
+        className: 'Space Recruit',
+        level: 4,
+        state: 'ready',
+        until: null as number | null,
+        doing: null as string | null,
+        points: 1,
+        skills: [{ name: 'COMBAT', value: 12 }],
+        gear: gear(null),
+      },
+    ],
+    hold: {
+      crates: [{ id: 'c'.repeat(24), tier: 'Rare', source: 'raider' }],
+      itemCount: 0,
+      items: [] as object[],
+    },
+    jobs: [
+      {
+        id: 'task_7',
+        title: 'Sweep the outer beacons',
+        rarity: 'common',
+        lasts: 240_000,
+        closes: Date.now() + 600_000,
+        cost: 0,
+        pays: { credits: 30, upgradePoints: 2, experience: 40 },
+        open: ['nft_1'],
+      },
+    ],
+    reports: [{ id: 'in_1', at: Date.now(), title: 'Maya reports for duty', detail: null }],
+  };
+  const maya = fort.crew[0];
+  if (!maya) throw new Error('the fort has no crew');
+  const orders: { kind: string }[] = [];
+  await page.route('**/api/fort', (route) =>
+    route.fulfill({ json: { ok: true, fort: { ...fort, now: Date.now() } } }),
+  );
+  await page.route('**/api/fort/order', (route) => {
+    const { order } = route.request().postDataJSON() as { order: { kind: string } };
+    orders.push(order);
+    let message = '';
+    if (order.kind === 'open') {
+      fort.hold.crates = [];
+      fort.hold.items = [
+        { ...rifle, slot: 'PRIMARY_WEAPON', bonus: 20, wornBy: null, fits: ['nft_1'] },
+      ];
+      fort.hold.itemCount = 1;
+      message = rifle.name;
+    } else if (order.kind === 'equip') {
+      fort.hold.items = [
+        { ...rifle, slot: 'PRIMARY_WEAPON', bonus: 20, wornBy: 'nft_1', fits: ['nft_1'] },
+      ];
+      maya.gear = gear(rifle);
+      message = 'Rare Plasma Rifle equipped';
+    } else if (order.kind === 'train') {
+      maya.points = 0;
+      maya.skills = [{ name: 'COMBAT', value: 13 }];
+      message = 'Maya: combat +1';
+    } else if (order.kind === 'send') {
+      maya.state = 'mission';
+      maya.until = Date.now() + 240_000;
+      maya.doing = 'Sweep the outer beacons';
+      fort.jobs = [];
+      message = 'Maya is on the way';
+    }
+    return route.fulfill({
+      json: { ok: true, done: { ok: true, message }, fort: { ...fort, now: Date.now() } },
+    });
+  });
+
+  const id = await start(page);
+  await crash(page, id);
+  await pressTab(page, 'fort-shown');
+
+  // The one crew member's orders are showing without being asked for.
+  const crew = page.locator('#fort-crew');
+  await expect(crew.locator('.fort-pick')).toHaveAttribute('aria-expanded', 'true');
+  await expect(crew).toContainText('1 skill point');
+  await expect(crew).toContainText(
+    'about 30 credits, 2 upgrade points, 40 experience if it succeeds',
+  );
+
+  // Open the crate: what it held is said, and shown in the hold.
+  const hold = page.locator('#fort-hold');
+  await expect(hold).toContainText('Rare crate');
+  await hold.getByRole('button', { name: 'Open' }).click();
+  await expect(page.locator('#fort-state')).toHaveText(/The crate held: Rare Plasma Rifle/);
+  await expect(hold.locator('li.fresh')).toContainText('Rare Plasma Rifle');
+  await expect(hold.getByRole('button', { name: 'Open' })).toHaveCount(0);
+  await expect(page.locator('#fort-crates')).toHaveText('0');
+
+  // Wear it, from the keyboard: the place is kept when the list is redrawn.
+  const wear = crew.getByRole('button', { name: 'Wear Rare Plasma Rifle +20' });
+  await wear.focus();
+  await page.keyboard.press('Enter');
+  await expect(crew.getByRole('button', { name: 'Take off' })).toBeVisible();
+  await expect(hold).toContainText('Worn by Maya "Comet" Ranger');
+  expect(await page.evaluate(() => document.activeElement?.closest('#fort') !== null)).toBe(true);
+
+  await crew.getByRole('button', { name: '+1' }).click();
+  await expect(crew).toContainText('combat 13');
+  await expect(crew.getByRole('button', { name: '+1' })).toHaveCount(0);
+
+  await crew.getByRole('button', { name: 'Send' }).click();
+  await expect(crew.locator('.status')).toContainText('On a mission');
+  await expect(crew.locator('.status')).toContainText('Sweep the outer beacons');
+  await expect(crew).toContainText('Busy until they are back.');
+
+  expect(orders).toEqual([
+    { kind: 'open', crateId: 'c'.repeat(24) },
+    { kind: 'equip', unitId: 'nft_1', itemId: 'upg_9' },
+    { kind: 'train', unitId: 'nft_1', skill: 'COMBAT', points: 1 },
+    { kind: 'send', unitId: 'nft_1', jobId: 'task_7' },
+  ]);
+
+  // Out flying, the job ends: the fort's word reaches the cockpit as a banner.
+  await pressTab(page, 'flying');
+  maya.state = 'ready';
+  maya.until = null;
+  maya.doing = null;
+  fort.reports = [
+    {
+      id: 'in_2',
+      at: Date.now(),
+      title: 'Maya completed Sweep the outer beacons',
+      detail: null,
+    },
+    ...fort.reports,
+  ];
+  await expect(page.locator('#banner')).toContainText('Maya completed Sweep the outer beacons', {
+    timeout: 45_000,
+  });
+  await expect(page.locator('#fort')).toBeHidden();
+
+  expect(problems).toEqual([]);
+});
+
+test('an order the fort refuses says why, and one that gets no answer says so', async ({
+  page,
+}) => {
+  const fort = {
+    now: Date.now(),
+    currencies: { credits: 0, upgradePoints: 0, renown: 0 },
+    crew: [],
+    hold: {
+      crates: [{ id: 'c'.repeat(24), tier: 'Common', source: 'orb' }],
+      itemCount: 0,
+      items: [],
+    },
+    jobs: [],
+    reports: [],
+  };
+  let answer: object | null = {
+    ok: true,
+    done: { ok: false, message: 'No such crate in your hold' },
+    fort,
+  };
+  let asked = 0;
+  await page.route('**/api/fort', (route) => route.fulfill({ json: { ok: true, fort } }));
+  await page.route('**/api/fort/order', (route) => {
+    asked += 1;
+    return answer ? route.fulfill({ json: answer }) : route.abort();
+  });
+  const id = await start(page);
+  await crash(page, id);
+  await pressTab(page, 'fort-shown');
+
+  const open = page.locator('#fort-hold').getByRole('button', { name: 'Open' });
+  await open.click();
+  await expect(page.locator('#fort-state')).toHaveText(/No such crate in your hold/);
+  await expect(page.locator('#fort-state')).toHaveClass(/refused/);
+  // The crate is still there to try again.
+  await expect(open).toBeVisible();
+
+  answer = null;
+  await open.click();
+  await expect(page.locator('#fort-state')).toHaveText(/The fort is not answering/);
+  await expect(open).toBeVisible();
+  expect(asked).toBe(2);
+});

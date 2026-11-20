@@ -1,14 +1,14 @@
 // Takes pictures of the way into the fort and out again, and times both:
 //   node scripts/fort-look.ts <directory> [phone]
 // It starts its own game server and dev server and flies one browser client.
-// With ORBIT_FORT_URL and ORBIT_BRIDGE_SECRET set (a SpaceFort server to read
-// forts from) the fort is the pilot's real one; without them the screen says
+// With ORBIT_FORT_URL, ORBIT_BRIDGE_SECRET and ORBIT_FORT_ID_KEY set (a
+// SpaceFort server to keep forts in) the fort is the pilot's real one, with a
+// crate to open and a crew member out on a job; without them the screen says
 // the fort is not connected, and that is what is pictured.
 
 import { chromium, devices } from '@playwright/test';
 import { createServer } from 'vite';
 import { MemoryCrateStore } from '../src/server/crates.ts';
-import { fortPlayerId } from '../src/server/fort.ts';
 import { MemoryPilotStore } from '../src/server/pilots.ts';
 import { startServer } from '../src/server/server.ts';
 
@@ -22,15 +22,19 @@ process.env.ORBIT_SERVER_PORT = String(SERVER_PORT);
 process.env.ORBIT_CLIENT_PORT = String(CLIENT_PORT);
 const fortUrl = process.env.ORBIT_FORT_URL;
 const bridgeSecret = process.env.ORBIT_BRIDGE_SECRET;
+const fortIdKey = process.env.ORBIT_FORT_ID_KEY;
+const fortConnected = Boolean(fortUrl && bridgeSecret && fortIdKey);
 
+const crates = new MemoryCrateStore();
 const server = await startServer({
   port: SERVER_PORT,
   seed: 5,
   npcs: true,
   pilots: new MemoryPilotStore(),
-  crates: new MemoryCrateStore(),
+  crates,
   ...(fortUrl ? { fortUrl } : {}),
   ...(bridgeSecret ? { bridgeSecret } : {}),
+  ...(fortIdKey ? { fortIdKey } : {}),
 });
 const vite = await createServer();
 await vite.listen();
@@ -65,39 +69,14 @@ const shot = async (label: string, settleMs = 400): Promise<void> => {
   await page.screenshot({ path: name(label) });
 };
 
-// With a fort behind the server, give the pilot's crew something to be doing,
-// through SpaceFort's own routes, so the picture is of a fort in use.
-if (fortUrl && bridgeSecret) {
-  const key = await page.evaluate(() => localStorage.getItem('orbit-runner.pilot'));
+// With a fort behind the server: two crates won in flight, which come into the
+// hold when the fort opens.
+const key = await page.evaluate(() => localStorage.getItem('orbit-runner.pilot'));
+if (fortConnected) {
   if (!key) throw new Error('the page kept no pilot key');
-  const id = fortPlayerId(bridgeSecret, key);
-  const read = async (): Promise<{ fort: { crew: { id: string }[] } }> =>
-    (await (
-      await fetch(new URL(`/api/bridge/fort/${id}`, fortUrl), {
-        headers: { 'x-bridge-secret': bridgeSecret },
-      })
-    ).json()) as { fort: { crew: { id: string }[] } };
-  const first = (await read()).fort.crew[0];
-  await fetch(new URL(`/api/mint/${id}`, fortUrl), {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ tier: 'free' }),
-  });
-  const tasks = (await (await fetch(new URL('/api/tasks', fortUrl))).json()) as {
-    id: string;
-    rarity: string;
-    requiredSkills?: Record<string, number>;
-  }[];
-  const task = tasks.find(
-    (open) => open.rarity === 'common' && Object.keys(open.requiredSkills ?? {}).length === 0,
-  );
-  if (first && task) {
-    await fetch(new URL('/api/join-task', fortUrl), {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ playerId: id, taskId: task.id, nftId: first.id }),
-    });
-  }
+  crates.add(key, 'Rare', 'raider', 2);
+  crates.add(key, 'Common', 'orb', 2);
+  room.refreshCrates();
 }
 
 // A sortie worth reporting, flown in the belt, where ships are usually lost.
@@ -141,6 +120,26 @@ const timeToggle = (wantOpen: boolean): Promise<number> =>
 const openMs = await timeToggle(true);
 await shot('2-fort-just-opened', 0);
 await shot('3-fort', 2500);
+
+// Orders, given as a player gives them: open a crate, wear what it held if it
+// can be worn, send the recruit out.
+const said: string[] = [];
+if (fortConnected) {
+  const press = async (name: string | RegExp): Promise<boolean> => {
+    const button = page.locator('#fort').getByRole('button', { name }).first();
+    if ((await button.count()) === 0) return false;
+    await button.click();
+    await page.waitForTimeout(700);
+    said.push((await page.locator('#fort-state').textContent()) ?? '');
+    return true;
+  };
+  await page.locator('#fort-hold').getByRole('button', { name: 'Open' }).first().waitFor();
+  await press('Open');
+  await shot('3a-crate-opened', 200);
+  await press(/^Wear /);
+  await press('Send');
+  await shot('3b-orders-given', 400);
+}
 // Longer than the three seconds a ship takes to come back: it is being held.
 await page.waitForTimeout(3000);
 const heldBack = !room.shipOf(me)?.alive && room.inFort(me);
@@ -155,7 +154,9 @@ console.log(
   JSON.stringify(
     {
       screen: phone ? 'phone' : 'desktop',
-      fortConnected: Boolean(fortUrl && bridgeSecret),
+      fortConnected,
+      cratesLeftAboard: key ? crates.count(key) : null,
+      fortSaid: said,
       pressToFortShownMs: Math.round(openMs),
       shipHeldBackWhileInFort: heldBack,
       pressToFortHiddenMs: Math.round(closeMs),

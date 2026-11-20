@@ -1,17 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ReportWatch,
   SortieTracker,
   askFort,
   askLaunch,
   clockText,
   crewLine,
   debriefLines,
+  gearChoices,
+  jobChoices,
   secondsUntil,
   stepFortGate,
   unavailableText,
 } from '../../src/client/fortModel.ts';
 import type { FortFacts, FortGate } from '../../src/client/fortModel.ts';
-import type { CrewMember } from '../../src/shared/fort.ts';
+import type { CrewMember, FortItem, FortJob, FortView } from '../../src/shared/fort.ts';
 
 const member = (over: Partial<CrewMember>): CrewMember => ({
   id: 'nft_1',
@@ -21,6 +24,9 @@ const member = (over: Partial<CrewMember>): CrewMember => ({
   state: 'ready',
   until: null,
   doing: null,
+  points: 0,
+  skills: [],
+  gear: [],
   ...over,
 });
 
@@ -172,5 +178,97 @@ describe('the way in and out', () => {
   it('stays open when the connection drops or the seat is given up: the fort does not need a seat', () => {
     expect(stepFortGate(OPEN, facts({ playing: false }))).toEqual(OPEN);
     expect(stepFortGate(OPEN, facts({ playing: false, shipAlive: true }))).toEqual(OPEN);
+  });
+});
+
+describe('what a crew member can be told to do', () => {
+  const maya = member({});
+  const item = (over: Partial<FortItem>): FortItem => ({
+    id: 'upg_1',
+    name: 'Plasma Rifle',
+    rarity: 'rare',
+    slot: 'PRIMARY_WEAPON',
+    bonus: 20,
+    wornBy: null,
+    fits: [maya.id],
+    ...over,
+  });
+  const job = (over: Partial<FortJob>): FortJob => ({
+    id: 'task_1',
+    title: 'Sweep the outer beacons',
+    rarity: 'common',
+    lasts: 240_000,
+    closes: 1_000_000,
+    cost: 0,
+    pays: { credits: 30, upgradePoints: 1, experience: 40 },
+    open: [maya.id],
+    ...over,
+  });
+  const fort = (items: FortItem[], jobs: FortJob[], credits = 100): FortView => ({
+    now: 0,
+    currencies: { credits, upgradePoints: 0, renown: 0 },
+    crew: [maya],
+    hold: { crates: [], itemCount: items.length, items },
+    jobs,
+    reports: [],
+  });
+
+  it('offers for a slot only what is made for it, free, and theirs to wear, strongest first', () => {
+    const view = fort(
+      [
+        item({ id: 'weak', bonus: 5 }),
+        item({ id: 'strong', bonus: 35 }),
+        item({ id: 'worn', wornBy: 'nft_2' }),
+        item({ id: 'armor', slot: 'ARMOR_SYSTEM' }),
+        item({ id: 'not-theirs', fits: ['nft_2'] }),
+      ],
+      [],
+    );
+    expect(gearChoices(view, maya, 'PRIMARY_WEAPON').map((one) => one.id)).toEqual([
+      'strong',
+      'weak',
+    ]);
+    expect(gearChoices(view, maya, 'ARMOR_SYSTEM').map((one) => one.id)).toEqual(['armor']);
+    expect(gearChoices(view, maya, 'UTILITY_MODULE')).toEqual([]);
+  });
+
+  it('lists the jobs open to them, shortest first, and says what each takes and gives', () => {
+    const view = fort(
+      [],
+      [job({ id: 'long', lasts: 900_000 }), job({ id: 'short' }), job({ id: 'closed', open: [] })],
+    );
+    const choices = jobChoices(view, maya);
+    expect(choices.map((choice) => choice.job.id)).toEqual(['short', 'long']);
+    // The pay is not promised: a job can fail.
+    expect(choices[0]?.line).toBe(
+      '4 min · about 30 credits, 1 upgrade point, 40 experience if it succeeds',
+    );
+    expect(choices[1]?.line).toContain('15 min');
+    expect(choices.every((choice) => choice.blocked === '')).toBe(true);
+  });
+
+  it('says what a job costs, and that it cannot be afforded when it cannot', () => {
+    const dear = job({ cost: 12, pays: { credits: 0, upgradePoints: 0, experience: 0 } });
+    expect(jobChoices(fort([], [dear], 12), maya)[0]).toMatchObject({
+      line: '4 min · costs 12 credits',
+      blocked: '',
+    });
+    expect(jobChoices(fort([], [dear], 11), maya)[0]?.blocked).toBe('Not enough credits');
+  });
+});
+
+describe('reports that arrive while flying', () => {
+  const report = (id: string) => ({ id, at: 1, title: id, detail: null });
+
+  it('are told once each, oldest first, and what was there at the first look is old news', () => {
+    const watch = new ReportWatch();
+    expect(watch.take([report('b'), report('a')])).toEqual([]);
+    expect(watch.take([report('b'), report('a')])).toEqual([]);
+    // The fort lists the newest first.
+    expect(watch.take([report('d'), report('c'), report('b')]).map((one) => one.id)).toEqual([
+      'c',
+      'd',
+    ]);
+    expect(watch.take([report('d'), report('c')])).toEqual([]);
   });
 });

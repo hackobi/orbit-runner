@@ -497,6 +497,19 @@ describe('the fort', () => {
     expect(pilot.core.status).toBe('playing');
   });
 
+  it('knows whether a pilot has a ship in space, which is when their crates stay aboard', () => {
+    const world = new TestWorld(3, 0, false);
+    const pilotKey = Uint8Array.from({ length: 16 }, (_, index) => index + 1);
+    const hex = Array.from(pilotKey, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    expect(world.room.flying(hex)).toBe(false);
+    const pilot = world.addClient({ pilotKey });
+    world.run(500);
+    expect(world.room.flying(hex)).toBe(true);
+    expect(world.room.flying('f'.repeat(32))).toBe(false);
+    destroyed(world, pilot.core.playerId);
+    expect(world.room.flying(hex)).toBe(false);
+  });
+
   it('never shortens the three seconds: launching early waits out the rest', () => {
     const world = new TestWorld(3, 0, false);
     const pilot = world.addClient({});

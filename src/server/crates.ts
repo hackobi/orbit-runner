@@ -101,6 +101,15 @@ export class MemoryCrateStore {
     return { code, expires, crates };
   }
 
+  /** Takes these crates out of a pilot's hold: they have gone to the pilot's fort. */
+  take(key: string, ids: readonly string[]): void {
+    const hold = this.holds.get(key);
+    if (!hold) return;
+    const before = hold.crates.length;
+    hold.crates = hold.crates.filter((crate) => !ids.includes(crate.id));
+    if (hold.crates.length !== before) this.changed();
+  }
+
   /**
    * Hands over the crates behind a code and empties the hold. The same code
    * gives the same crates again for an hour, and nothing after that.

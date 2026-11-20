@@ -30,6 +30,9 @@ const bridgeSecret = process.env.ORBIT_BRIDGE_SECRET;
 // SpaceFort's server, where pilots' forts live. This server reads a pilot's
 // fort for them with the same secret; the browser never reaches SpaceFort.
 const fortUrl = process.env.ORBIT_FORT_URL;
+// What pilots' fort names are made with. Set it once and keep it: with a
+// different key every pilot would find a new, empty fort.
+const fortIdKey = process.env.ORBIT_FORT_ID_KEY;
 // For trying drops out: one chance, 0 to 1, in place of the real odds for
 // every source. Never set this on a public server.
 const tryOdds = Number(process.env.ORBIT_TRY_CRATE_ODDS ?? NaN);
@@ -45,6 +48,7 @@ const server = await startServer({
   crates,
   ...(bridgeSecret ? { bridgeSecret } : {}),
   ...(fortUrl ? { fortUrl } : {}),
+  ...(fortIdKey ? { fortIdKey } : {}),
   ...(crateOdds ? { crateOdds } : {}),
   ...(clientDir ? { clientDir } : {}),
 });
@@ -57,9 +61,9 @@ console.log(
     : 'crates drop but cannot be redeemed: set ORBIT_BRIDGE_SECRET to let SpaceFort claim them',
 );
 console.log(
-  fortUrl && bridgeSecret
-    ? `pilots' forts are read from ${fortUrl}`
-    : 'no fort behind this server: set ORBIT_FORT_URL and ORBIT_BRIDGE_SECRET to connect SpaceFort',
+  fortUrl && bridgeSecret && fortIdKey
+    ? `pilots' forts are at ${fortUrl}`
+    : 'no fort behind this server: set ORBIT_FORT_URL, ORBIT_BRIDGE_SECRET and ORBIT_FORT_ID_KEY to connect SpaceFort',
 );
 if (crateOdds)
   console.log(`TRIAL ODDS: every orb, raider and boss drops a crate ${tryOdds * 100}% of the time`);

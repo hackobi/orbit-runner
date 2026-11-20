@@ -1,7 +1,15 @@
 // What the fort screen says, worked out from what the game and the fort
 // report. No page and no network here, so every line can be tested.
 
-import type { CrewMember, FortUnavailable } from '../shared/fort.ts';
+import type {
+  CrewMember,
+  FortItem,
+  FortJob,
+  FortReport,
+  FortUnavailable,
+  FortView,
+  GearSlot,
+} from '../shared/fort.ts';
 
 /** mm:ss, or h:mm:ss past an hour. */
 export function clockText(seconds: number): string {
@@ -59,6 +67,72 @@ export function crewLine(member: CrewMember, secondsLeft: number | null): CrewLi
   return { text: `${what} · ${when}`, free: false, due: false };
 }
 
+const plural = (count: number, one: string): string => `${count} ${one}${count === 1 ? '' : 's'}`;
+
+/** PRIMARY_WEAPON reads as "primary weapon". */
+export const plainWords = (name: string): string => name.toLowerCase().replaceAll('_', ' ');
+
+/**
+ * What a crew member could put in a slot: items in the hold made for it, worn
+ * by nobody, that this member may wear. The strongest comes first.
+ */
+export function gearChoices(fort: FortView, member: CrewMember, slot: GearSlot): FortItem[] {
+  return fort.hold.items
+    .filter((item) => item.slot === slot && item.wornBy === null && item.fits.includes(member.id))
+    .sort((one, other) => other.bonus - one.bonus);
+}
+
+export interface JobChoice {
+  readonly job: FortJob;
+  /** What it takes and gives, in words. */
+  readonly line: string;
+  /** Why this member cannot be sent just now, or '' when they can. */
+  readonly blocked: string;
+}
+
+/** The jobs a crew member may take, shortest first, each with its terms in words. */
+export function jobChoices(fort: FortView, member: CrewMember): JobChoice[] {
+  return fort.jobs
+    .filter((job) => job.open.includes(member.id))
+    .sort((one, other) => one.lasts - other.lasts)
+    .map((job) => {
+      const pays = [
+        job.pays.credits > 0 ? `${job.pays.credits} credits` : '',
+        job.pays.upgradePoints > 0 ? plural(job.pays.upgradePoints, 'upgrade point') : '',
+        job.pays.experience > 0 ? `${job.pays.experience} experience` : '',
+      ].filter(Boolean);
+      const terms = [
+        `${Math.max(1, Math.round(job.lasts / 60_000))} min`,
+        // A job can fail, and one that goes well pays a little under or over this.
+        pays.length > 0 ? `about ${pays.join(', ')} if it succeeds` : '',
+        job.cost > 0 ? `costs ${job.cost} credits` : '',
+      ].filter(Boolean);
+      return {
+        job,
+        line: terms.join(' · '),
+        blocked: job.cost > fort.currencies.credits ? 'Not enough credits' : '',
+      };
+    });
+}
+
+/**
+ * Remembers which of the fort's reports have been seen, so that one arriving
+ * while the pilot is flying can be told once. The reports there at the first
+ * look are old news.
+ */
+export class ReportWatch {
+  private seen: Set<string> | null = null;
+
+  /** Takes the fort's reports as they stand and returns the ones not seen before, oldest first. */
+  take(reports: readonly FortReport[]): FortReport[] {
+    const first = this.seen === null;
+    const seen = (this.seen ??= new Set());
+    const fresh = reports.filter((report) => !seen.has(report.id));
+    for (const report of fresh) seen.add(report.id);
+    return first ? [] : fresh.reverse();
+  }
+}
+
 /** What one life in the cockpit earned. */
 export interface Sortie {
   readonly seconds: number;
@@ -113,8 +187,6 @@ export interface DebriefLine {
   /** True for what the sortie brought in, so it can be picked out. */
   readonly gain: boolean;
 }
-
-const plural = (count: number, one: string): string => `${count} ${one}${count === 1 ? '' : 's'}`;
 
 /** The debrief card for a sortie: what it earned, line by line. */
 export function debriefLines(sortie: Sortie): DebriefLine[] {

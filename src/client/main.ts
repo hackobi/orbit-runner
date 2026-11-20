@@ -266,6 +266,10 @@ function toggleFort(): void {
 const fort = new FortScreen({
   pilotKey: ownKey ? hexOf(ownKey) : null,
   onLaunch: launch,
+  // Word from the fort while flying: a crew member back from a job, a crate opened.
+  onReport: (report) => {
+    hud.notice(report.title, report.detail ?? 'From your fort.');
+  },
   // The copy packed into the Mac app is not served by the game's server, so
   // it has nowhere to ask: its fort screen says no fort is connected.
   ...(window.orbitApp?.serverUrl

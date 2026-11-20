@@ -4,51 +4,88 @@
 // secret. The pilot's browser never reaches SpaceFort.
 
 import { createHmac } from 'node:crypto';
-import { parseFortView } from '../shared/fort.ts';
-import type { FortReply } from '../shared/fort.ts';
+import { parseFortDone, parseFortView } from '../shared/fort.ts';
+import type { FortOrder, FortOrderReply, FortReply, FortView } from '../shared/fort.ts';
+import type { Crate } from './crates.ts';
 
 export interface FortLink {
   /** SpaceFort's server, such as http://127.0.0.1:5001. */
   readonly url: string;
   /** The same secret SpaceFort's server holds as ORBIT_BRIDGE_SECRET. */
   readonly secret: string;
+  /**
+   * What pilots' fort names are made with. It is its own key, kept for good:
+   * the bridge secret can then be changed without every pilot losing their fort.
+   */
+  readonly idKey: string;
   /** How long to wait for the fort before saying it did not answer. */
   readonly timeoutMs?: number;
 }
 
 /**
- * The fort's name for a pilot. It is made from the pilot's key with the
- * bridge secret, so it cannot be worked out from the key alone, and the key
- * itself never leaves this server.
+ * The fort's name for a pilot. It is made from the pilot's key with a key
+ * only this server holds, so it cannot be worked out from the pilot's key
+ * alone, and the pilot's key itself never leaves this server.
  */
-export function fortPlayerId(secret: string, pilotKey: string): string {
-  return `pilot_${createHmac('sha256', secret).update(`fort:${pilotKey}`).digest('hex').slice(0, 32)}`;
+export function fortPlayerId(idKey: string, pilotKey: string): string {
+  return `pilot_${createHmac('sha256', idKey).update(`fort:${pilotKey}`).digest('hex').slice(0, 32)}`;
+}
+
+/** What SpaceFort answered, or null if it did not answer with JSON and a 200. */
+async function ask(link: FortLink, pilotKey: string, order?: object): Promise<unknown> {
+  const path = `/api/bridge/fort/${fortPlayerId(link.idKey, pilotKey)}${order ? '/order' : ''}`;
+  try {
+    const response = await fetch(new URL(path, link.url), {
+      method: order ? 'POST' : 'GET',
+      headers: {
+        'x-bridge-secret': link.secret,
+        ...(order ? { 'content-type': 'application/json' } : {}),
+      },
+      ...(order ? { body: JSON.stringify(order) } : {}),
+      signal: AbortSignal.timeout(link.timeoutMs ?? 4000),
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+function fortIn(body: unknown): FortView | null {
+  return parseFortView((body as { fort?: unknown } | null)?.fort, (entries) => {
+    // Shown to the pilot without them; said here so it does not pass unseen.
+    console.warn(`fort: ${entries} entries from SpaceFort could not be read and were left out`);
+  });
 }
 
 /** The fort of the pilot with this key, or why there is none to show. */
 export async function readFort(link: FortLink, pilotKey: string): Promise<FortReply> {
-  let response: Response;
-  try {
-    response = await fetch(
-      new URL(`/api/bridge/fort/${fortPlayerId(link.secret, pilotKey)}`, link.url),
-      {
-        headers: { 'x-bridge-secret': link.secret },
-        signal: AbortSignal.timeout(link.timeoutMs ?? 4000),
-      },
-    );
-  } catch {
-    return { ok: false, reason: 'unreachable' };
-  }
-  if (!response.ok) return { ok: false, reason: 'unreachable' };
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
-    return { ok: false, reason: 'unreachable' };
-  }
-  const fort = parseFortView((body as { fort?: unknown } | null)?.fort, (entries) => {
-    // Shown to the pilot without them; said here so it does not pass unseen.
-    console.warn(`fort: ${entries} entries from SpaceFort could not be read and were left out`);
-  });
+  const fort = fortIn(await ask(link, pilotKey));
   return fort ? { ok: true, fort } : { ok: false, reason: 'unreachable' };
+}
+
+/** Carries a pilot's order to their fort and brings back how it went. */
+export async function orderFort(
+  link: FortLink,
+  pilotKey: string,
+  order: FortOrder,
+): Promise<FortOrderReply> {
+  const body = await ask(link, pilotKey, order);
+  const fort = fortIn(body);
+  const done = parseFortDone((body as { done?: unknown } | null)?.done);
+  return fort && done ? { ok: true, fort, done } : { ok: false, reason: 'unreachable' };
+}
+
+/**
+ * Hands crates won in flight to the pilot's fort. True only when SpaceFort
+ * said it has them: until then they stay where they are. SpaceFort takes a
+ * crate once however often it is sent, so a lost answer costs nothing.
+ */
+export async function bankCrates(
+  link: FortLink,
+  pilotKey: string,
+  crates: readonly Crate[],
+): Promise<boolean> {
+  const body = await ask(link, pilotKey, { kind: 'bank', crates });
+  return parseFortDone((body as { done?: unknown } | null)?.done)?.ok === true;
 }

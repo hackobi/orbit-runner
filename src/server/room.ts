@@ -972,6 +972,14 @@ export class Room {
    * (with a store) before. The fort is read only for pilots the game knows,
    * so nobody can make forts by inventing keys.
    */
+  /** True while the pilot with this key has a ship in space. */
+  flying(key: string): boolean {
+    for (const player of this.players.values()) {
+      if (player.pilotKey === key && player.ship.alive) return true;
+    }
+    return false;
+  }
+
   knowsPilot(key: string): boolean {
     for (const player of this.players.values()) if (player.pilotKey === key) return true;
     return this.pilots?.load(key) !== undefined;

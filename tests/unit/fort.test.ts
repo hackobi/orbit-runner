@@ -2,7 +2,13 @@ import { createServer } from 'node:http';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { describe, expect, it } from 'vitest';
-import { parseFortReply, parseFortView } from '../../src/shared/fort.ts';
+import {
+  parseFortOrder,
+  parseFortOrderReply,
+  parseFortReply,
+  parseFortView,
+} from '../../src/shared/fort.ts';
+import { MemoryCrateStore } from '../../src/server/crates.ts';
 import { fortPlayerId } from '../../src/server/fort.ts';
 import { MemoryPilotStore } from '../../src/server/pilots.ts';
 import { startServer } from '../../src/server/server.ts';
@@ -10,6 +16,14 @@ import { startServer } from '../../src/server/server.ts';
 const KEY = '0102030405060708090a0b0c0d0e0f10';
 const STRANGER = 'ffeeddccbbaa99887766554433221100';
 const SECRET = 'test-bridge-secret';
+const ID_KEY = 'test-fort-id-key';
+
+const GEAR = [
+  { slot: 'PRIMARY_WEAPON', item: null },
+  { slot: 'SECONDARY_WEAPON', item: null },
+  { slot: 'ARMOR_SYSTEM', item: null },
+  { slot: 'UTILITY_MODULE', item: null },
+];
 
 /** A fort as SpaceFort's server sends it. */
 const FORT = {
@@ -24,6 +38,12 @@ const FORT = {
       state: 'mission',
       until: 1_800_000_090_000,
       doing: 'Escort a convoy',
+      points: 0,
+      skills: [{ name: 'COMBAT', value: 12 }],
+      gear: [
+        { slot: 'PRIMARY_WEAPON', item: { id: 'upg_0', name: 'Basic Rifle', rarity: 'common' } },
+        ...GEAR.slice(1),
+      ],
     },
     {
       id: 'nft_2_1',
@@ -33,31 +53,77 @@ const FORT = {
       state: 'ready',
       until: null,
       doing: null,
+      points: 3,
+      skills: [
+        { name: 'ENGINEERING', value: 9 },
+        { name: 'SENSORS', value: 4 },
+      ],
+      gear: GEAR,
     },
   ],
   hold: {
     crates: [{ id: 'a'.repeat(24), tier: 'Rare', source: 'boss' }],
     itemCount: 1,
-    items: [{ id: 'upg_1', name: 'Plasma Rifle', rarity: 'rare', slot: 'PRIMARY_WEAPON' }],
+    items: [
+      {
+        id: 'upg_1',
+        name: 'Plasma Rifle',
+        rarity: 'rare',
+        slot: 'PRIMARY_WEAPON',
+        bonus: 20,
+        wornBy: null,
+        fits: ['nft_1_1'],
+      },
+    ],
   },
+  jobs: [
+    {
+      id: 'task_7_1',
+      title: 'Sweep the outer beacons',
+      rarity: 'common',
+      lasts: 240_000,
+      closes: 1_800_000_500_000,
+      cost: 0,
+      pays: { credits: 30, upgradePoints: 2, experience: 40 },
+      open: ['nft_1_1', 'nft_2_1'],
+    },
+  ],
   reports: [{ id: 'in_1', at: 1_799_999_000_000, title: 'Mission complete', detail: null }],
 };
 
+interface Seen {
+  path: string;
+  secret: string | undefined;
+  /** What was sent with it, for a request that carried anything. */
+  body?: unknown;
+}
+
 interface FakeFort {
   readonly url: string;
-  readonly seen: { path: string; secret: string | undefined }[];
+  readonly seen: Seen[];
   close(): Promise<void>;
 }
 
 /** Stands in for SpaceFort's server, answering every request with `answer`. */
-async function fakeFort(answer: () => { status: number; body: string }): Promise<FakeFort> {
-  const seen: FakeFort['seen'] = [];
+async function fakeFort(
+  answer: (request: Seen) => { status: number; body: string },
+): Promise<FakeFort> {
+  const seen: Seen[] = [];
   const server: Server = createServer((request, response) => {
     const secret = request.headers['x-bridge-secret'];
-    seen.push({ path: request.url ?? '', secret: typeof secret === 'string' ? secret : undefined });
-    const { status, body } = answer();
-    response.writeHead(status, { 'content-type': 'application/json' });
-    response.end(body);
+    let sent = '';
+    request.on('data', (chunk: Buffer) => (sent += chunk.toString()));
+    request.on('end', () => {
+      const entry: Seen = {
+        path: request.url ?? '',
+        secret: typeof secret === 'string' ? secret : undefined,
+        ...(sent ? { body: JSON.parse(sent) as unknown } : {}),
+      };
+      seen.push(entry);
+      const { status, body } = answer(entry);
+      response.writeHead(status, { 'content-type': 'application/json' });
+      response.end(body);
+    });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   return {
@@ -86,13 +152,20 @@ function knownPilots(): MemoryPilotStore {
   return pilots;
 }
 
+const order = (port: number, pilotKey: unknown, sent: unknown): Promise<Response> =>
+  fetch(`http://127.0.0.1:${port}/api/fort/order`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ pilotKey, order: sent }),
+  });
+
 describe("the fort's name for a pilot", () => {
-  it('is the same every time, differs by pilot and by secret, and does not contain the key', () => {
-    const id = fortPlayerId(SECRET, KEY);
+  it('is the same every time, differs by pilot and by key, and does not contain the pilot key', () => {
+    const id = fortPlayerId(ID_KEY, KEY);
     expect(id).toMatch(/^pilot_[0-9a-f]{32}$/);
-    expect(fortPlayerId(SECRET, KEY)).toBe(id);
-    expect(fortPlayerId(SECRET, STRANGER)).not.toBe(id);
-    expect(fortPlayerId('another-secret', KEY)).not.toBe(id);
+    expect(fortPlayerId(ID_KEY, KEY)).toBe(id);
+    expect(fortPlayerId(ID_KEY, STRANGER)).not.toBe(id);
+    expect(fortPlayerId('another-key', KEY)).not.toBe(id);
     expect(id).not.toContain(KEY);
   });
 });
@@ -107,6 +180,7 @@ describe('reading a fort over HTTP', () => {
       port: 0,
       pilots: knownPilots(),
       bridgeSecret: SECRET,
+      fortIdKey: ID_KEY,
       fortUrl: fort.url,
     });
     try {
@@ -114,7 +188,7 @@ describe('reading a fort over HTTP', () => {
       expect(reply.status).toBe(200);
       expect(await reply.json()).toEqual({ ok: true, fort: FORT });
       expect(fort.seen).toEqual([
-        { path: `/api/bridge/fort/${fortPlayerId(SECRET, KEY)}`, secret: SECRET },
+        { path: `/api/bridge/fort/${fortPlayerId(ID_KEY, KEY)}`, secret: SECRET },
       ]);
     } finally {
       await server.close();
@@ -131,6 +205,7 @@ describe('reading a fort over HTTP', () => {
       port: 0,
       pilots: knownPilots(),
       bridgeSecret: SECRET,
+      fortIdKey: ID_KEY,
       fortUrl: fort.url,
     });
     try {
@@ -147,11 +222,21 @@ describe('reading a fort over HTTP', () => {
     }
   });
 
-  it('says the fort is off when the server has no fort or no secret', async () => {
-    for (const options of [{}, { fortUrl: 'http://127.0.0.1:9' }, { bridgeSecret: SECRET }]) {
+  it('says the fort is off when the server has no fort, no secret or no key for fort names', async () => {
+    const url = 'http://127.0.0.1:9';
+    for (const options of [
+      {},
+      { fortUrl: url },
+      { bridgeSecret: SECRET },
+      { fortUrl: url, bridgeSecret: SECRET },
+      { fortUrl: url, fortIdKey: ID_KEY },
+    ]) {
       const server = await startServer({ port: 0, pilots: knownPilots(), ...options });
       try {
         expect(await (await ask(server.port, KEY)).json()).toEqual({ ok: false, reason: 'off' });
+        expect(
+          await (await order(server.port, KEY, { kind: 'open', crateId: 'c' })).json(),
+        ).toEqual({ ok: false, reason: 'off' });
       } finally {
         await server.close();
       }
@@ -171,6 +256,7 @@ describe('reading a fort over HTTP', () => {
         port: 0,
         pilots: knownPilots(),
         bridgeSecret: SECRET,
+        fortIdKey: ID_KEY,
         fortUrl: fort.url,
       });
       try {
@@ -190,6 +276,7 @@ describe('reading a fort over HTTP', () => {
       port: 0,
       pilots: knownPilots(),
       bridgeSecret: SECRET,
+      fortIdKey: ID_KEY,
       fortUrl: dead.url,
     });
     try {
@@ -199,6 +286,217 @@ describe('reading a fort over HTTP', () => {
       });
     } finally {
       await server.close();
+    }
+  });
+});
+
+describe('the bridge secret and the key for fort names are separate', () => {
+  it('a new bridge secret leaves every pilot with the fort they had', async () => {
+    const paths: string[] = [];
+    for (const secret of [SECRET, 'a-new-bridge-secret']) {
+      const fort = await fakeFort(() => ({
+        status: 200,
+        body: JSON.stringify({ ok: true, fort: FORT }),
+      }));
+      const server = await startServer({
+        port: 0,
+        pilots: knownPilots(),
+        bridgeSecret: secret,
+        fortIdKey: ID_KEY,
+        fortUrl: fort.url,
+      });
+      try {
+        await ask(server.port, KEY);
+        expect(fort.seen[0]?.secret).toBe(secret);
+        paths.push(fort.seen[0]?.path ?? '');
+      } finally {
+        await server.close();
+        await fort.close();
+      }
+    }
+    expect(paths[0]).toBe(paths[1]);
+  });
+});
+
+describe('orders', () => {
+  const DONE = { ok: true, message: 'Rare Plasma Rifle' };
+  const answering = () =>
+    fakeFort(() => ({ status: 200, body: JSON.stringify({ ok: true, done: DONE, fort: FORT }) }));
+  const serving = (fort: FakeFort, crates?: MemoryCrateStore) =>
+    startServer({
+      port: 0,
+      pilots: knownPilots(),
+      bridgeSecret: SECRET,
+      fortIdKey: ID_KEY,
+      fortUrl: fort.url,
+      ...(crates ? { crates } : {}),
+    });
+
+  it("carries an order to the pilot's own fort and brings back how it went and the fort after", async () => {
+    const fort = await answering();
+    const server = await serving(fort);
+    try {
+      const sent = { kind: 'open', crateId: 'a'.repeat(24) };
+      const reply = await order(server.port, KEY, { ...sent, playerId: 'somebody-else' });
+      expect(await reply.json()).toEqual({ ok: true, done: DONE, fort: FORT });
+      // Only the order's own fields went on, to the id made from the pilot's key.
+      expect(fort.seen).toEqual([
+        {
+          path: `/api/bridge/fort/${fortPlayerId(ID_KEY, KEY)}/order`,
+          secret: SECRET,
+          body: sent,
+        },
+      ]);
+    } finally {
+      await server.close();
+      await fort.close();
+    }
+  });
+
+  it('passes nothing on that is not an order, or that comes from a pilot it does not know', async () => {
+    const fort = await answering();
+    const server = await serving(fort);
+    try {
+      for (const sent of [
+        null,
+        'open',
+        { kind: 'bank', crates: [] },
+        { kind: 'open' },
+        { kind: 'train', unitId: 'u', skill: 'COMBAT', points: 1.5 },
+        { kind: 'train', unitId: 'u', skill: 'COOKING', points: 1 },
+        { kind: 'unequip', unitId: 'u', slot: 'HAT' },
+      ]) {
+        expect((await order(server.port, KEY, sent)).status).toBe(400);
+      }
+      expect((await order(server.port, 'nonsense', { kind: 'open', crateId: 'c' })).status).toBe(
+        400,
+      );
+      expect(
+        await (await order(server.port, STRANGER, { kind: 'open', crateId: 'c' })).json(),
+      ).toEqual({ ok: false, reason: 'no-pilot' });
+      expect(fort.seen).toEqual([]);
+    } finally {
+      await server.close();
+      await fort.close();
+    }
+  });
+
+  it('says the fort did not answer when the order got no proper reply', async () => {
+    const fort = await fakeFort(() => ({ status: 200, body: JSON.stringify({ ok: true }) }));
+    const server = await serving(fort);
+    try {
+      expect(await (await order(server.port, KEY, { kind: 'open', crateId: 'c' })).json()).toEqual({
+        ok: false,
+        reason: 'unreachable',
+      });
+    } finally {
+      await server.close();
+      await fort.close();
+    }
+  });
+
+  it('knows each order there is and nothing else', () => {
+    const orders = [
+      { kind: 'open', crateId: 'c1' },
+      { kind: 'equip', unitId: 'u1', itemId: 'i1' },
+      { kind: 'unequip', unitId: 'u1', slot: 'ARMOR_SYSTEM' },
+      { kind: 'send', unitId: 'u1', jobId: 'j1' },
+      { kind: 'train', unitId: 'u1', skill: 'SENSORS', points: 2 },
+    ];
+    for (const one of orders) expect(parseFortOrder({ ...one, extra: true })).toEqual(one);
+    for (const one of [
+      { kind: 'sell', itemId: 'i1' },
+      { kind: 'equip', unitId: 'u1' },
+      { kind: 'send', unitId: '', jobId: 'j1' },
+      { kind: 'train', unitId: 'u1', skill: 'SENSORS', points: 0 },
+      { kind: 'train', unitId: 'u1', skill: 'SENSORS', points: 101 },
+      { kind: 'open', crateId: 'c'.repeat(81) },
+    ]) {
+      expect(parseFortOrder(one)).toBeNull();
+    }
+    expect(parseFortOrderReply({ ok: true, fort: FORT, done: DONE })).toEqual({
+      ok: true,
+      fort: FORT,
+      done: DONE,
+    });
+    expect(parseFortOrderReply({ ok: true, fort: FORT })).toBeNull();
+    expect(parseFortOrderReply({ ok: false, reason: 'off' })).toEqual({ ok: false, reason: 'off' });
+  });
+});
+
+describe('crates won in flight come into the fort', () => {
+  const start = async (banked: boolean, whileHandingOver?: (crates: MemoryCrateStore) => void) => {
+    const crates = new MemoryCrateStore();
+    const first = crates.add(KEY, 'Rare', 'raider', 3);
+    const second = crates.add(KEY, 'Common', 'orb', 3);
+    const fort = await fakeFort((request) => {
+      const handingOver = request.path.endsWith('/order');
+      if (handingOver) whileHandingOver?.(crates);
+      return {
+        status: 200,
+        body: JSON.stringify(
+          handingOver
+            ? { ok: true, done: { ok: banked, message: '' }, fort: FORT }
+            : { ok: true, fort: FORT },
+        ),
+      };
+    });
+    const server = await startServer({
+      port: 0,
+      pilots: knownPilots(),
+      crates,
+      bridgeSecret: SECRET,
+      fortIdKey: ID_KEY,
+      fortUrl: fort.url,
+    });
+    return { crates, fort, server, sent: [first, second] };
+  };
+
+  it('they are handed over when the fort is read, and leave this server once the fort has them', async () => {
+    const { crates, fort, server, sent } = await start(true);
+    try {
+      expect(await (await ask(server.port, KEY)).json()).toEqual({ ok: true, fort: FORT });
+      expect(
+        fort.seen.map((request) => request.path.replace(/.*\/fort\/pilot_[0-9a-f]+/, '')),
+      ).toEqual(['/order', '']);
+      expect(fort.seen[0]?.body).toEqual({ kind: 'bank', crates: sent });
+      expect(crates.count(KEY)).toBe(0);
+      // Nothing left to hand over: the next read only reads.
+      await ask(server.port, KEY);
+      expect(fort.seen).toHaveLength(3);
+    } finally {
+      await server.close();
+      await fort.close();
+    }
+  });
+
+  it('they stay here when the fort does not say it has them, and are offered again', async () => {
+    const { crates, fort, server } = await start(false);
+    try {
+      await ask(server.port, KEY);
+      expect(crates.count(KEY)).toBe(2);
+      await ask(server.port, KEY);
+      expect(fort.seen.filter((request) => request.path.endsWith('/order'))).toHaveLength(2);
+      expect(crates.count(KEY)).toBe(2);
+    } finally {
+      await server.close();
+      await fort.close();
+    }
+  });
+
+  it('a crate won while the handing over was under way is not lost with the others', async () => {
+    const late: unknown[] = [];
+    const { crates, fort, server, sent } = await start(true, (store) => {
+      late.push(store.add(KEY, 'Epic', 'boss', 3));
+    });
+    try {
+      await ask(server.port, KEY);
+      expect(fort.seen[0]?.body).toEqual({ kind: 'bank', crates: sent });
+      expect(crates.pending(KEY)).toEqual(late);
+      expect(late).toHaveLength(1);
+    } finally {
+      await server.close();
+      await fort.close();
     }
   });
 });

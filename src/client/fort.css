@@ -311,12 +311,146 @@ body.fort-open #cockpit {
   color: var(--sf-steel-400);
 }
 
-.fort-well li.free small:last-child {
+.fort-well li.free .status {
   color: var(--sf-emerald);
 }
 
-.fort-well li.busy small:last-child {
+.fort-well li.busy .status {
   color: var(--sf-cyan);
+}
+
+/* A crew member's own line is the button that shows and hides their orders. */
+.fort-pick {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: none;
+  cursor: pointer;
+}
+
+.fort-pick b::after {
+  content: '▸';
+  float: right;
+  margin-left: 8px;
+  color: var(--sf-steel-400);
+}
+
+.fort-pick[aria-expanded='true'] b::after {
+  content: '▾';
+  color: var(--sf-violet);
+}
+
+.fort-pick:focus-visible,
+.fort-order:focus-visible {
+  outline: 2px solid var(--sf-steel-100);
+  outline-offset: 2px;
+}
+
+.fort-orders {
+  margin-top: 8px;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--sf-violet-deep);
+}
+
+.fort-orders h4 {
+  margin: 8px 0 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--sf-steel-400);
+}
+
+.fort-orders h4:first-child {
+  margin-top: 0;
+}
+
+.fort-orders ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fort-orders li {
+  padding: 5px 0;
+  color: var(--sf-steel-300);
+}
+
+.fort-orders li span {
+  display: block;
+}
+
+.fort-orders li b {
+  white-space: normal;
+}
+
+/* An order: a small steel key under what it acts on. */
+.fort-order {
+  display: inline-block;
+  margin: 5px 6px 0 0;
+  padding: 6px 12px;
+  border: 1px solid var(--sf-edge);
+  border-radius: 2px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--sf-steel-100);
+  background: var(--sf-chrome);
+  box-shadow: var(--sf-shadow-control);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.fort-order:hover {
+  filter: brightness(1.15);
+}
+
+.fort-order:active {
+  transform: translateY(1px);
+}
+
+/* One order at a time: the rest wait for the fort's answer. */
+#fort.ordering .fort-order {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* What a crate just opened into, picked out for a moment. */
+.fort-well li.fresh {
+  animation: fort-fresh 2.4s ease-out 1;
+}
+
+@keyframes fort-fresh {
+  from {
+    background: rgb(167 139 250 / 38%);
+    box-shadow: inset 3px 0 0 var(--sf-violet);
+  }
+
+  to {
+    background: transparent;
+    box-shadow: inset 3px 0 0 transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fort-well li.fresh {
+    animation: none;
+    box-shadow: inset 3px 0 0 var(--sf-violet);
+  }
+}
+
+#fort-state.done {
+  color: var(--sf-emerald);
+}
+
+#fort-state.refused {
+  color: #fca5a5;
 }
 
 /* Rarity is the item's own colour, never the accent. */
@@ -481,6 +615,16 @@ body.fort-open #cockpit {
 
   .fort-well small {
     font-size: 11px;
+  }
+
+  .fort-order {
+    margin-top: 3px;
+    padding: 5px 10px;
+    font-size: 11px;
+  }
+
+  .fort-orders li {
+    padding: 3px 0;
   }
 
   #fort-launch {

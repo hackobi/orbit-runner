@@ -16,9 +16,10 @@ import {
   SESSION_TOKEN_BYTES,
 } from '../shared/protocol.ts';
 import type { ShipState } from '../shared/sim/ship.ts';
-import type { FortReply } from '../shared/fort.ts';
+import { parseFortOrder } from '../shared/fort.ts';
+import type { FortOrderReply, FortReply } from '../shared/fort.ts';
 import type { MemoryCrateStore } from './crates.ts';
-import { readFort } from './fort.ts';
+import { bankCrates, orderFort, readFort } from './fort.ts';
 import type { PilotStore } from './pilots.ts';
 import { Recorder } from './recorder.ts';
 import { Room } from './room.ts';
@@ -55,11 +56,16 @@ export interface ServerOptions {
    */
   bridgeSecret?: string;
   /**
-   * SpaceFort's server, where pilots' forts live. With it and `bridgeSecret`,
-   * /api/fort reads a pilot's fort for them. Without either the fort screen
+   * SpaceFort's server, where pilots' forts live. With it, `bridgeSecret` and `fortIdKey`,
+   * /api/fort reads a pilot's fort for them. Without any of them the fort screen
    * says the fort is not connected, and the game is otherwise unchanged.
    */
   fortUrl?: string;
+  /**
+   * The key pilots' fort names are made with (see FortLink.idKey). Needed for
+   * a fort: it must stay the same for as long as pilots are to keep theirs.
+   */
+  fortIdKey?: string;
   /** Passed to the room (RoomOptions.crateOdds): for trying drops out, never for a public server. */
   crateOdds?: RoomOptions['crateOdds'];
   /** Passed to the room. See RoomOptions. */
@@ -260,23 +266,52 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
     return false;
   };
 
-  /** A pilot's fort, read from SpaceFort for the pilot who holds this key. */
+  /**
+   * A pilot's fort, read from SpaceFort for the pilot who holds this key, and
+   * the orders that pilot gives it.
+   */
   const handleFort = async (
     url: URL,
     request: IncomingMessage,
     response: ServerResponse,
   ): Promise<boolean> => {
-    if (request.method !== 'POST' || url.pathname !== '/api/fort') return false;
-    const body = JSON.parse(await readBody(request)) as { pilotKey?: unknown };
-    if (typeof body.pilotKey !== 'string' || !/^[0-9a-f]{32}$/.test(body.pilotKey)) {
+    const ordering = url.pathname === '/api/fort/order';
+    if (request.method !== 'POST' || (url.pathname !== '/api/fort' && !ordering)) return false;
+    const body = JSON.parse(await readBody(request)) as { pilotKey?: unknown; order?: unknown };
+    const pilotKey = body.pilotKey;
+    if (typeof pilotKey !== 'string' || !/^[0-9a-f]{32}$/.test(pilotKey)) {
       sendJson(response, 400, { ok: false, error: 'not a pilot key' });
       return true;
     }
-    let reply: FortReply;
-    if (!options.fortUrl || !options.bridgeSecret) reply = { ok: false, reason: 'off' };
-    else if (!room.knowsPilot(body.pilotKey)) reply = { ok: false, reason: 'no-pilot' };
-    else
-      reply = await readFort({ url: options.fortUrl, secret: options.bridgeSecret }, body.pilotKey);
+    const order = ordering ? parseFortOrder(body.order) : null;
+    if (ordering && !order) {
+      sendJson(response, 400, { ok: false, error: 'not an order' });
+      return true;
+    }
+    const link =
+      options.fortUrl && options.bridgeSecret && options.fortIdKey
+        ? { url: options.fortUrl, secret: options.bridgeSecret, idKey: options.fortIdKey }
+        : null;
+    let reply: FortReply | FortOrderReply;
+    if (!link) reply = { ok: false, reason: 'off' };
+    else if (!room.knowsPilot(pilotKey)) reply = { ok: false, reason: 'no-pilot' };
+    else if (order) reply = await orderFort(link, pilotKey, order);
+    else {
+      // Crates won in flight come into the fort's hold when the pilot is not
+      // flying. They leave this server only once the fort says it has them.
+      // A copy: a crate won while the fort is being asked was not sent, and stays.
+      const aboard = [...(options.crates?.pending(pilotKey) ?? [])];
+      if (aboard.length > 0 && !room.flying(pilotKey) && options.crates) {
+        if (await bankCrates(link, pilotKey, aboard)) {
+          options.crates.take(
+            pilotKey,
+            aboard.map((crate) => crate.id),
+          );
+          room.refreshCrates();
+        }
+      }
+      reply = await readFort(link, pilotKey);
+    }
     sendJson(response, 200, reply);
     return true;
   };
