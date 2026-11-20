@@ -198,7 +198,6 @@ describe('what a crew member can be told to do', () => {
     title: 'Sweep the outer beacons',
     rarity: 'common',
     lasts: 240_000,
-    closes: 1_000_000,
     cost: 0,
     pays: { credits: 30, upgradePoints: 1, experience: 40 },
     open: [maya.id],

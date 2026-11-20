@@ -82,7 +82,6 @@ const FORT = {
       title: 'Sweep the outer beacons',
       rarity: 'common',
       lasts: 240_000,
-      closes: 1_800_000_500_000,
       cost: 0,
       pays: { credits: 30, upgradePoints: 2, experience: 40 },
       open: ['nft_1_1', 'nft_2_1'],

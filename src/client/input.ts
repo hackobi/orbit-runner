@@ -232,9 +232,6 @@ export class InputDevices {
     };
     canvas.addEventListener('pointerup', up);
     canvas.addEventListener('pointercancel', up);
-    canvas.addEventListener('lostpointercapture', (event) => {
-      if (event.pointerId === this.stickPointer) this.releaseStick();
-    });
 
     // A phone can take a finger for a gesture of its own and never report it
     // lifted; the stick or a button would then stay held. The browser keeps a

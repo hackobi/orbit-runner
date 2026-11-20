@@ -71,8 +71,6 @@ export interface FortJob {
   readonly rarity: string;
   /** How long the crew member is away (ms). */
   readonly lasts: number;
-  /** When the job stops taking anyone, in the fort's clock (ms). */
-  readonly closes: number;
   /** Credits it costs to send someone. */
   readonly cost: number;
   readonly pays: {
@@ -262,7 +260,6 @@ function job(value: unknown): FortJob | null {
   const title = words(f?.title, 200);
   const rarity = text(f?.rarity, 20);
   const lasts = count(f?.lasts);
-  const closes = count(f?.closes);
   const cost = count(f?.cost);
   const credits = count(pays?.credits);
   const upgradePoints = count(pays?.upgradePoints);
@@ -270,19 +267,10 @@ function job(value: unknown): FortJob | null {
   const left = { out: 0 };
   const open = list(f?.open, 200, (entry) => text(entry, 80), left);
   if (id === null || title === null || rarity === null) return null;
-  if (lasts === null || closes === null || cost === null) return null;
+  if (lasts === null || cost === null) return null;
   if (credits === null || upgradePoints === null || experience === null) return null;
   if (!open || left.out > 0) return null;
-  return {
-    id,
-    title,
-    rarity,
-    lasts,
-    closes,
-    cost,
-    pays: { credits, upgradePoints, experience },
-    open,
-  };
+  return { id, title, rarity, lasts, cost, pays: { credits, upgradePoints, experience }, open };
 }
 
 function report(value: unknown): FortReport | null {

@@ -289,7 +289,6 @@ test('orders: a crate is opened, its item worn, a point spent, and a crew member
         title: 'Sweep the outer beacons',
         rarity: 'common',
         lasts: 240_000,
-        closes: Date.now() + 600_000,
         cost: 0,
         pays: { credits: 30, upgradePoints: 2, experience: 40 },
         open: ['nft_1'],
@@ -445,4 +444,23 @@ test('an order the fort refuses says why, and one that gets no answer says so', 
   await expect(page.locator('#fort-state')).toHaveText(/The fort is not answering/);
   await expect(open).toBeVisible();
   expect(asked).toBe(2);
+});
+
+test('a pilot who flies from the cockpit sees the fort without the canopy, and has it back on launching', async ({
+  page,
+}) => {
+  const problems = problemsOf(page);
+  const id = await start(page);
+  await page.keyboard.press('KeyC');
+  await expect(page.locator('#cockpit')).toBeVisible();
+
+  await crash(page, id);
+  await pressTab(page, 'fort-shown');
+  await expect(page.locator('#fort')).toBeVisible();
+  await expect(page.locator('#cockpit')).toBeHidden();
+
+  await pressTab(page, 'flying');
+  await expect(page.locator('#fort')).toBeHidden();
+  await expect(page.locator('#cockpit')).toBeVisible();
+  expect(problems).toEqual([]);
 });

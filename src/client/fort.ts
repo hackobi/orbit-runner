@@ -471,62 +471,72 @@ export class FortScreen {
       ),
     );
 
+    // Gear: what is worn, what could be, and the slots with nothing for them in one line.
     orders.append(heading('Gear'));
-    orders.append(
-      list(
-        member.gear.map(({ slot, item: worn }) => {
-          if (worn) {
-            const entry = row(worn.name, [plainWords(slot)]);
-            entry.dataset.rarity = worn.rarity.toLowerCase();
-            beside(entry, orderButton('Take off', { kind: 'unequip', unitId: member.id, slot }));
-            return entry;
-          }
-          const choices = gearChoices(fort, member, slot);
-          const entry = plainRow(
-            choices.length > 0
-              ? `${plainWords(slot)}: empty`
-              : `${plainWords(slot)}: nothing to wear`,
-          );
-          for (const choice of choices.slice(0, 3)) {
-            entry.append(
-              orderButton(`Wear ${choice.name} +${choice.bonus}`, {
-                kind: 'equip',
-                unitId: member.id,
-                itemId: choice.id,
-              }),
-            );
-          }
-          return entry;
-        }),
-      ),
-    );
+    const bare: string[] = [];
+    const gear: HTMLLIElement[] = [];
+    for (const { slot, item: worn } of member.gear) {
+      if (worn) {
+        const entry = row(worn.name, [plainWords(slot)]);
+        entry.dataset.rarity = worn.rarity.toLowerCase();
+        beside(entry, orderButton('Take off', { kind: 'unequip', unitId: member.id, slot }));
+        gear.push(entry);
+        continue;
+      }
+      const choices = gearChoices(fort, member, slot).slice(0, 3);
+      if (choices.length === 0) {
+        bare.push(plainWords(slot));
+        continue;
+      }
+      const entry = plainRow(`${plainWords(slot)}: empty`);
+      for (const choice of choices) {
+        entry.append(
+          orderButton(`Wear ${choice.name} +${choice.bonus}`, {
+            kind: 'equip',
+            unitId: member.id,
+            itemId: choice.id,
+          }),
+        );
+      }
+      gear.push(entry);
+    }
+    if (bare.length > 0) gear.push(plainRow(`Nothing to wear yet: ${bare.join(', ')}`));
+    orders.append(list(gear));
 
-    orders.append(
-      heading(
-        member.points > 0
-          ? `Skills · ${member.points} point${member.points === 1 ? '' : 's'} to spend`
-          : 'Skills',
-      ),
-    );
-    orders.append(
-      list(
-        member.skills.map((skill) => {
-          const entry = plainRow(`${plainWords(skill.name)} ${skill.value}`);
-          if (member.points > 0 && skill.value < 100) {
-            beside(
-              entry,
-              orderButton('+1', {
-                kind: 'train',
-                unitId: member.id,
-                skill: skill.name,
-                points: 1,
-              }),
-            );
-          }
-          return entry;
-        }),
-      ),
-    );
+    // Skills: a line to read, and a key each only while there are points to spend.
+    if (member.points === 0) {
+      orders.append(heading('Skills'));
+      orders.append(
+        list([
+          plainRow(
+            member.skills.map((skill) => `${plainWords(skill.name)} ${skill.value}`).join(' · '),
+          ),
+        ]),
+      );
+    } else {
+      orders.append(
+        heading(`Skills · ${member.points} point${member.points === 1 ? '' : 's'} to spend`),
+      );
+      orders.append(
+        list(
+          member.skills.map((skill) => {
+            const entry = plainRow(`${plainWords(skill.name)} ${skill.value}`);
+            if (skill.value < 100) {
+              beside(
+                entry,
+                orderButton('+1', {
+                  kind: 'train',
+                  unitId: member.id,
+                  skill: skill.name,
+                  points: 1,
+                }),
+              );
+            }
+            return entry;
+          }),
+        ),
+      );
+    }
     item.append(orders);
     return item;
   }
