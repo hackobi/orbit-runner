@@ -21,6 +21,22 @@
   <body>
     <canvas id="game" tabindex="0" aria-label="Orbit Runner"></canvas>
 
+    <!-- The cockpit view: the canopy's frame, and a mark where the nose points. -->
+    <div id="cockpit" aria-hidden="true" hidden>
+      <svg class="canopy" viewBox="0 0 100 100" preserveAspectRatio="none">
+        <path class="frame" d="M0 0H100V100H0Z M0 12 Q50 -4 100 12 V78 Q50 96 0 78Z" />
+        <path
+          class="strut"
+          d="M0 12 Q50 -4 100 12 M100 78 Q50 96 0 78 M30 2.5 L26 89 M70 2.5 L74 89"
+        />
+      </svg>
+      <!-- Apart from the canopy, which stretches to the screen: the mark keeps its shape. -->
+      <svg class="mark" viewBox="-3.2 -3.2 6.4 6.4">
+        <path class="reticle" d="M-3.2 0H-1.2 M1.2 0H3.2 M0 -3.2V-1.2 M0 1.2V3.2" />
+        <circle class="reticle" r="0.25" />
+      </svg>
+    </div>
+
     <div id="hud">
       <div id="gauges">
         <div class="bar" id="xp-bar" role="meter" aria-label="Experience">

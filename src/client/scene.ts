@@ -60,8 +60,12 @@ const LOOK_AHEAD = 20; // main.js:8875
 const FORT_EYE_DISTANCE = 90;
 const FORT_EYE_HEIGHT = 45;
 const FORT_ORBIT_RATE = 0.035; // radians a second
-/** How quickly the camera goes between the cockpit's view and the fort's. */
+/** How quickly the camera goes between the flying view and the fort's. */
 const FORT_CAMERA_FOLLOW = 2.6;
+/** Where the pilot's eyes are, in the ship's frame: just above its centre. */
+const COCKPIT_OFFSET = new Vector3(0, 0.5, 0);
+/** A camera looks down its own -Z and the ship's nose is +Z: half a turn about Y. */
+const COCKPIT_FACING = new Quaternion(0, 1, 0, 0);
 const BASE_FOV = 70; // main.js:333
 const FOV_SPEED_FLOOR = 14; // main.js:8729
 const FOV_PER_SPEED = 0.7;
@@ -322,7 +326,7 @@ export class GameScene {
   private slowMotionSeconds = 0;
   private shakeAmount = 0;
   private fort = false;
-  /** 0 in the cockpit's view, 1 in the fort's, and in between while the camera moves. */
+  /** 0 in the flying view, 1 in the fort's, and in between while the camera moves. */
   private fortBlend = 0;
   private readonly fortEye = new Vector3();
   private wormholes: InstancedMesh | null = null;
@@ -506,12 +510,19 @@ export class GameScene {
   }
 
   /**
-   * The fort's view or the cockpit's. The camera glides from one to the other
+   * The fort's view or the flying one. The camera glides from one to the other
    * over about a second; nothing else about the picture changes.
    */
   setFort(on: boolean): void {
     this.fort = on;
   }
+
+  /**
+   * The view from inside the ship: the camera sits where the pilot would and
+   * turns and banks with the ship, and the ship itself is not drawn. The
+   * middle of the screen is then exactly where the nose points.
+   */
+  cockpit = false;
 
   /** Jolts the camera (main.js:8865-8869). Amounts are v1's, 0.08 to 1.2. */
   shake(amount: number): void {
@@ -533,12 +544,14 @@ export class GameScene {
     const ship = this.ship.group;
     ship.position.set(view.x, view.y, view.z);
     ship.quaternion.copy(this.orientation);
-    ship.visible = view.alive;
+    // The fort has its own view, whichever one the pilot flies with.
+    const inside = this.cockpit && !this.fort;
+    ship.visible = view.alive && !inside;
     showAs(this.ship, view.fenix);
 
     // Rigid chase camera: a fixed offset in the ship's frame, looking at a
     // point ahead of the nose (main.js:8863-8875).
-    this.offset.copy(CAMERA_OFFSET).applyQuaternion(this.orientation);
+    this.offset.copy(inside ? COCKPIT_OFFSET : CAMERA_OFFSET).applyQuaternion(this.orientation);
     this.camera.position.copy(ship.position).add(this.offset);
     this.forward.set(0, 0, 1).applyQuaternion(this.orientation);
     this.lookAt.copy(ship.position).addScaledVector(this.forward, LOOK_AHEAD);
@@ -564,7 +577,8 @@ export class GameScene {
       this.camera.position.z += (Math.random() * 2 - 1) * shake;
       this.shakeAmount = Math.max(0, shake - SHAKE_DECAY * elapsedSeconds);
     }
-    this.camera.lookAt(this.lookAt);
+    if (inside) this.camera.quaternion.copy(this.orientation).multiply(COCKPIT_FACING);
+    else this.camera.lookAt(this.lookAt);
     this.seconds.value += elapsedSeconds;
     this.backdrop.update(this.camera.position, this.renderer.getPixelRatio(), this.seconds.value);
     this.lights.count = 0;
@@ -576,7 +590,8 @@ export class GameScene {
     if (view.alive) {
       this.emitExhaust(view, elapsedSeconds);
       this.engineGlow(this.ship, view.fenix, view.speed, view.boosting, 1);
-      this.emitSmoke(view.x, view.y, view.z, view.hp, elapsedSeconds);
+      // From inside, the ship's own smoke would fill the screen.
+      if (!inside) this.emitSmoke(view.x, view.y, view.z, view.hp, elapsedSeconds);
     }
     for (const remote of remotes) {
       if (remote.alive && remote.full) {

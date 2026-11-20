@@ -199,7 +199,7 @@ export class Hud {
     this.scoreboardOn = !touch;
     if (!touch) {
       this.help.textContent =
-        'A / D turn · I / K pitch · W / S speed · Shift boost · X brake · Space fire · E heavy · hold Q homing · 1 2 3 store · P players';
+        'A / D turn · I / K pitch · W / S speed · Shift boost · X brake · Space fire · E heavy · hold Q homing · 1 2 3 store · P players · C cockpit';
     }
     window.addEventListener('keydown', (event) => {
       if (event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;

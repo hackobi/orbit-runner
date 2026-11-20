@@ -116,7 +116,8 @@
 }
 
 /* While the fort is open the cockpit's instruments are put away. */
-body.fort-open #hud > :not(#rotate) {
+body.fort-open #hud > :not(#rotate),
+body.fort-open #cockpit {
   visibility: hidden;
 }
 

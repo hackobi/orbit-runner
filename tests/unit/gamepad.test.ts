@@ -53,6 +53,7 @@ describe('the controller layout', () => {
       brake: false,
       menu: false,
       fort: false,
+      view: false,
     });
   });
 
@@ -77,6 +78,7 @@ describe('the controller layout', () => {
     // The fort: Create / View on any pad, and the DualSense's touchpad.
     expect(only(8)).toEqual(['fort']);
     expect(only(17)).toEqual(['fort']);
+    expect(only(4)).toEqual(['view']);
   });
 
   it('counts a trigger as held from a light pull, and a resting one as not', () => {

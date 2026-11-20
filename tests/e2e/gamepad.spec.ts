@@ -82,7 +82,7 @@ test('a controller flies the ship, to the same values as the keys', async ({ pag
   await setPad(page, { connected: true });
   await expect(page.locator('#pad-status')).toHaveText('Controller: DualSense Wireless Controller');
   await expect(page.locator('#pad-layout')).toBeVisible();
-  await expect(page.locator('#pad-layout dt')).toHaveCount(9);
+  await expect(page.locator('#pad-layout dt')).toHaveCount(10);
   await expect(page.locator('#banner')).toContainText('DualSense Wireless Controller connected');
 
   // At rest it asks for nothing.
@@ -126,6 +126,28 @@ test('a controller flies the ship, to the same values as the keys', async ({ pag
   await setPad(page, { buttons: buttons({ 9: 1 }) });
   await expect(page.locator('#settings')).toBeVisible();
   await setPad(page, { buttons: buttons({}) });
+
+  // L1 goes into the cockpit and out again, once per press; so does the C key.
+  await expect(page.locator('#cockpit')).toBeHidden();
+  await setPad(page, { buttons: buttons({ 4: 1 }) });
+  await expect(page.locator('#cockpit')).toBeVisible();
+  await page.waitForTimeout(300);
+  await expect(page.locator('#cockpit')).toBeVisible();
+  await setPad(page, { buttons: buttons({}) });
+  await page.waitForTimeout(100);
+  await setPad(page, { buttons: buttons({ 4: 1 }) });
+  await expect(page.locator('#cockpit')).toBeHidden();
+  await setPad(page, { buttons: buttons({}) });
+  await page.keyboard.press('KeyC');
+  await expect(page.locator('#cockpit')).toBeVisible();
+  // The view is kept for the next visit.
+  await page.reload();
+  await page.waitForFunction(() => window.__orbit?.status().status === 'playing');
+  await expect(page.locator('#cockpit')).toBeVisible();
+  await page.keyboard.press('KeyC');
+  await expect(page.locator('#cockpit')).toBeHidden();
+  await page.locator('#settings-button').click();
+  await setPad(page, { connected: true });
 
   await setPad(page, { connected: false });
   await expect(page.locator('#pad-status')).toContainText('press any button');

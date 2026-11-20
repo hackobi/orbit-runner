@@ -19,6 +19,7 @@ const THROTTLE_HELD = 0.5;
 const BUTTON = {
   south: 0,
   east: 1,
+  leftBumper: 4,
   rightBumper: 5,
   leftTrigger: 6,
   rightTrigger: 7,
@@ -39,6 +40,7 @@ export const PAD_LAYOUT: readonly { control: string; action: string }[] = [
   { control: '✕ / A', action: 'Boost' },
   { control: '○ / B', action: 'Brake' },
   { control: 'D-pad or right stick, up and down', action: 'Speed' },
+  { control: 'L1 / LB', action: 'Cockpit view, in and out' },
   { control: 'Options / Menu', action: 'Open or close settings' },
   { control: 'Touchpad or Create / View', action: 'The fort when your ship is down, and launch' },
 ];
@@ -59,8 +61,10 @@ export function padAxis(value: number): number {
   return (Math.sign(value) * (size - PAD_DEAD_ZONE)) / (1 - PAD_DEAD_ZONE);
 }
 
-/** The controls a pad is asking for, plus its menu and fort buttons. Pitch is before any inversion. */
-export function padControls(pad: PadLike): Required<Controls> & { menu: boolean; fort: boolean } {
+/** The controls a pad is asking for, plus its menu, fort and view buttons. Pitch is before any inversion. */
+export function padControls(
+  pad: PadLike,
+): Required<Controls> & { menu: boolean; fort: boolean; view: boolean } {
   const held = (index: number, threshold = 0.5): boolean => {
     const button = pad.buttons[index];
     return !!button && (button.pressed || button.value > threshold);
@@ -81,6 +85,7 @@ export function padControls(pad: PadLike): Required<Controls> & { menu: boolean;
     brake: held(BUTTON.east),
     menu: held(BUTTON.menu),
     fort: held(BUTTON.view) || held(BUTTON.touchpad),
+    view: held(BUTTON.leftBumper),
   };
 }
 

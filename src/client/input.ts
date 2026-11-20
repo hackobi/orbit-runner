@@ -117,6 +117,9 @@ export class InputDevices {
   /** Called once each time the controller's fort button goes down. */
   onPadFort: (() => void) | null = null;
   private padFortDown = false;
+  /** Called once each time the controller's view button (L1 / LB) goes down. */
+  onPadView: (() => void) | null = null;
+  private padViewDown = false;
 
   // Mouse: steers while its button is down.
   private mouseDown = false;
@@ -220,7 +223,7 @@ export class InputDevices {
   }
 
   /**
-   * Notices the controller's menu and fort buttons going down. `read` does
+   * Notices the controller's menu, fort and view buttons going down. `read` does
    * this too, but only runs while the game is being simulated; this is for
    * every frame, so the buttons work on any screen.
    */
@@ -229,13 +232,16 @@ export class InputDevices {
     this.padPresses(connected ? padControls(connected) : null);
   }
 
-  private padPresses(pad: { menu: boolean; fort: boolean } | null): void {
+  private padPresses(pad: { menu: boolean; fort: boolean; view: boolean } | null): void {
     const menu = pad?.menu ?? false;
     if (menu && !this.padMenuDown) this.onPadMenu?.();
     this.padMenuDown = menu;
     const fort = pad?.fort ?? false;
     if (fort && !this.padFortDown) this.onPadFort?.();
     this.padFortDown = fort;
+    const view = pad?.view ?? false;
+    if (view && !this.padViewDown) this.onPadView?.();
+    this.padViewDown = view;
   }
 
   /**
