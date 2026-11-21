@@ -15,7 +15,7 @@ This file is the running checkpoint. A new session should read it first, then `d
 | Role-playing layer (user request, 2026-11-19) | **Built and tested 2026-11-19 on `feature/rpg-layer`, local only, not merged or deployed.** Experience, levels, missions, raiders and the boss (shown as the Warlock), progress kept per pilot. See [Role-playing layer](#role-playing-layer) | The user plays it and decides on a merge |
 | New look (user request, 2026-11-19) | **Built and tested 2026-11-19 on `feature/visuals`, local only.** Sky, planet, rocks, ships, orbs and particles redrawn; client only, wire format and simulation untouched. See the log | The user looks at it and decides on a merge |
 | Cockpit view (user request, 2026-11-20) | **Built and tested 2026-11-20 on `feature/cockpit`; pushed to `feature/v2-rebuild` at 03:52 the same day, and merged into `feature/fort` (`1471644`).** L1 / LB or the C key goes into the cockpit and out (D30). No real controller has been used | None |
-| One game with SpaceFort (user request, 2026-11-20) | **Phases 1 and 2 of six are built and tested on `feature/fort`, local only, not merged or deployed.** Phase 1 (the transition): the user tried it and said yes. Phase 2 (orders): open crates, wear gear, spend skill points, send crew on jobs, crates brought in without a code, reports as banners in flight. Decisions D31 and D32; wire format 14. Needs SpaceFort's `feat/fort-backend`. See the log | The user played phases 1 and 2 (2026-11-21) and asked for phase 3 to be rewritten: it is a proposal in SpaceFort's `claudedocs/PHASE3_REVISED_2026-11-21.md`, **not approved, nothing built**. The user's yes on it starts step 3a. Before any deploy: `ORBIT_FORT_ID_KEY` chosen once and kept, a Railway volume, SpaceFort hosted |
+| One game with SpaceFort (user request, 2026-11-20) | **Phases 1, 2 and step 3a are built and tested on `feature/fort`, local only, not merged or deployed.** Step 3a (2026-11-21, D33 and D34): the fort says in flight what waits there, the first death with something waiting holds the ship, crew show their level progress, Train spends all skill points, and recruits fill five bunks for credits. Phase 1 (the transition): the user tried it and said yes. Phase 2 (orders): open crates, wear gear, spend skill points, send crew on jobs, crates brought in without a code, reports as banners in flight. Decisions D31 and D32; wire format 14. Needs SpaceFort's `feat/fort-backend`. See the log | The user played phases 1 and 2 (2026-11-21) and asked for phase 3 to be rewritten: it is a proposal in SpaceFort's `claudedocs/PHASE3_REVISED_2026-11-21.md`, approved by the user on 2026-11-21. Step 3a is built; **the user plays it, and their yes starts step 3b** (a crew member on board, upgrade points from flight, contracts, the daily claim). Before any deploy: `ORBIT_FORT_ID_KEY` chosen once and kept, a Railway volume, SpaceFort hosted |
 | 5. Demos integration | Not started. Direction from the user recorded under Phase 5 (reuse v1's payment flow; King of the Hill) | Separate approval, and a payment proposal first |
 
 **Next action:** the user looks at `feature/visuals` (it sits on the role-playing, drops and controller branches, none of them deployed) and decides what to merge. Before that, still open: the user chooses between step 2 of [Dogfight feel](#dogfight-feel-before-phase-5) (matches) and Phase 5. Their direction on 2026-11-16: the open room stays the normal game, everyone with the same abilities; rules, timing, groups and teams come later, for tournaments. Phases 1 to 4 are built. Phase 5 (Demos) needs separate approval and starts with a written payment proposal, not code. Open items that need the user: `npm run dev:lan` (it changes the Mac's keychain) and the phone checklist in `docs/DEVICE-TESTING.md`; opening the Mac app themselves.
@@ -759,4 +759,39 @@ After that run, a last pass (`61cdda7`): empty gear slots and skills with no poi
 - Written up as a proposal in SpaceFort's repo, `claudedocs/PHASE3_REVISED_2026-11-21.md`. In short: the fort announces itself in flight and the first death waits once (would be D33); the crew list shows five bunks, recruits cost credits (150, 400, 900, 2,000) and bunks open at pilot levels 2, 4, 7 and 10; level bars and a Train button; then (3b) one crew member on board earning a capped share of flight experience, with the approved upgrade points, contracts and daily. Cosmetics over ships move after 3b.
 - Not carried over: my suggestion in chat that crew or gear give the ship something. It contradicts D25 and the user's direction of 2026-11-16.
 - Every time and price in it is arithmetic from `game-rules.js` and `progress.ts`. Nothing was measured and nothing was built. The crates count and the pilot's level bar are already on the HUD.
+
+### 2026-11-21: step 3a, reasons to come into the fort (D33, D34)
+
+The user said yes to the revised phase 3. Built on `feature/fort` (`77faf0c`) and SpaceFort's `feat/fort-backend` (`f6b8a01`). Wire format still 14; no change to the room's rules.
+
+- **The fort speaks in flight.** The page counts what waits in the fort (crates in the hold or aboard, crew with skill points, a bunk that can be filled, reports that came in flight). A banner says it once, "Fort · N waiting" sits under the score, and the death screen's button names the first thing ("Open your 2 crates"). The crate banner now says "Open it in your fort" when there is one.
+- **The first death waits, once** (D33). With something waiting, the ship is held and the death screen offers the fort or Launch. Later deaths come back after 3 s.
+- **Level bars and Train.** Each crew line shows "level 3 · 0 / 104 to level 4" and a bar. Train spends every skill point in one press; the +1 keys stay.
+- **Recruits** (D34). The crew list ends with the next empty bunk (price, and what is missing) and one line for the rest. The pilot's level is put on the order by this server.
+- SpaceFort: the first recruit is never below level 2, so a first visit always has points to spend. `HOST` keeps its server to one interface.
+
+| Check | Result |
+|---|---|
+| Lint, typecheck | clean |
+| Unit tests | 375 pass |
+| Integration | 12 of 12 |
+| Whole browser suite, before the last change to one line of the fort screen | 48 of 48 |
+| Fort browser tests, after it | 20 of 20 |
+| SpaceFort jest | 196 pass (23 in the bridge's file) |
+| Live, against a trial SpaceFort server, desktop size | First death held and named "Open your 2 crates"; crate opened, crew sent, Train spent 6 to 9 points, a recruit joined; fort shown in 22 to 25 ms; no console problems; no transactions in SpaceFort's log |
+
+Found on the way:
+
+- Two recruit orders at once could each pass the price check before either paid. The credits are now taken before the recruit is made; a test sends two at once.
+- **A correction to the entry of 2026-11-20:** the trial SpaceFort server was listening on every network interface, not this machine only (`server.listen(PORT)` has no host). It is restarted with `HOST=127.0.0.1`. Its other routes refuse pilot ids, but they are otherwise open, as they always were in development.
+- In the live runs the second bunk was affordable on the first visit when the day's challenge was "spend 3 skill points" (it pays 50 credits, and Train completes it), and 50 credits short when it was not.
+
+Not built from the plan, or changed:
+
+- **Opening in the fort on first load for a returning pilot.** See D33. The banner on arrival does that job.
+- **Train** uses the two strongest skills, not the class's skills (D34).
+- The gate "bunk 2 affordable within the first three fort visits" has **no scripted check**. It is unmeasured.
+- A crew member's level-up already arrives as a banner (SpaceFort writes a report for it); nothing was added.
+
+**UNVERIFIED:** all of it on a real phone or controller. On the held death screen a controller has no direct Launch: its fort button goes into the fort, and again launches. Whether the prices and levels feel right to a person.
 
