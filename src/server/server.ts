@@ -295,7 +295,7 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
     let reply: FortReply | FortOrderReply;
     if (!link) reply = { ok: false, reason: 'off' };
     else if (!room.knowsPilot(pilotKey)) reply = { ok: false, reason: 'no-pilot' };
-    else if (order) reply = await orderFort(link, pilotKey, order);
+    else if (order) reply = await orderFort(link, pilotKey, order, room.pilotLevel(pilotKey));
     else {
       // Crates won in flight come into the fort's hold when the pilot is not
       // flying. They leave this server only once the fort says it has them.

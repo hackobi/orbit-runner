@@ -64,13 +64,22 @@ export async function readFort(link: FortLink, pilotKey: string): Promise<FortRe
   return fort ? { ok: true, fort } : { ok: false, reason: 'unreachable' };
 }
 
-/** Carries a pilot's order to their fort and brings back how it went. */
+/**
+ * Carries a pilot's order to their fort and brings back how it went. A
+ * recruit depends on the pilot's level, which only this server may state:
+ * it is put on the order here, never taken from the page.
+ */
 export async function orderFort(
   link: FortLink,
   pilotKey: string,
   order: FortOrder,
+  pilotLevel: number,
 ): Promise<FortOrderReply> {
-  const body = await ask(link, pilotKey, order);
+  const body = await ask(
+    link,
+    pilotKey,
+    order.kind === 'recruit' ? { ...order, pilotLevel } : order,
+  );
   const fort = fortIn(body);
   const done = parseFortDone((body as { done?: unknown } | null)?.done);
   return fort && done ? { ok: true, fort, done } : { ok: false, reason: 'unreachable' };

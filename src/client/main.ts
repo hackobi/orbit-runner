@@ -8,7 +8,7 @@ import type { BulletView } from '../net/client.ts';
 import { createDebugRecorder } from './debugHook.ts';
 import { PAD_LAYOUT, activePad, padName, unusablePad } from './gamepad.ts';
 import { FortScreen } from './fort.ts';
-import { SortieTracker, askFort, askLaunch, stepFortGate } from './fortModel.ts';
+import { SortieTracker, askChoice, askFort, askLaunch, stepFortGate } from './fortModel.ts';
 import type { FortGate } from './fortModel.ts';
 import { InputDevices } from './input.ts';
 import { loadSettings, saveSettings } from './settings.ts';
@@ -223,7 +223,33 @@ recorder?.attach(
 // Where the pilot is while they have no ship. One control goes in and comes
 // out: Tab, the controller's touchpad or View button, or the button on screen.
 
-let fortGate: FortGate = { open: false, launching: false };
+let fortGate: FortGate = { open: false, launching: false, choosing: false };
+/** The ship was flying at the last look. */
+let wasFlying = false;
+/** The fort has said in flight that something waits there. Once a visit to the page. */
+let toldOfFort = false;
+
+/**
+ * Whether this pilot has been to the fort, or been offered it. Kept in the
+ * browser: the first death with something waiting is the only one that holds
+ * the ship back. A browser that keeps nothing counts as having been, so that
+ * no death is ever held twice.
+ */
+const FORT_MET_KEY = 'orbit-runner.fortMet';
+function fortMet(): boolean {
+  try {
+    return localStorage.getItem(FORT_MET_KEY) === '1';
+  } catch {
+    return true;
+  }
+}
+function meetFort(): void {
+  try {
+    localStorage.setItem(FORT_MET_KEY, '1');
+  } catch {
+    // Nothing kept: fortMet answers true.
+  }
+}
 /** The tab has been hidden since the ship last flew. */
 let beenAway = false;
 /** True when the ship was lost with the pilot away, which the fort says. */
@@ -263,6 +289,11 @@ function toggleFort(): void {
   fortGate = asked;
 }
 
+const deathFortLabel = element('death-fort-label', HTMLElement);
+const deathLaunch = element('death-launch', HTMLButtonElement);
+const fortWaiting = element('fort-waiting', HTMLElement);
+deathLaunch.addEventListener('click', launch);
+
 const fort = new FortScreen({
   pilotKey: ownKey ? hexOf(ownKey) : null,
   onLaunch: launch,
@@ -294,6 +325,19 @@ function updateFort(nowMs: number): void {
   const facts = fortFacts();
   if (core.status === 'away') beenAway = true;
   if (facts.playing && facts.shipAlive) beenAway = false;
+  const seatGone = core.status === 'rejected' && core.rejectReason === REJECT_FORT;
+  const waiting = fort.waiting({ xp: core.progress?.xp ?? null, cratesInFlight: core.crates });
+  const flying = facts.playing && facts.shipAlive;
+  // The first death with something waiting: the ship is held back, once, and
+  // the death screen offers the fort or a launch.
+  if (wasFlying && facts.playing && !facts.shipAlive && waiting.count > 0 && !fortMet()) {
+    fortGate = askChoice(fortGate, facts);
+    if (fortGate.choosing) core.setFort(true);
+  }
+  wasFlying = flying;
+  // A seat given up while the pilot was deciding: the fort says so, and launches again.
+  if (fortGate.choosing && seatGone) fortGate = { open: true, launching: false, choosing: false };
+  if (fortGate.open || fortGate.choosing) meetFort();
   const wasOpen = fortGate.open;
   fortGate = stepFortGate(fortGate, facts);
   // Opened by the server, not by a press: the ship went while the pilot was away.
@@ -304,7 +348,19 @@ function updateFort(nowMs: number): void {
     else if (facts.playing) core.setFort(false);
   }
   if (facts.playing) fort.warm(nowMs);
-  const seatGone = core.status === 'rejected' && core.rejectReason === REJECT_FORT;
+  // What waits in the fort is said where the pilot is looking: once as a
+  // banner, then as a count beside the score, and by name on the death screen.
+  if (flying && waiting.count > 0 && !toldOfFort) {
+    toldOfFort = true;
+    hud.notice('Your fort has work for you', `${waiting.call}. Go in when your ship is down.`);
+  }
+  hud.fortConnected = fort.connected;
+  hud.shipHeld = fortGate.choosing;
+  const waitingText = waiting.count > 0 ? `Fort · ${waiting.count} waiting` : '';
+  if (fortWaiting.textContent !== waitingText) fortWaiting.textContent = waitingText;
+  fortWaiting.hidden = waiting.count === 0;
+  if (deathFortLabel.textContent !== waiting.call) deathFortLabel.textContent = waiting.call;
+  deathLaunch.hidden = !fortGate.choosing;
   const context = {
     xp: core.progress?.xp ?? null,
     cratesInFlight: core.crates,
@@ -531,7 +587,14 @@ function frame(nowMs: number): void {
 
   hud.update(core, statusText(), view, remotes, project, nowMs);
   updateFort(nowMs);
-  if (shouldApplyUpdate(updates.ready, core.status, view?.alive ?? false, fortGate.open)) {
+  if (
+    shouldApplyUpdate(
+      updates.ready,
+      core.status,
+      view?.alive ?? false,
+      fortGate.open || fortGate.choosing,
+    )
+  ) {
     updates.apply();
   }
 

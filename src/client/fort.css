@@ -67,6 +67,7 @@
 }
 
 #death-fort,
+#death-launch,
 #fort-launch {
   border: 1px solid var(--sf-edge);
   border-radius: 3px;
@@ -79,7 +80,8 @@
   touch-action: manipulation;
 }
 
-#death-fort {
+#death-fort,
+#death-launch {
   margin-top: 10px;
   padding: 8px 18px;
   color: var(--sf-steel-100);
@@ -88,8 +90,14 @@
   text-shadow: 0 1px 1px #000;
 }
 
+#death-launch {
+  margin-left: 8px;
+}
+
 #death-fort:hover,
-#death-fort:focus-visible {
+#death-fort:focus-visible,
+#death-launch:hover,
+#death-launch:focus-visible {
   box-shadow: var(--sf-shadow-control), var(--sf-glow-violet);
   outline: none;
 }
@@ -293,6 +301,27 @@ body.fort-open #cockpit {
 }
 
 .fort-well li.empty {
+  color: var(--sf-steel-400);
+}
+
+/* How far a crew member is into their level. */
+.fort-level {
+  display: block;
+  height: 3px;
+  margin: 4px 0 3px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 10%);
+  overflow: hidden;
+}
+
+.fort-level i {
+  display: block;
+  height: 100%;
+  background: var(--sf-violet);
+}
+
+/* An empty bunk that cannot be filled yet. */
+.fort-well li.bunk.locked b {
   color: var(--sf-steel-400);
 }
 

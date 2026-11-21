@@ -256,6 +256,11 @@ body {
   color: var(--warn);
 }
 
+/* Things to do in the fort, said while flying. */
+#fort-waiting {
+  color: #c4b5fd;
+}
+
 #corner {
   position: absolute;
   top: calc(12px + var(--inset-top));

@@ -270,6 +270,8 @@ test('orders: a crate is opened, its item worn, a point spent, and a crew member
         name: 'Maya "Comet" Ranger',
         className: 'Space Recruit',
         level: 4,
+        experience: 30,
+        nextLevel: 150,
         state: 'ready',
         until: null as number | null,
         doing: null as string | null,
@@ -283,6 +285,11 @@ test('orders: a crate is opened, its item worn, a point spent, and a crew member
       itemCount: 0,
       items: [] as object[],
     },
+    // A new pilot is level 1, so this bunk is open to them and the next is not.
+    bunks: [
+      { price: 100, level: 1 },
+      { price: 400, level: 4 },
+    ],
     jobs: [
       {
         id: 'task_7',
@@ -329,6 +336,27 @@ test('orders: a crate is opened, its item worn, a point spent, and a crew member
       maya.doing = 'Sweep the outer beacons';
       fort.jobs = [];
       message = 'Maya is on the way';
+    } else if (order.kind === 'recruit') {
+      fort.crew.push({
+        ...maya,
+        id: 'nft_2',
+        name: 'Ivan "Frost" Pilot',
+        state: 'ready',
+        until: null,
+        doing: null,
+        points: 6,
+        gear: gear(null),
+      });
+      fort.bunks = fort.bunks.slice(1);
+      fort.currencies = { ...fort.currencies, credits: 0 };
+      message = 'Ivan "Frost" Pilot has joined your crew';
+    } else if (order.kind === 'trainAll') {
+      const ivan = fort.crew[1];
+      if (ivan) {
+        ivan.points = 0;
+        ivan.skills = [{ name: 'COMBAT', value: 18 }];
+      }
+      message = 'Ivan: combat +6';
     }
     return route.fulfill({
       json: { ok: true, done: { ok: true, message }, fort: { ...fort, now: Date.now() } },
@@ -343,6 +371,8 @@ test('orders: a crate is opened, its item worn, a point spent, and a crew member
   const crew = page.locator('#fort-crew');
   await expect(crew.locator('.fort-pick')).toHaveAttribute('aria-expanded', 'true');
   await expect(crew).toContainText('1 skill point');
+  await expect(crew).toContainText('level 4 · 30 / 150 to level 5');
+  await expect(crew.locator('.fort-level i')).toHaveAttribute('style', 'width: 20%;');
   await expect(crew).toContainText(
     'about 30 credits, 2 upgrade points, 40 experience if it succeeds',
   );
@@ -364,20 +394,41 @@ test('orders: a crate is opened, its item worn, a point spent, and a crew member
   await expect(hold).toContainText('Worn by Maya "Comet" Ranger');
   expect(await page.evaluate(() => document.activeElement?.closest('#fort') !== null)).toBe(true);
 
-  await crew.getByRole('button', { name: '+1' }).click();
+  await crew.getByRole('button', { name: '+1', exact: true }).click();
   await expect(crew).toContainText('combat 13');
-  await expect(crew.getByRole('button', { name: '+1' })).toHaveCount(0);
+  await expect(crew.getByRole('button', { name: '+1', exact: true })).toHaveCount(0);
 
   await crew.getByRole('button', { name: 'Send' }).click();
   await expect(crew.locator('.status')).toContainText('On a mission');
   await expect(crew.locator('.status')).toContainText('Sweep the outer beacons');
   await expect(crew).toContainText('Busy until they are back.');
 
+  // The next bunk is open to this pilot and paid for; the one after says what it takes.
+  await expect(crew.locator('li.bunk').first()).toContainText('A recruit costs 100 credits');
+  await expect(crew.locator('li.bunk').nth(1)).toHaveText('1 more bunk, at pilot level 4');
+  await crew.getByRole('button', { name: 'Recruit', exact: true }).click();
+  await expect(page.locator('#fort-state')).toHaveText(/Ivan "Frost" Pilot has joined your crew/);
+  // The newcomer is picked out, with their orders open, and the bunk after is locked.
+  await expect(crew.locator('li.fresh .fort-pick')).toHaveAttribute('aria-expanded', 'true');
+  await expect(crew.locator('li.fresh')).toContainText('Ivan "Frost" Pilot');
+  await expect(crew.locator('li.bunk.locked')).toContainText(
+    'Opens at pilot level 4: you are level 1',
+  );
+  await expect(crew.getByRole('button', { name: 'Recruit', exact: true })).toHaveCount(0);
+  await expect(page.locator('#fort-credits')).toHaveText('0');
+
+  // One press spends all of the newcomer's points.
+  await crew.getByRole('button', { name: 'Train +6' }).click();
+  await expect(page.locator('#fort-state')).toHaveText(/Ivan: combat \+6/);
+  await expect(crew.getByRole('button', { name: /Train/ })).toHaveCount(0);
+
   expect(orders).toEqual([
     { kind: 'open', crateId: 'c'.repeat(24) },
     { kind: 'equip', unitId: 'nft_1', itemId: 'upg_9' },
     { kind: 'train', unitId: 'nft_1', skill: 'COMBAT', points: 1 },
     { kind: 'send', unitId: 'nft_1', jobId: 'task_7' },
+    { kind: 'recruit' },
+    { kind: 'trainAll', unitId: 'nft_2' },
   ]);
 
   // Out flying, the job ends: the fort's word reaches the cockpit as a banner.
@@ -414,6 +465,7 @@ test('an order the fort refuses says why, and one that gets no answer says so', 
       itemCount: 0,
       items: [],
     },
+    bunks: [],
     jobs: [],
     reports: [],
   };
@@ -463,4 +515,63 @@ test('a pilot who flies from the cockpit sees the fort without the canopy, and h
   await expect(page.locator('#fort')).toBeHidden();
   await expect(page.locator('#cockpit')).toBeVisible();
   expect(problems).toEqual([]);
+});
+
+test('the first death with something waiting holds the ship and names what waits; later deaths do not', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  const problems = problemsOf(page);
+  const fort = {
+    now: Date.now(),
+    currencies: { credits: 100, upgradePoints: 50, renown: 0 },
+    crew: [],
+    hold: {
+      crates: [{ id: 'c'.repeat(24), tier: 'Common', source: 'orb' }],
+      itemCount: 0,
+      items: [],
+    },
+    bunks: [],
+    jobs: [],
+    reports: [],
+  };
+  await page.route('**/api/fort', (route) => route.fulfill({ json: { ok: true, fort } }));
+  const id = await start(page);
+
+  // In flight the fort says, once as a banner and then beside the score, that something waits.
+  await expect(page.locator('#banner')).toContainText('Your fort has work for you');
+  await expect(page.locator('#banner')).toContainText('Open your crate');
+  await expect(page.locator('#fort-waiting')).toHaveText('Fort · 1 waiting');
+
+  await crash(page, id);
+  await expect(page.locator('#death-fort')).toContainText('Open your crate');
+  await expect(page.locator('#death-launch')).toBeVisible();
+  await expect(page.locator('#death-respawn')).toHaveText('Your ship waits for your word.');
+  // Well past the 3 s a ship normally takes to come back: it is still held.
+  await page.waitForTimeout((SIM.respawnTicks / SIM.tickRate) * 1000 + 2000);
+  await expect(page.locator('#death')).toBeVisible();
+  await expect(page.locator('#fort')).toBeHidden();
+
+  await page.locator('#death-launch').click();
+  await expect(page.locator('#death')).toBeHidden();
+  await expect(page.locator('#hull')).toHaveText('Hull 100');
+
+  // The second death, with the same crate still waiting, comes back by itself.
+  await crash(page, id);
+  await expect(page.locator('#death-launch')).toBeHidden();
+  await expect(page.locator('#death-fort')).toContainText('Open your crate');
+  await expect(page.locator('#death')).toBeHidden({ timeout: 10_000 });
+  await expect(page.locator('#hull')).toHaveText('Hull 100');
+  expect(problems).toEqual([]);
+});
+
+test('with nothing waiting, or no fort, a death is never held and the button says Fort', async ({
+  page,
+}) => {
+  const id = await start(page);
+  await expect(page.locator('#fort-waiting')).toBeHidden();
+  await crash(page, id);
+  await expect(page.locator('#death-fort')).toContainText('Fort');
+  await expect(page.locator('#death-launch')).toBeHidden();
+  await expect(page.locator('#death')).toBeHidden({ timeout: 10_000 });
 });

@@ -980,6 +980,14 @@ export class Room {
     return false;
   }
 
+  /** The level of the pilot with this key: as they fly now, or as last kept. 1 if unknown. */
+  pilotLevel(key: string): number {
+    for (const player of this.players.values()) {
+      if (player.pilotKey === key) return levelOf(player.progress.xp);
+    }
+    return levelOf(this.pilots?.load(key)?.xp ?? 0);
+  }
+
   knowsPilot(key: string): boolean {
     for (const player of this.players.values()) if (player.pilotKey === key) return true;
     return this.pilots?.load(key) !== undefined;

@@ -2,16 +2,20 @@ import { describe, expect, it } from 'vitest';
 import {
   ReportWatch,
   SortieTracker,
+  askChoice,
   askFort,
   askLaunch,
+  bunkOffer,
   clockText,
   crewLine,
   debriefLines,
   gearChoices,
   jobChoices,
+  levelLine,
   secondsUntil,
   stepFortGate,
   unavailableText,
+  waitingIn,
 } from '../../src/client/fortModel.ts';
 import type { FortFacts, FortGate } from '../../src/client/fortModel.ts';
 import type { CrewMember, FortItem, FortJob, FortView } from '../../src/shared/fort.ts';
@@ -21,6 +25,8 @@ const member = (over: Partial<CrewMember>): CrewMember => ({
   name: 'Maya "Comet" Ranger',
   className: 'Space Recruit',
   level: 4,
+  experience: 30,
+  nextLevel: 150,
   state: 'ready',
   until: null,
   doing: null,
@@ -136,8 +142,21 @@ describe('when there is no fort to show', () => {
 });
 
 describe('the way in and out', () => {
-  const CLOSED: FortGate = { open: false, launching: false };
-  const OPEN: FortGate = { open: true, launching: false };
+  const CLOSED: FortGate = { open: false, launching: false, choosing: false };
+  const OPEN: FortGate = { open: true, launching: false, choosing: false };
+  const CHOOSING: FortGate = { open: false, launching: false, choosing: true };
+
+  it('the first death with something waiting holds the ship and offers both ways on', () => {
+    expect(askChoice(CLOSED, facts({}))).toEqual(CHOOSING);
+    // Not for a ship still flying, a fort already open, or a launch under way.
+    expect(askChoice(CLOSED, facts({ shipAlive: true }))).toEqual(CLOSED);
+    expect(askChoice(OPEN, facts({}))).toEqual(OPEN);
+    // The server holding the ship does not open the screen while the pilot decides.
+    expect(stepFortGate(CHOOSING, facts({ held: true }))).toEqual(CHOOSING);
+    expect(askFort(CHOOSING, facts({ held: true }))).toEqual(OPEN);
+    expect(askLaunch(CHOOSING)).toEqual({ open: false, launching: true, choosing: false });
+    expect(stepFortGate(CHOOSING, facts({ shipAlive: true }))).toEqual(CLOSED);
+  });
   const facts = (over: Partial<FortFacts>): FortFacts => ({
     playing: true,
     shipAlive: false,
@@ -168,7 +187,7 @@ describe('the way in and out', () => {
 
   it('closes on Launch at once and stays closed until the ship is out, even while the server still says "held"', () => {
     const launching = askLaunch(OPEN);
-    expect(launching).toEqual({ open: false, launching: true });
+    expect(launching).toEqual({ open: false, launching: true, choosing: false });
     expect(stepFortGate(launching, facts({ held: true }))).toEqual(launching);
     expect(stepFortGate(launching, facts({ held: false }))).toEqual(launching);
     expect(stepFortGate(launching, facts({ shipAlive: true }))).toEqual(CLOSED);
@@ -208,6 +227,7 @@ describe('what a crew member can be told to do', () => {
     currencies: { credits, upgradePoints: 0, renown: 0 },
     crew: [maya],
     hold: { crates: [], itemCount: items.length, items },
+    bunks: [],
     jobs,
     reports: [],
   });
@@ -269,5 +289,68 @@ describe('reports that arrive while flying', () => {
       'd',
     ]);
     expect(watch.take([report('d'), report('c')])).toEqual([]);
+  });
+});
+
+describe('what the fort shows of progress, and what waits there', () => {
+  const ivan = member({ id: 'nft_2', name: 'Ivan', points: 6 });
+  const fort = (over: Partial<FortView>): FortView => ({
+    now: 0,
+    currencies: { credits: 100, upgradePoints: 0, renown: 0 },
+    crew: [member({})],
+    hold: { crates: [], itemCount: 0, items: [] },
+    bunks: [
+      { price: 150, level: 2 },
+      { price: 400, level: 4 },
+    ],
+    jobs: [],
+    reports: [],
+    ...over,
+  });
+
+  it('says how far a crew member is into their level', () => {
+    expect(levelLine(member({ level: 4, experience: 37.6, nextLevel: 150 }))).toEqual({
+      text: 'level 4 · 37 / 150 to level 5',
+      part: 37.6 / 150,
+    });
+    // More than the level takes is a full bar, and a unit at the top has no next level.
+    expect(levelLine(member({ experience: 400, nextLevel: 150 })).part).toBe(1);
+    expect(levelLine(member({ level: 50, nextLevel: 0 }))).toEqual({ text: 'level 50', part: 1 });
+  });
+
+  it('a bunk needs the pilot level first and the credits second, and says which is missing', () => {
+    expect(bunkOffer(fort({}), 1)?.blocked).toContain('pilot level 2: you are level 1');
+    expect(bunkOffer(fort({}), null)?.blocked).toBe('Opens at pilot level 2');
+    expect(bunkOffer(fort({}), 2)?.blocked).toContain('50 credits short');
+    const rich = fort({ currencies: { credits: 150, upgradePoints: 0, renown: 0 } });
+    expect(bunkOffer(rich, 2)).toEqual({ line: 'A recruit costs 150 credits', blocked: '' });
+    expect(bunkOffer(fort({ bunks: [] }), 50)).toBeNull();
+  });
+
+  it('counts what waits and names the first thing: crates, then points, then a bunk, then news', () => {
+    expect(waitingIn(null, 3, 9, 2)).toEqual({ count: 0, call: 'Fort' });
+    expect(waitingIn(fort({}), 0, 1, 0)).toEqual({ count: 0, call: 'Fort' });
+    const crate = { id: 'c1', tier: 'Common', source: 'orb' };
+    const rich = { credits: 150, upgradePoints: 0, renown: 0 };
+    // One in the hold, two still aboard the ship, a learner, a bunk and a report.
+    expect(
+      waitingIn(
+        fort({
+          hold: { crates: [crate], itemCount: 0, items: [] },
+          crew: [ivan],
+          currencies: rich,
+        }),
+        2,
+        2,
+        1,
+      ),
+    ).toEqual({ count: 6, call: 'Open your 3 crates' });
+    expect(waitingIn(fort({}), 1, 1, 0)).toEqual({ count: 1, call: 'Open your crate' });
+    expect(waitingIn(fort({ crew: [ivan] }), 0, 1, 0)).toEqual({
+      count: 1,
+      call: 'Ivan has 6 points to spend',
+    });
+    expect(waitingIn(fort({ currencies: rich }), 0, 2, 0).call).toBe('Take on a recruit');
+    expect(waitingIn(fort({}), 0, 1, 2)).toEqual({ count: 2, call: 'Hear from your crew' });
   });
 });

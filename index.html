@@ -61,6 +61,7 @@
         <div id="homing"></div>
         <div id="points"></div>
         <div id="kills"></div>
+        <div id="fort-waiting" hidden></div>
         <div id="timers"></div>
       </div>
 
@@ -103,7 +104,10 @@
         <p id="death-detail"></p>
         <p id="death-best"></p>
         <p id="death-respawn"></p>
-        <button type="button" id="death-fort">Fort <kbd>Tab</kbd></button>
+        <button type="button" id="death-fort">
+          <span id="death-fort-label">Fort</span> <kbd>Tab</kbd>
+        </button>
+        <button type="button" id="death-launch" hidden>Launch</button>
       </div>
 
       <div id="help"></div>

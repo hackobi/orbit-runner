@@ -88,6 +88,13 @@ await page.waitForTimeout(6000);
 room.placeShip(me, (ship) => ({ ...ship, hp: 0, alive: false, respawnTicks: 180 }));
 await page.locator('#death').waitFor({ state: 'visible' });
 await shot('1-destroyed', 300);
+// What the death screen offers. With a fort that has something waiting, a
+// pilot's first death holds the ship and names it.
+const deathOffer = {
+  fortButton: ((await page.locator('#death-fort-label').textContent()) ?? '').trim(),
+  launchOffered: await page.locator('#death-launch').isVisible(),
+  waitingInFlight: ((await page.locator('#fort-waiting').textContent()) ?? '').trim(),
+};
 
 /** Milliseconds from a press of Tab to the page showing (or hiding) the fort, as the page saw it. */
 const timeToggle = (wantOpen: boolean): Promise<number> =>
@@ -122,7 +129,7 @@ await shot('2-fort-just-opened', 0);
 await shot('3-fort', 2500);
 
 // Orders, given as a player gives them: open a crate, wear what it held if it
-// can be worn, send the recruit out.
+// can be worn, send the recruit out, spend their skill points in one press.
 const said: string[] = [];
 if (fortConnected) {
   const press = async (name: string | RegExp): Promise<boolean> => {
@@ -138,8 +145,14 @@ if (fortConnected) {
   await shot('3a-crate-opened', 200);
   await press(/^Wear /);
   await press('Send');
+  await press(/^Train \+/);
+  // Affordable only if the day's challenge paid for it (spending skill points is one).
+  await press(/^Recruit$/);
   await shot('3b-orders-given', 400);
 }
+const bunk = fortConnected
+  ? ((await page.locator('#fort-crew li.bunk').first().textContent()) ?? '')
+  : null;
 // Longer than the three seconds a ship takes to come back: it is being held.
 await page.waitForTimeout(3000);
 const heldBack = !room.shipOf(me)?.alive && room.inFort(me);
@@ -156,7 +169,9 @@ console.log(
       screen: phone ? 'phone' : 'desktop',
       fortConnected,
       cratesLeftAboard: key ? crates.count(key) : null,
+      deathOffer,
       fortSaid: said,
+      nextBunk: bunk,
       pressToFortShownMs: Math.round(openMs),
       shipHeldBackWhileInFort: heldBack,
       pressToFortHiddenMs: Math.round(closeMs),

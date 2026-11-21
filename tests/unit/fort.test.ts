@@ -35,6 +35,8 @@ const FORT = {
       name: 'Maya "Comet" Ranger',
       className: 'Space Recruit',
       level: 4,
+      experience: 30,
+      nextLevel: 150,
       state: 'mission',
       until: 1_800_000_090_000,
       doing: 'Escort a convoy',
@@ -50,6 +52,8 @@ const FORT = {
       name: 'Ivan "Frost" Pilot',
       className: 'Tech Trainee',
       level: 3,
+      experience: 30,
+      nextLevel: 150,
       state: 'ready',
       until: null,
       doing: null,
@@ -76,6 +80,10 @@ const FORT = {
       },
     ],
   },
+  bunks: [
+    { price: 400, level: 4 },
+    { price: 900, level: 7 },
+  ],
   jobs: [
     {
       id: 'task_7_1',
@@ -352,6 +360,31 @@ describe('orders', () => {
     }
   });
 
+  it("puts the pilot's level on a recruit order itself, whatever the page sent", async () => {
+    const fort = await answering();
+    // 900 experience is level 4; the page claims 50.
+    const pilots = new MemoryPilotStore();
+    pilots.save(KEY, { xp: 900, missionIndex: 0, missionProgress: 0, missionsDone: 0 });
+    const server = await startServer({
+      port: 0,
+      pilots,
+      bridgeSecret: SECRET,
+      fortIdKey: ID_KEY,
+      fortUrl: fort.url,
+    });
+    try {
+      await order(server.port, KEY, { kind: 'recruit', pilotLevel: 50, price: 0 });
+      await order(server.port, KEY, { kind: 'trainAll', unitId: 'u1', pilotLevel: 50 });
+      expect(fort.seen.map((seen) => seen.body)).toEqual([
+        { kind: 'recruit', pilotLevel: 4 },
+        { kind: 'trainAll', unitId: 'u1' },
+      ]);
+    } finally {
+      await server.close();
+      await fort.close();
+    }
+  });
+
   it('passes nothing on that is not an order, or that comes from a pilot it does not know', async () => {
     const fort = await answering();
     const server = await serving(fort);
@@ -401,6 +434,8 @@ describe('orders', () => {
       { kind: 'unequip', unitId: 'u1', slot: 'ARMOR_SYSTEM' },
       { kind: 'send', unitId: 'u1', jobId: 'j1' },
       { kind: 'train', unitId: 'u1', skill: 'SENSORS', points: 2 },
+      { kind: 'trainAll', unitId: 'u1' },
+      { kind: 'recruit' },
     ];
     for (const one of orders) expect(parseFortOrder({ ...one, extra: true })).toEqual(one);
     for (const one of [
@@ -410,6 +445,7 @@ describe('orders', () => {
       { kind: 'train', unitId: 'u1', skill: 'SENSORS', points: 0 },
       { kind: 'train', unitId: 'u1', skill: 'SENSORS', points: 101 },
       { kind: 'open', crateId: 'c'.repeat(81) },
+      { kind: 'trainAll' },
     ]) {
       expect(parseFortOrder(one)).toBeNull();
     }
