@@ -605,7 +605,7 @@ describe('what a pilot earns in flight is told to their fort', () => {
 
     const fort = await answering(true);
     try {
-      await reportFlight(link(fort), KEY, log);
+      // One telling sends both: the one kept, then what was earned since.
       await reportFlight(link(fort), KEY, log);
       expect(fort.seen.map((request) => (request.body as { xp: number }).xp)).toEqual([200, 50]);
       expect(fort.seen[0]?.body).toEqual(deaf.seen[0]?.body);

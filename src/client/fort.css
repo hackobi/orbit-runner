@@ -608,6 +608,26 @@ body.fort-open #cockpit {
   overflow-y: visible;
 }
 
+/* What there is to do today comes first, above what the last sortie brought. */
+#fort-debrief h3:first-child {
+  margin-top: 0;
+  color: var(--sf-violet);
+}
+
+#fort-debrief h2 {
+  margin-top: 14px;
+}
+
+/* What a contract asks is read whole, on any width. */
+#fort-today b {
+  white-space: normal;
+}
+
+#fort-today:empty,
+#fort-today:empty + h2 {
+  margin-top: 0;
+}
+
 /* A crew member's orders use the card's whole width, under the chip. */
 #fort-crew li.card .fort-orders {
   margin-left: -36px;

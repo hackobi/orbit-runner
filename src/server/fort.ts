@@ -103,17 +103,19 @@ export async function bankCrates(
 /**
  * Tells a pilot's fort what they have earned in flight since it last heard.
  * A report the fort did not answer for is kept and sent again next time; the
- * fort counts it once.
+ * fort counts it once. After one sent again, what was earned since follows,
+ * so the fort is never read or given an order with earnings still here.
  */
 export async function reportFlight(
   link: FortLink,
   pilotKey: string,
   log: FlightLog,
 ): Promise<void> {
-  const report = log.next(pilotKey);
-  if (!report) return;
-  const body = await ask(link, pilotKey, { kind: 'flight', ...report });
-  if (parseFortDone((body as { done?: unknown } | null)?.done)?.ok === true) {
+  for (let sends = 0; sends < 2; sends++) {
+    const report = log.next(pilotKey);
+    if (!report) return;
+    const body = await ask(link, pilotKey, { kind: 'flight', ...report });
+    if (parseFortDone((body as { done?: unknown } | null)?.done)?.ok !== true) return;
     log.sent(pilotKey, report.id);
   }
 }
