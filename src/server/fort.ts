@@ -7,6 +7,7 @@ import { createHmac } from 'node:crypto';
 import { parseFortDone, parseFortView } from '../shared/fort.ts';
 import type { FortOrder, FortOrderReply, FortReply, FortView } from '../shared/fort.ts';
 import type { Crate } from './crates.ts';
+import type { FlightLog } from './flight.ts';
 
 export interface FortLink {
   /** SpaceFort's server, such as http://127.0.0.1:5001. */
@@ -97,4 +98,22 @@ export async function bankCrates(
 ): Promise<boolean> {
   const body = await ask(link, pilotKey, { kind: 'bank', crates });
   return parseFortDone((body as { done?: unknown } | null)?.done)?.ok === true;
+}
+
+/**
+ * Tells a pilot's fort what they have earned in flight since it last heard.
+ * A report the fort did not answer for is kept and sent again next time; the
+ * fort counts it once.
+ */
+export async function reportFlight(
+  link: FortLink,
+  pilotKey: string,
+  log: FlightLog,
+): Promise<void> {
+  const report = log.next(pilotKey);
+  if (!report) return;
+  const body = await ask(link, pilotKey, { kind: 'flight', ...report });
+  if (parseFortDone((body as { done?: unknown } | null)?.done)?.ok === true) {
+    log.sent(pilotKey, report.id);
+  }
 }

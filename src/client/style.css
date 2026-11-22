@@ -257,7 +257,8 @@ body {
 }
 
 /* Things to do in the fort, said while flying. */
-#fort-waiting {
+#fort-waiting,
+#fort-contract {
   color: #c4b5fd;
 }
 

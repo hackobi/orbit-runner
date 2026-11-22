@@ -8,7 +8,14 @@ import type { BulletView } from '../net/client.ts';
 import { createDebugRecorder } from './debugHook.ts';
 import { PAD_LAYOUT, activePad, padName, unusablePad } from './gamepad.ts';
 import { FortScreen } from './fort.ts';
-import { SortieTracker, askChoice, askFort, askLaunch, stepFortGate } from './fortModel.ts';
+import {
+  SortieTracker,
+  askChoice,
+  askFort,
+  askLaunch,
+  contractLine,
+  stepFortGate,
+} from './fortModel.ts';
 import type { FortGate } from './fortModel.ts';
 import { InputDevices } from './input.ts';
 import { loadSettings, saveSettings } from './settings.ts';
@@ -292,6 +299,7 @@ function toggleFort(): void {
 const deathFortLabel = element('death-fort-label', HTMLElement);
 const deathLaunch = element('death-launch', HTMLButtonElement);
 const fortWaiting = element('fort-waiting', HTMLElement);
+const fortContract = element('fort-contract', HTMLElement);
 deathLaunch.addEventListener('click', launch);
 
 const fort = new FortScreen({
@@ -359,6 +367,10 @@ function updateFort(nowMs: number): void {
   const waitingText = waiting.count > 0 ? `Fort · ${waiting.count} waiting` : '';
   if (fortWaiting.textContent !== waitingText) fortWaiting.textContent = waitingText;
   fortWaiting.hidden = waiting.count === 0;
+  // The contract taken in the fort, as the fort last counted it.
+  const contractText = fort.contract ? `Contract · ${contractLine(fort.contract)}` : '';
+  if (fortContract.textContent !== contractText) fortContract.textContent = contractText;
+  fortContract.hidden = contractText === '';
   if (deathFortLabel.textContent !== waiting.call) deathFortLabel.textContent = waiting.call;
   deathLaunch.hidden = !fortGate.choosing;
   const context = {

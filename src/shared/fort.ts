@@ -91,6 +91,49 @@ export interface FortBunk {
   readonly level: number;
 }
 
+/** How much of a day's limit has been used. */
+export interface DayCount {
+  readonly today: number;
+  readonly cap: number;
+}
+
+/** What flying has paid the fort today, and who rides along. */
+export interface FortFlight {
+  /** The crew member on board the ship, or null. They learn as the pilot flies and take no jobs. */
+  readonly aboard: string | null;
+  /** Upgrade points flying has paid today. */
+  readonly upgradePoints: DayCount;
+  /** Experience the crew member on board has learned today. */
+  readonly experience: DayCount;
+}
+
+/** Something a crew member asks the pilot to do in flight, for credits. */
+export interface FortOffer {
+  readonly id: string;
+  /** The crew member who asks. */
+  readonly from: string;
+  readonly text: string;
+  readonly goal: number;
+  readonly credits: number;
+}
+
+/** The contract the pilot has taken. */
+export interface FortContract extends FortOffer {
+  readonly progress: number;
+}
+
+/** The once-a-day reward. */
+export interface FortDaily {
+  /** True when it can be taken now. */
+  readonly ready: boolean;
+  /** When it can next be taken, in the fort's clock (ms). Null if never taken. */
+  readonly nextAt: number | null;
+  /** The day of the streak the next reward is for. */
+  readonly streak: number;
+  readonly credits: number;
+  readonly upgradePoints: number;
+}
+
 export interface FortReport {
   readonly id: string;
   readonly at: number;
@@ -114,6 +157,12 @@ export interface FortView {
   };
   /** The bunks still empty, the next to fill first. */
   readonly bunks: readonly FortBunk[];
+  readonly flight: FortFlight;
+  /** The contract taken, or null. One at a time. */
+  readonly contract: FortContract | null;
+  /** The contracts the crew ask for today and that are not taken or done. */
+  readonly offers: readonly FortOffer[];
+  readonly daily: FortDaily;
   readonly jobs: readonly FortJob[];
   readonly reports: readonly FortReport[];
 }
@@ -133,7 +182,13 @@ export type FortOrder =
   /** Spend all of a crew member's skill points the way the fort thinks best. */
   | { readonly kind: 'trainAll'; readonly unitId: string }
   /** Take on a recruit for the next empty bunk. */
-  | { readonly kind: 'recruit' };
+  | { readonly kind: 'recruit' }
+  /** Put a crew member on board the ship, or nobody. */
+  | { readonly kind: 'board'; readonly unitId: string | null }
+  /** Take a contract a crew member asks for. */
+  | { readonly kind: 'contract'; readonly offerId: string }
+  /** Take the once-a-day reward. */
+  | { readonly kind: 'claim' };
 
 /** How an order went: whether it was done, and what the fort said about it. */
 export interface FortDone {
@@ -310,6 +365,52 @@ function bunk(value: unknown): FortBunk | null {
   return price !== null && level !== null ? { price, level } : null;
 }
 
+function dayCount(value: unknown): DayCount | null {
+  const f = fields(value);
+  const today = count(f?.today);
+  const cap = count(f?.cap);
+  return today !== null && cap !== null ? { today, cap } : null;
+}
+
+function flight(value: unknown): FortFlight | null {
+  const f = fields(value);
+  const aboard = f?.aboard === null ? null : text(f?.aboard, 80);
+  const upgradePoints = dayCount(f?.upgradePoints);
+  const experience = dayCount(f?.experience);
+  if (!f || (f.aboard !== null && aboard === null)) return null;
+  return upgradePoints && experience ? { aboard, upgradePoints, experience } : null;
+}
+
+function offer(value: unknown): FortOffer | null {
+  const f = fields(value);
+  const id = text(f?.id, 120);
+  const from = words(f?.from, 120);
+  const what = words(f?.text, 200);
+  const goal = count(f?.goal);
+  const credits = count(f?.credits);
+  return id !== null && from !== null && what !== null && goal !== null && credits !== null
+    ? { id, from, text: what, goal, credits }
+    : null;
+}
+
+function contract(value: unknown): FortContract | null {
+  const taken = offer(value);
+  const progress = count(fields(value)?.progress);
+  return taken && progress !== null ? { ...taken, progress } : null;
+}
+
+function daily(value: unknown): FortDaily | null {
+  const f = fields(value);
+  const nextAt = f?.nextAt === null ? null : count(f?.nextAt);
+  const streak = count(f?.streak);
+  const credits = count(f?.credits);
+  const upgradePoints = count(f?.upgradePoints);
+  if (!f || typeof f.ready !== 'boolean' || (f.nextAt !== null && nextAt === null)) return null;
+  return streak !== null && credits !== null && upgradePoints !== null
+    ? { ready: f.ready, nextAt, streak, credits, upgradePoints }
+    : null;
+}
+
 function report(value: unknown): FortReport | null {
   const f = fields(value);
   const id = text(f?.id, 80);
@@ -344,11 +445,16 @@ export function parseFortView(
   const itemCount = count(hold.itemCount);
   const items = list(hold.items, 200, item, left);
   const bunks = list(f.bunks, 20, bunk, left);
+  const flying = flight(f.flight);
+  const taken = f.contract === null ? null : contract(f.contract);
+  const offers = list(f.offers, 20, offer, left);
+  const reward = daily(f.daily);
   const jobs = list(f.jobs, 50, job, left);
   const reports = list(f.reports, 50, report, left);
   if (now === null || credits === null || upgradePoints === null || renown === null) return null;
   if (itemCount === null) return null;
   if (!crew || !crates || !items || !bunks || !jobs || !reports) return null;
+  if (!flying || !offers || !reward || (f.contract !== null && !taken)) return null;
   if (left.out > 0) onLeftOut?.(left.out);
   return {
     now,
@@ -356,6 +462,10 @@ export function parseFortView(
     crew,
     hold: { crates, itemCount, items },
     bunks,
+    flight: flying,
+    contract: taken,
+    offers,
+    daily: reward,
     jobs,
     reports,
   };
@@ -399,6 +509,15 @@ export function parseFortOrder(value: unknown): FortOrder | null {
       // Nothing else is taken from the page: what a recruit costs and whether
       // the pilot may have one are for the two servers to say.
       return { kind: 'recruit' };
+    case 'board':
+      if (f.unitId === null) return { kind: 'board', unitId: null };
+      return unitId !== null ? { kind: 'board', unitId } : null;
+    case 'contract': {
+      const offerId = text(f.offerId, 120);
+      return offerId !== null ? { kind: 'contract', offerId } : null;
+    }
+    case 'claim':
+      return { kind: 'claim' };
     default:
       return null;
   }

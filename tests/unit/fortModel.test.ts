@@ -7,8 +7,11 @@ import {
   askLaunch,
   bunkOffer,
   clockText,
+  contractLine,
   crewLine,
+  dailyLine,
   debriefLines,
+  flightLines,
   gearChoices,
   jobChoices,
   levelLine,
@@ -228,6 +231,14 @@ describe('what a crew member can be told to do', () => {
     crew: [maya],
     hold: { crates: [], itemCount: items.length, items },
     bunks: [],
+    flight: {
+      aboard: null,
+      upgradePoints: { today: 0, cap: 20 },
+      experience: { today: 0, cap: 120 },
+    },
+    contract: null,
+    offers: [],
+    daily: { ready: false, nextAt: 86_400_000, streak: 2, credits: 125, upgradePoints: 15 },
     jobs,
     reports: [],
   });
@@ -303,6 +314,14 @@ describe('what the fort shows of progress, and what waits there', () => {
       { price: 150, level: 2 },
       { price: 400, level: 4 },
     ],
+    flight: {
+      aboard: null,
+      upgradePoints: { today: 0, cap: 20 },
+      experience: { today: 0, cap: 120 },
+    },
+    contract: null,
+    offers: [],
+    daily: { ready: false, nextAt: 86_400_000, streak: 2, credits: 125, upgradePoints: 15 },
     jobs: [],
     reports: [],
     ...over,
@@ -352,5 +371,68 @@ describe('what the fort shows of progress, and what waits there', () => {
     });
     expect(waitingIn(fort({ currencies: rich }), 0, 2, 0).call).toBe('Take on a recruit');
     expect(waitingIn(fort({}), 0, 1, 2)).toEqual({ count: 2, call: 'Hear from your crew' });
+  });
+
+  const offer = { id: 'o1', from: 'Ivan', text: 'Destroy 3 raiders', goal: 3, credits: 84 };
+  const flight = (points: number, experience: number) => ({
+    aboard: null,
+    upgradePoints: { today: points, cap: 20 },
+    experience: { today: experience, cap: 120 },
+  });
+
+  it('the daily reward and a contract to pick also wait, the reward before the crew, the contract after the bunk', () => {
+    const ready = { ready: true, nextAt: null, streak: 1, credits: 100, upgradePoints: 10 };
+    expect(waitingIn(fort({ daily: ready, crew: [ivan] }), 0, 1, 0)).toEqual({
+      count: 2,
+      call: 'Take your daily reward',
+    });
+    expect(waitingIn(fort({ offers: [offer] }), 0, 1, 0)).toEqual({
+      count: 1,
+      call: 'Pick a contract',
+    });
+    // With a contract in hand, the other offers are not something waiting.
+    expect(
+      waitingIn(fort({ offers: [offer], contract: { ...offer, id: 'o2', progress: 1 } }), 0, 1, 0),
+    ).toEqual({ count: 0, call: 'Fort' });
+  });
+
+  it('says a contract as the cockpit shows it, never past its goal', () => {
+    expect(contractLine({ ...offer, progress: 1 })).toBe('Destroy 3 raiders · 1 / 3');
+    expect(contractLine({ ...offer, progress: 5 })).toBe('Destroy 3 raiders · 3 / 3');
+  });
+
+  it('says what the daily reward is, and roughly when the next one comes', () => {
+    const daily = { ready: true, nextAt: null, streak: 3, credits: 150, upgradePoints: 20 };
+    expect(dailyLine(daily, null)).toEqual({
+      title: 'Day 3 reward',
+      line: '150 credits, 20 upgrade points',
+    });
+    expect(dailyLine({ ...daily, ready: false }, 5 * 3600 + 5)).toEqual({
+      title: 'Daily reward taken',
+      line: 'Day 3 (150 credits, 20 upgrade points) in about 6 h',
+    });
+    expect(dailyLine({ ...daily, ready: false }, -4).line).toContain('in about 1 h');
+  });
+
+  it('the sortie report says what flying added since the pilot left the fort, and how near the limit it is', () => {
+    expect(flightLines(flight(7, 40), flight(3, 15), 'Ivan')).toEqual([
+      { label: 'Upgrade points', value: '+4 · 7 / 20 today', gain: true },
+      { label: 'Ivan', value: '+25 experience · 40 / 120 today', gain: true },
+    ]);
+    // Nobody on board: one line. At the limit: it says so.
+    expect(flightLines(flight(20, 0), flight(20, 0), null)).toEqual([
+      { label: 'Upgrade points', value: '+0 · 20 / 20 today, the limit', gain: false },
+    ]);
+    // A new day began in flight: the count started again, and all of it is new.
+    expect(flightLines(flight(2, 0), flight(18, 0), null)[0]?.value).toBe('+2 · 2 / 20 today');
+    expect(flightLines(flight(2, 0), null, null)[0]?.value).toBe('+2 · 2 / 20 today');
+  });
+
+  it('the crew member on board is said to be on board, and is still free to be given orders', () => {
+    expect(crewLine(member({}), null, true)).toEqual({
+      text: 'On board your ship',
+      free: true,
+      due: false,
+    });
   });
 });

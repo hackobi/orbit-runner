@@ -304,6 +304,64 @@ body.fort-open #cockpit {
   color: var(--sf-steel-400);
 }
 
+/*
+ * Crew are cards: each its own plate with its level on a chip, coloured by
+ * what the crew member is.
+ */
+#fort-crew li.card {
+  --card: var(--sf-violet);
+
+  position: relative;
+  margin: 6px;
+  padding: 8px 10px 8px 46px;
+  border: 1px solid rgb(255 255 255 / 9%);
+  border-left: 3px solid var(--card);
+  border-radius: 6px;
+  background: linear-gradient(135deg, rgb(255 255 255 / 5%), rgb(0 0 0 / 14%));
+}
+
+#fort-crew li.card[data-class='tech-trainee'] {
+  --card: var(--sf-cyan);
+}
+
+#fort-crew li.card.busy {
+  --card: var(--sf-steel-500);
+}
+
+.fort-chip {
+  position: absolute;
+  top: 8px;
+  left: 9px;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--card);
+  border-radius: 50%;
+  font-weight: 700;
+  line-height: 26px;
+  text-align: center;
+  color: var(--sf-steel-100);
+  background: rgb(0 0 0 / 35%);
+}
+
+/* A recruit just taken on turns over like a card dealt. */
+#fort-crew li.card.fresh {
+  animation:
+    fort-deal 0.7s ease-out 1,
+    fort-fresh 2.4s ease-out 1;
+}
+
+@keyframes fort-deal {
+  from {
+    transform: perspective(600px) rotateY(88deg);
+    opacity: 0;
+  }
+
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
 /* How far a crew member is into their level. */
 .fort-level {
   display: block;
@@ -486,7 +544,8 @@ body.fort-open #cockpit {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fort-well li.fresh {
+  .fort-well li.fresh,
+  #fort-crew li.card.fresh {
     animation: none;
     box-shadow: inset 3px 0 0 var(--sf-violet);
   }
@@ -534,6 +593,24 @@ body.fort-open #cockpit {
 /* A report's title is a sentence: it wraps, where a name is cut short. */
 #fort-reports b {
   white-space: normal;
+}
+
+/*
+ * The report plate holds three lists. It scrolls as one, so that on a short
+ * screen each can be reached and none is squeezed to nothing.
+ */
+#fort-debrief {
+  overflow-y: auto;
+}
+
+#fort-debrief .fort-well {
+  flex: none;
+  overflow-y: visible;
+}
+
+/* A crew member's orders use the card's whole width, under the chip. */
+#fort-crew li.card .fort-orders {
+  margin-left: -36px;
 }
 
 #fort-debrief-lines {

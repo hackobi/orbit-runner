@@ -9,7 +9,8 @@ import {
   parseFortView,
 } from '../../src/shared/fort.ts';
 import { MemoryCrateStore } from '../../src/server/crates.ts';
-import { fortPlayerId } from '../../src/server/fort.ts';
+import { fortPlayerId, reportFlight } from '../../src/server/fort.ts';
+import { FlightLog } from '../../src/server/flight.ts';
 import { MemoryPilotStore } from '../../src/server/pilots.ts';
 import { startServer } from '../../src/server/server.ts';
 
@@ -84,6 +85,14 @@ const FORT = {
     { price: 400, level: 4 },
     { price: 900, level: 7 },
   ],
+  flight: {
+    aboard: null,
+    upgradePoints: { today: 0, cap: 20 },
+    experience: { today: 0, cap: 120 },
+  },
+  contract: null,
+  offers: [],
+  daily: { ready: false, nextAt: 86_400_000, streak: 2, credits: 125, upgradePoints: 15 },
   jobs: [
     {
       id: 'task_7_1',
@@ -436,6 +445,10 @@ describe('orders', () => {
       { kind: 'train', unitId: 'u1', skill: 'SENSORS', points: 2 },
       { kind: 'trainAll', unitId: 'u1' },
       { kind: 'recruit' },
+      { kind: 'board', unitId: 'u1' },
+      { kind: 'board', unitId: null },
+      { kind: 'contract', offerId: 'u1:20778' },
+      { kind: 'claim' },
     ];
     for (const one of orders) expect(parseFortOrder({ ...one, extra: true })).toEqual(one);
     for (const one of [
@@ -446,6 +459,12 @@ describe('orders', () => {
       { kind: 'train', unitId: 'u1', skill: 'SENSORS', points: 101 },
       { kind: 'open', crateId: 'c'.repeat(81) },
       { kind: 'trainAll' },
+      { kind: 'board' },
+      { kind: 'board', unitId: 7 },
+      { kind: 'contract' },
+      // The two orders only this server may give.
+      { kind: 'bank', crates: [] },
+      { kind: 'flight', id: 'f1', xp: 100000, tally: {} },
     ]) {
       expect(parseFortOrder(one)).toBeNull();
     }
@@ -536,7 +555,96 @@ describe('crates won in flight come into the fort', () => {
   });
 });
 
+describe('what a pilot earns in flight is told to their fort', () => {
+  const link = (fort: FakeFort) => ({ url: fort.url, secret: SECRET, idKey: ID_KEY });
+  const answering = (ok: boolean) =>
+    fakeFort(() => ({
+      status: 200,
+      body: JSON.stringify({ ok: true, done: { ok, message: '' }, fort: FORT }),
+    }));
+
+  it('experience and what was shot add up into one report, and nothing is sent when nothing was earned', async () => {
+    const fort = await answering(true);
+    const log = new FlightLog();
+    try {
+      await reportFlight(link(fort), KEY, log);
+      expect(fort.seen).toEqual([]);
+      log.earn(KEY, 120);
+      log.earn(KEY, 15);
+      log.count(KEY, 'raiders');
+      log.count(KEY, 'orbs');
+      log.count(KEY, 'orbs');
+      log.earn(STRANGER, 999);
+      await reportFlight(link(fort), KEY, log);
+      expect(fort.seen).toHaveLength(1);
+      expect(fort.seen[0]?.path).toBe(`/api/bridge/fort/${fortPlayerId(ID_KEY, KEY)}/order`);
+      expect(fort.seen[0]?.body).toMatchObject({
+        kind: 'flight',
+        xp: 135,
+        tally: { raiders: 1, orbs: 2 },
+      });
+      // The fort has it: it is not sent again.
+      await reportFlight(link(fort), KEY, log);
+      expect(fort.seen).toHaveLength(1);
+    } finally {
+      await fort.close();
+    }
+  });
+
+  it('a report the fort did not take is sent again unchanged, and what is earned meanwhile follows it', async () => {
+    const deaf = await answering(false);
+    const log = new FlightLog();
+    log.earn(KEY, 200);
+    await reportFlight(link(deaf), KEY, log);
+    log.earn(KEY, 50);
+    await reportFlight(link(deaf), KEY, log);
+    await deaf.close();
+    // The same report both times, by its id: the fort would count it once.
+    expect(deaf.seen[1]?.body).toEqual(deaf.seen[0]?.body);
+    expect(deaf.seen[0]?.body).toMatchObject({ xp: 200 });
+
+    const fort = await answering(true);
+    try {
+      await reportFlight(link(fort), KEY, log);
+      await reportFlight(link(fort), KEY, log);
+      expect(fort.seen.map((request) => (request.body as { xp: number }).xp)).toEqual([200, 50]);
+      expect(fort.seen[0]?.body).toEqual(deaf.seen[0]?.body);
+      expect(log.next(KEY)).toBeNull();
+    } finally {
+      await fort.close();
+    }
+  });
+});
+
 describe('checking what the fort sent', () => {
+  it('reads the contract taken, the ones on offer, who is on board and the daily reward', () => {
+    const offer = {
+      id: 'nft_1_1:20778',
+      from: 'Maya',
+      text: 'Destroy 3 raiders',
+      goal: 3,
+      credits: 84,
+    };
+    const busy = {
+      ...FORT,
+      flight: { ...FORT.flight, aboard: 'nft_2_1' },
+      contract: { ...offer, progress: 1 },
+      offers: [{ ...offer, id: 'nft_2_1:20778', from: 'Ivan' }],
+      daily: { ready: true, nextAt: null, streak: 1, credits: 100, upgradePoints: 10 },
+    };
+    expect(parseFortView(busy)).toEqual(busy);
+    for (const broken of [
+      { ...FORT, flight: undefined },
+      { ...FORT, flight: { ...FORT.flight, aboard: 7 } },
+      { ...FORT, flight: { ...FORT.flight, upgradePoints: { today: -1, cap: 20 } } },
+      { ...FORT, contract: { ...offer } },
+      { ...FORT, daily: { ...FORT.daily, ready: 'yes' } },
+      { ...FORT, offers: 'none' },
+    ]) {
+      expect(parseFortView(broken)).toBeNull();
+    }
+  });
+
   it('accepts a whole fort and keeps only the fields it knows', () => {
     expect(parseFortView(FORT)).toEqual(FORT);
     expect(parseFortView({ ...FORT, walletAddress: 'x' })).toEqual(FORT);

@@ -290,6 +290,14 @@ test('orders: a crate is opened, its item worn, a point spent, and a crew member
       { price: 100, level: 1 },
       { price: 400, level: 4 },
     ],
+    flight: {
+      aboard: null,
+      upgradePoints: { today: 0, cap: 20 },
+      experience: { today: 0, cap: 120 },
+    },
+    contract: null,
+    offers: [],
+    daily: { ready: false, nextAt: 86_400_000, streak: 2, credits: 125, upgradePoints: 15 },
     jobs: [
       {
         id: 'task_7',
@@ -466,6 +474,14 @@ test('an order the fort refuses says why, and one that gets no answer says so', 
       items: [],
     },
     bunks: [],
+    flight: {
+      aboard: null,
+      upgradePoints: { today: 0, cap: 20 },
+      experience: { today: 0, cap: 120 },
+    },
+    contract: null,
+    offers: [],
+    daily: { ready: false, nextAt: 86_400_000, streak: 2, credits: 125, upgradePoints: 15 },
     jobs: [],
     reports: [],
   };
@@ -532,6 +548,14 @@ test('the first death with something waiting holds the ship and names what waits
       items: [],
     },
     bunks: [],
+    flight: {
+      aboard: null,
+      upgradePoints: { today: 0, cap: 20 },
+      experience: { today: 0, cap: 120 },
+    },
+    contract: null,
+    offers: [],
+    daily: { ready: false, nextAt: 86_400_000, streak: 2, credits: 125, upgradePoints: 15 },
     jobs: [],
     reports: [],
   };
@@ -574,4 +598,164 @@ test('with nothing waiting, or no fort, a death is never held and the button say
   await expect(page.locator('#death-fort')).toContainText('Fort');
   await expect(page.locator('#death-launch')).toBeHidden();
   await expect(page.locator('#death')).toBeHidden({ timeout: 10_000 });
+});
+
+test('today: the daily reward is taken, a contract flown and counted in the cockpit, and a crew member rides along', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const problems = problemsOf(page);
+  const offer = {
+    id: 'nft_1:20778',
+    from: 'Maya',
+    text: 'Destroy 3 raiders',
+    goal: 3,
+    credits: 84,
+  };
+  const fort = {
+    now: Date.now(),
+    currencies: { credits: 100, upgradePoints: 50, renown: 0 },
+    crew: [
+      {
+        id: 'nft_1',
+        name: 'Maya',
+        className: 'Space Recruit',
+        level: 4,
+        experience: 30,
+        nextLevel: 150,
+        state: 'ready',
+        until: null as number | null,
+        doing: null as string | null,
+        points: 0,
+        skills: [{ name: 'COMBAT', value: 12 }],
+        gear: [
+          { slot: 'PRIMARY_WEAPON', item: null },
+          { slot: 'SECONDARY_WEAPON', item: null },
+          { slot: 'ARMOR_SYSTEM', item: null },
+          { slot: 'UTILITY_MODULE', item: null },
+        ],
+      },
+    ],
+    hold: { crates: [], itemCount: 0, items: [] },
+    bunks: [],
+    flight: {
+      aboard: null as string | null,
+      upgradePoints: { today: 0, cap: 20 },
+      experience: { today: 0, cap: 120 },
+    },
+    contract: null as (typeof offer & { progress: number }) | null,
+    offers: [offer],
+    daily: {
+      ready: true,
+      nextAt: null as number | null,
+      streak: 1,
+      credits: 100,
+      upgradePoints: 10,
+    },
+    jobs: [
+      {
+        id: 'task_7',
+        title: 'Sweep the outer beacons',
+        rarity: 'common',
+        lasts: 240_000,
+        cost: 0,
+        pays: { credits: 30, upgradePoints: 1, experience: 40 },
+        open: ['nft_1'],
+      },
+    ],
+    reports: [],
+  };
+  const orders: { kind: string }[] = [];
+  await page.route('**/api/fort', (route) =>
+    route.fulfill({ json: { ok: true, fort: { ...fort, now: Date.now() } } }),
+  );
+  await page.route('**/api/fort/order', (route) => {
+    const { order } = route.request().postDataJSON() as { order: { kind: string } };
+    orders.push(order);
+    let message = '';
+    if (order.kind === 'claim') {
+      fort.daily = {
+        ready: false,
+        nextAt: Date.now() + 86_400_000,
+        streak: 2,
+        credits: 125,
+        upgradePoints: 15,
+      };
+      fort.currencies = { credits: 200, upgradePoints: 60, renown: 0 };
+      message = 'Day 1 reward: 100 credits, 10 upgrade points';
+    } else if (order.kind === 'contract') {
+      fort.contract = { ...offer, progress: 0 };
+      fort.offers = [];
+      message = 'Contract taken: Destroy 3 raiders';
+    } else if (order.kind === 'board') {
+      fort.flight.aboard = 'nft_1';
+      fort.jobs = fort.jobs.map((job) => ({ ...job, open: [] }));
+      message = 'Maya is on board your ship';
+    }
+    return route.fulfill({
+      json: { ok: true, done: { ok: true, message }, fort: { ...fort, now: Date.now() } },
+    });
+  });
+
+  const id = await start(page);
+  // In flight, before anything is taken: the reward is what waits first.
+  await expect(page.locator('#fort-waiting')).toHaveText('Fort · 2 waiting');
+  await expect(page.locator('#fort-contract')).toBeHidden();
+  await crash(page, id);
+  await expect(page.locator('#death-fort-label')).toHaveText('Take your daily reward');
+  await pressTab(page, 'fort-shown');
+
+  const today = page.locator('#fort-today');
+  await expect(today).toContainText('Day 1 reward');
+  await today.getByRole('button', { name: 'Claim' }).click();
+  await expect(page.locator('#fort-state')).toHaveText(/Day 1 reward: 100 credits/);
+  await expect(today).toContainText('Daily reward taken');
+  await expect(today).toContainText('Day 2 (125 credits, 15 upgrade points) in about 24 h');
+  await expect(today.getByRole('button', { name: 'Claim' })).toHaveCount(0);
+  await expect(page.locator('#fort-credits')).toHaveText('200');
+
+  await expect(today).toContainText('Destroy 3 raiders');
+  await expect(today).toContainText('Maya asks · pays 84 credits');
+  await today.getByRole('button', { name: 'Take' }).click();
+  await expect(today).toContainText('Your contract · 0 / 3 · pays 84 credits');
+  await expect(today.getByRole('button', { name: 'Take' })).toHaveCount(0);
+
+  // On board: said on their card and under Today, and no job is offered to them.
+  const crew = page.locator('#fort-crew');
+  await expect(today).toContainText('Nobody on board');
+  await crew.getByRole('button', { name: 'Board', exact: true }).click();
+  await expect(crew.locator('.status')).toHaveText('On board your ship');
+  await expect(crew).toContainText('so they take no jobs');
+  await expect(crew.getByRole('button', { name: 'Send' })).toHaveCount(0);
+  await expect(crew.getByRole('button', { name: 'Step off' })).toBeVisible();
+  await expect(today).toContainText('Maya on board: 0 / 120 experience');
+  expect(orders).toEqual([
+    { kind: 'claim' },
+    { kind: 'contract', offerId: offer.id },
+    { kind: 'board', unitId: 'nft_1' },
+  ]);
+
+  // Flying: the contract is in the cockpit, and follows the fort's count.
+  await pressTab(page, 'flying');
+  await expect(page.locator('#fort-contract')).toHaveText('Contract · Destroy 3 raiders · 0 / 3');
+  await expect(page.locator('#fort-waiting')).toBeHidden();
+  fort.contract = { ...offer, progress: 2 };
+  fort.flight = {
+    aboard: 'nft_1',
+    upgradePoints: { today: 5, cap: 20 },
+    experience: { today: 30, cap: 120 },
+  };
+  await expect(page.locator('#fort-contract')).toHaveText('Contract · Destroy 3 raiders · 2 / 3', {
+    timeout: 20_000,
+  });
+
+  // Back in the fort, the sortie report says what the flight added.
+  await crash(page, id);
+  await pressTab(page, 'fort-shown');
+  const debrief = page.locator('#fort-debrief-lines');
+  await expect(debrief).toContainText('+5 · 5 / 20 today');
+  await expect(debrief).toContainText('Maya on board');
+  await expect(debrief).toContainText('+30 experience · 30 / 120 today');
+
+  expect(problems).toEqual([]);
 });

@@ -18,8 +18,10 @@ import {
 import type { ShipState } from '../shared/sim/ship.ts';
 import { parseFortOrder } from '../shared/fort.ts';
 import type { FortOrderReply, FortReply } from '../shared/fort.ts';
+import type { FortLink } from './fort.ts';
 import type { MemoryCrateStore } from './crates.ts';
-import { bankCrates, orderFort, readFort } from './fort.ts';
+import { bankCrates, orderFort, readFort, reportFlight } from './fort.ts';
+import { FlightLog } from './flight.ts';
 import type { PilotStore } from './pilots.ts';
 import { Recorder } from './recorder.ts';
 import { Room } from './room.ts';
@@ -156,6 +158,12 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
   // Test hook: while on, every living ship is topped up each tick, so a
   // measurement can run for as long as it needs without anyone dying.
   let sustain = false;
+  // What pilots earn in flight for their fort is kept only where there is a fort to tell.
+  const fortLink =
+    options.fortUrl && options.bridgeSecret && options.fortIdKey
+      ? { url: options.fortUrl, secret: options.bridgeSecret, idKey: options.fortIdKey }
+      : null;
+  const flights = fortLink ? new FlightLog() : null;
   const room: Room = new Room({
     now: () => performance.now(),
     seed: options.seed ?? (Date.now() ^ (process.pid << 16)) >>> 0,
@@ -163,6 +171,7 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
     npcs: options.npcs ?? false,
     ...(options.pilots ? { pilots: options.pilots } : {}),
     ...(options.crates ? { crates: options.crates } : {}),
+    ...(flights ? { flights } : {}),
     ...(options.crateOdds ? { crateOdds: options.crateOdds } : {}),
     ...(recorder
       ? {
@@ -266,6 +275,24 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
     return false;
   };
 
+  /** Reads a pilot's fort, bringing in first the crates they won in flight. */
+  const readAndBank = async (link: FortLink, pilotKey: string): Promise<FortReply> => {
+    // Crates won in flight come into the fort's hold when the pilot is not
+    // flying. They leave this server only once the fort says it has them.
+    // A copy: a crate won while the fort is being asked was not sent, and stays.
+    const aboard = [...(options.crates?.pending(pilotKey) ?? [])];
+    if (aboard.length > 0 && !room.flying(pilotKey) && options.crates) {
+      if (await bankCrates(link, pilotKey, aboard)) {
+        options.crates.take(
+          pilotKey,
+          aboard.map((crate) => crate.id),
+        );
+        room.refreshCrates();
+      }
+    }
+    return readFort(link, pilotKey);
+  };
+
   /**
    * A pilot's fort, read from SpaceFort for the pilot who holds this key, and
    * the orders that pilot gives it.
@@ -288,29 +315,16 @@ export function startServer(options: ServerOptions): Promise<RunningServer> {
       sendJson(response, 400, { ok: false, error: 'not an order' });
       return true;
     }
-    const link =
-      options.fortUrl && options.bridgeSecret && options.fortIdKey
-        ? { url: options.fortUrl, secret: options.bridgeSecret, idKey: options.fortIdKey }
-        : null;
+    const link = fortLink;
     let reply: FortReply | FortOrderReply;
     if (!link) reply = { ok: false, reason: 'off' };
     else if (!room.knowsPilot(pilotKey)) reply = { ok: false, reason: 'no-pilot' };
-    else if (order) reply = await orderFort(link, pilotKey, order, room.pilotLevel(pilotKey));
     else {
-      // Crates won in flight come into the fort's hold when the pilot is not
-      // flying. They leave this server only once the fort says it has them.
-      // A copy: a crate won while the fort is being asked was not sent, and stays.
-      const aboard = [...(options.crates?.pending(pilotKey) ?? [])];
-      if (aboard.length > 0 && !room.flying(pilotKey) && options.crates) {
-        if (await bankCrates(link, pilotKey, aboard)) {
-          options.crates.take(
-            pilotKey,
-            aboard.map((crate) => crate.id),
-          );
-          room.refreshCrates();
-        }
-      }
-      reply = await readFort(link, pilotKey);
+      // The fort hears what the pilot earned in flight before it is read or
+      // given an order, so both are answered with that counted.
+      if (flights) await reportFlight(link, pilotKey, flights);
+      if (order) reply = await orderFort(link, pilotKey, order, room.pilotLevel(pilotKey));
+      else reply = await readAndBank(link, pilotKey);
     }
     sendJson(response, 200, reply);
     return true;

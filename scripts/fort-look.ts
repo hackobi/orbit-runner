@@ -141,13 +141,16 @@ if (fortConnected) {
     return true;
   };
   await page.locator('#fort-hold').getByRole('button', { name: 'Open' }).first().waitFor();
+  await press('Claim');
+  await press('Take');
   await press('Open');
   await shot('3a-crate-opened', 200);
   await press(/^Wear /);
-  await press('Send');
   await press(/^Train \+/);
-  // Affordable only if the day's challenge paid for it (spending skill points is one).
+  await press('Send');
+  // The day's reward pays for the second bunk; the newcomer rides along.
   await press(/^Recruit$/);
+  await press(/^Board$/);
   await shot('3b-orders-given', 400);
 }
 const bunk = fortConnected
@@ -161,7 +164,27 @@ const launchedAt = Date.now();
 const closeMs = await timeToggle(false);
 while (!room.shipOf(me)?.alive && Date.now() - launchedAt < 5000) await page.waitForTimeout(5);
 const flyingMs = Date.now() - launchedAt;
+const flyingAfterLaunch = room.shipOf(me)?.alive ?? false;
 await shot('4-launched', 1200);
+
+// A second sortie: experience earned in flight reaches the fort, which pays
+// upgrade points for it and teaches the crew member on board.
+let secondSortie: Record<string, string> | null = null;
+if (fortConnected) {
+  room.addXp(me, 450);
+  // Longer than the fort is read while a contract is flown.
+  await page.waitForTimeout(10_000);
+  const contractInCockpit = ((await page.locator('#fort-contract').textContent()) ?? '').trim();
+  room.placeShip(me, (ship) => ({ ...ship, hp: 0, alive: false, respawnTicks: 180 }));
+  await page.locator('#death').waitFor({ state: 'visible' });
+  await timeToggle(true);
+  await shot('5-second-sortie-report', 2500);
+  secondSortie = {
+    contractInCockpit,
+    report: ((await page.locator('#fort-debrief-lines').textContent()) ?? '').trim(),
+    today: (await page.locator('#fort-today').innerText()).replaceAll('\n', ' | '),
+  };
+}
 
 console.log(
   JSON.stringify(
@@ -172,11 +195,12 @@ console.log(
       deathOffer,
       fortSaid: said,
       nextBunk: bunk,
+      secondSortie,
       pressToFortShownMs: Math.round(openMs),
       shipHeldBackWhileInFort: heldBack,
       pressToFortHiddenMs: Math.round(closeMs),
       pressToShipFlyingMs: flyingMs,
-      shipFlying: room.shipOf(me)?.alive ?? false,
+      shipFlying: flyingAfterLaunch,
       consoleProblems: problems,
     },
     null,
