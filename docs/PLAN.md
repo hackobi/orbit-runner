@@ -15,7 +15,7 @@ This file is the running checkpoint. A new session should read it first, then `d
 | Role-playing layer (user request, 2026-11-19) | **Built and tested 2026-11-19 on `feature/rpg-layer`, local only, not merged or deployed.** Experience, levels, missions, raiders and the boss (shown as the Warlock), progress kept per pilot. See [Role-playing layer](#role-playing-layer) | The user plays it and decides on a merge |
 | New look (user request, 2026-11-19) | **Built and tested 2026-11-19 on `feature/visuals`, local only.** Sky, planet, rocks, ships, orbs and particles redrawn; client only, wire format and simulation untouched. See the log | The user looks at it and decides on a merge |
 | Cockpit view (user request, 2026-11-20) | **Built and tested 2026-11-20 on `feature/cockpit`; pushed to `feature/v2-rebuild` at 03:52 the same day, and merged into `feature/fort` (`1471644`).** L1 / LB or the C key goes into the cockpit and out (D30). No real controller has been used | None |
-| One game with SpaceFort (user request, 2026-11-20) | **Phases 1, 2 and step 3a are built and tested on `feature/fort`, local only, not merged or deployed.** Step 3a (2026-11-21, D33 and D34): the fort says in flight what waits there, the first death with something waiting holds the ship, crew show their level progress, Train spends all skill points, and recruits fill five bunks for credits. Phase 1 (the transition): the user tried it and said yes. Phase 2 (orders): open crates, wear gear, spend skill points, send crew on jobs, crates brought in without a code, reports as banners in flight. Decisions D31 and D32; wire format 14. Needs SpaceFort's `feat/fort-backend`. See the log | The user played phases 1 and 2 (2026-11-21) and asked for phase 3 to be rewritten: it is a proposal in SpaceFort's `claudedocs/PHASE3_REVISED_2026-11-21.md`, approved by the user on 2026-11-21. Step 3a is built; **the user plays it, and their yes starts step 3b** (a crew member on board, upgrade points from flight, contracts, the daily claim). Before any deploy: `ORBIT_FORT_ID_KEY` chosen once and kept, a Railway volume, SpaceFort hosted |
+| One game with SpaceFort (user request, 2026-11-20) | **Phases 1, 2 and steps 3a and 3b are built and tested on `feature/fort`, local only, not merged or deployed.** Step 3b (2026-11-22, D35 and D36): flying pays the fort upgrade points and teaches a crew member on board, both with daily limits; contracts asked for by the crew; the daily reward; crew drawn as cards. Step 3a (2026-11-21, D33 and D34): the fort says in flight what waits there, the first death with something waiting holds the ship, crew show their level progress, Train spends all skill points, and recruits fill five bunks for credits. Phase 1 (the transition): the user tried it and said yes. Phase 2 (orders): open crates, wear gear, spend skill points, send crew on jobs, crates brought in without a code, reports as banners in flight. Decisions D31 and D32; wire format 14. Needs SpaceFort's `feat/fort-backend`. See the log | The user played phases 1 and 2 (2026-11-21) and asked for phase 3 to be rewritten: it is a proposal in SpaceFort's `claudedocs/PHASE3_REVISED_2026-11-21.md`, approved by the user on 2026-11-21. Steps 3a and 3b are built. **The user plays 3b and decides on the upgrade-point gate, which failed (D35).** Then the wallet link: a plan is written in SpaceFort's `claudedocs/PHASE5_WALLET_PLAN_2026-11-22.md` and waits for three answers. Deploy order when it comes: SpaceFort and this server together (a new server here reads an old SpaceFort's forts as unreachable). Before any deploy: `ORBIT_FORT_ID_KEY` chosen once and kept, a Railway volume, SpaceFort hosted |
 | 5. Demos integration | Not started. Direction from the user recorded under Phase 5 (reuse v1's payment flow; King of the Hill) | Separate approval, and a payment proposal first |
 
 **Next action:** the user looks at `feature/visuals` (it sits on the role-playing, drops and controller branches, none of them deployed) and decides what to merge. Before that, still open: the user chooses between step 2 of [Dogfight feel](#dogfight-feel-before-phase-5) (matches) and Phase 5. Their direction on 2026-11-16: the open room stays the normal game, everyone with the same abilities; rules, timing, groups and teams come later, for tournaments. Phases 1 to 4 are built. Phase 5 (Demos) needs separate approval and starts with a written payment proposal, not code. Open items that need the user: `npm run dev:lan` (it changes the Mac's keychain) and the phone checklist in `docs/DEVICE-TESTING.md`; opening the Mac app themselves.
@@ -795,3 +795,31 @@ Not built from the plan, or changed:
 
 **UNVERIFIED:** all of it on a real phone or controller. On the held death screen a controller has no direct Launch: its fort button goes into the fort, and again launches. Whether the prices and levels feel right to a person.
 
+### 2026-11-22: step 3b, flight feeds the fort (D35, D36)
+
+The user played 3a and said "3b and wallet next". Read as: build 3b now; the wallet link is the step after.
+
+Built (`8711ca5`, `c2891a9`; SpaceFort `a6ae2aa`, `2d7058e`):
+
+- `src/server/flight.ts`: what each pilot earns in flight, kept until their fort has it. Told to the fort before every read and order.
+- Fort screen: a Today block first in the left panel (daily reward with Claim, contracts with Take, what flying has paid against its limits), Board and Step off on a crew member, two more lines in the sortie report, crew as cards with a level chip, a recruit dealt in like a card.
+- Cockpit: the contract and its count under the score. "Fort · N waiting" now also counts the daily reward and a contract to pick.
+
+Measured:
+
+| Check | Result |
+|---|---|
+| Lint, typecheck | clean |
+| Unit and integration | 395 pass (383 unit, 12 integration) |
+| Whole browser suite | 50 of 50, before the last two changes (Today moved first; contract titles wrap) |
+| Fort browser tests after them | 22 of 22 |
+| SpaceFort tests | 205 pass |
+| Live, trial SpaceFort, desktop and phone size | reward claimed, contract taken and shown in the cockpit, recruit bought with the reward, recruit put on board; a 450-experience sortie paid 4 upgrade points and 45 crew experience; fort shown in 28 to 40 ms; no console problems |
+
+**Failed: the upgrade-point gate** ("total upgrade points per day no higher than today"). See D35 for the numbers. The choice is the user's: leave it, make the pilot's daily reward credits only, cut jobs deeper, or lower the flight limit.
+
+Changed from the plan: upgrade points come from pilot experience, not flight points (D35).
+
+Not checked in a browser run: a contract actually completing from real kills (the count is tested in SpaceFort's tests and the room's counting in a unit test; the live run only showed 0 / 10).
+
+**UNVERIFIED:** all of it on a real phone or controller; whether 20 points and 120 experience a day feel right; a raider contract in a room without server ships.
