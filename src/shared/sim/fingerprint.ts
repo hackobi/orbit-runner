@@ -12,8 +12,8 @@ import { Rng } from '../rng.ts';
 import { cos, sin } from '../math.ts';
 import { asteroidAngle } from './belt.ts';
 import { ORB_KINDS } from './orbs.ts';
-import { damageShip, quantiseControls, spawnShip } from './ship.ts';
-import type { Input, ShipState } from './ship.ts';
+import { STUNT_NONE, damageShip, quantiseControls, spawnShip } from './ship.ts';
+import type { Input, ShipState, Stunt } from './ship.ts';
 import { WorldLedger, applyOrb, createWorld, outsideCombatZone, stepPlayer } from './world.ts';
 import type { WorldEffect } from './world.ts';
 
@@ -51,7 +51,7 @@ function mix(hash: number, bytes: Uint8Array): number {
 
 /**
  * A fixed, seeded flight. It covers turning, pitching against the clamp,
- * throttle, boost, the boost and brake buttons and their energy, firing, the heavy shot, the homing shot's charge, damage, death on the planet and by damage,
+ * throttle, boost, the boost and brake buttons and their energy, firing, the heavy shot, the homing shot's charge, the rolls and the backflip, damage, death on the planet and by damage,
  * respawn with its protection, the orbits of the belt far into a room's
  * life, crashes into its rocks, every kind of orb, a wormhole jump, flight
  * as a Fenix, and the edge of the combat zone.
@@ -93,6 +93,7 @@ export function runTrace(seed: number, ticks: number): TraceResult {
         seek: rng.next() < 0.4,
         boost: rng.next() < 0.25,
         brake: rng.next() < 0.25,
+        stunt: rng.next() < 0.3 ? ((1 + Math.floor(rng.next() * 3)) as Stunt) : STUNT_NONE,
       });
     }
     if (ship.alive && step % 1500 === 0) ship = { ...ship, boostTicks: 180 + (step % 181) };

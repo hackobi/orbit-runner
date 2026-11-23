@@ -10,6 +10,14 @@ import type { Rng } from '../rng.ts';
 
 export const AXIS_MAX = 127;
 
+/** A move the ship makes by itself once asked: a roll to one side, or a backflip (decision D38). */
+export const STUNT_NONE = 0;
+export const STUNT_ROLL_LEFT = 1;
+export const STUNT_ROLL_RIGHT = 2;
+export const STUNT_FLIP = 3;
+export type Stunt =
+  typeof STUNT_NONE | typeof STUNT_ROLL_LEFT | typeof STUNT_ROLL_RIGHT | typeof STUNT_FLIP;
+
 declare const inputBrand: unique symbol;
 
 /**
@@ -32,6 +40,8 @@ export interface Input {
   readonly boost: boolean;
   /** Held: shed speed fast while the energy lasts. */
   readonly brake: boolean;
+  /** Asks for a stunt. It starts if the ship is free to and has the energy; otherwise nothing happens. */
+  readonly stunt: Stunt;
   /**
    * How far behind this tick the player was seeing the other ships, in
    * sixteenths of a tick. The server rewinds targets by this much when it
@@ -54,6 +64,7 @@ export interface Controls {
   seek?: boolean;
   boost?: boolean;
   brake?: boolean;
+  stunt?: Stunt;
 }
 
 /**
@@ -70,11 +81,13 @@ export function inputFromWire(
   seek: boolean,
   boost: boolean,
   brake: boolean,
+  stunt: number,
   viewDelay: number,
 ): Input | null {
   if (!Number.isInteger(yaw) || yaw < -AXIS_MAX || yaw > AXIS_MAX) return null;
   if (!Number.isInteger(pitch) || pitch < -AXIS_MAX || pitch > AXIS_MAX) return null;
   if (throttle !== -1 && throttle !== 0 && throttle !== 1) return null;
+  if (!Number.isInteger(stunt) || stunt < STUNT_NONE || stunt > STUNT_FLIP) return null;
   if (!Number.isInteger(viewDelay) || viewDelay < 0) return null;
   return {
     yaw,
@@ -85,6 +98,7 @@ export function inputFromWire(
     seek,
     boost,
     brake,
+    stunt: stunt as Stunt,
     viewDelay: Math.min(viewDelay, MAX_VIEW_DELAY),
   } as Input;
 }
@@ -107,6 +121,7 @@ export function quantiseControls(controls: Controls, viewDelayTicks = 0): Input 
     seek: controls.seek === true,
     boost: controls.boost === true,
     brake: controls.brake === true,
+    stunt: controls.stunt ?? STUNT_NONE,
     viewDelay: Math.round(clamp(delay, 0, SIM.maxViewDelayTicks) * VIEW_DELAY_STEPS_PER_TICK),
   } as Input;
 }
@@ -164,6 +179,37 @@ export interface ShipState {
   readonly thrusting: boolean;
   /** The brake button slowed the ship on this tick. */
   readonly braking: boolean;
+  /** The stunt under way, or none. */
+  readonly stunt: Stunt;
+  /** Ticks of it still to fly. */
+  readonly stuntTicks: number;
+  /** Ticks until another stunt can start. */
+  readonly stuntCooldown: number;
+}
+
+const stuntLength = (stunt: Stunt): number =>
+  stunt === STUNT_FLIP ? SIM.flipTicks : stunt === STUNT_NONE ? 0 : SIM.rollTicks;
+
+/** How far through its stunt a ship is, 0 to 1. `ahead` looks that many ticks on, for drawing between ticks. */
+function stuntProgress(s: ShipState, ahead = 0): number {
+  const length = stuntLength(s.stunt);
+  return length === 0 ? 0 : clamp(1 - (s.stuntTicks - ahead) / length, 0, 1);
+}
+
+/** How far a roll has slid or turned at `progress`: slow, fast, slow, 0 to 1. */
+const rollEase = (progress: number): number => progress - sin(TWO_PI * progress) / TWO_PI;
+
+/**
+ * What a stunt adds to the angles a ship is drawn at. The heading the ship
+ * flies and fires along is not touched: a roll turns it about its nose, and a
+ * flip carries the nose up and over, as the loop it flies does.
+ */
+export function stuntAngles(s: ShipState, ahead = 0): { pitch: number; roll: number } {
+  const progress = stuntProgress(s, ahead);
+  if (s.stunt === STUNT_FLIP) return { pitch: -TWO_PI * progress, roll: 0 };
+  if (s.stunt === STUNT_ROLL_LEFT) return { pitch: 0, roll: -TWO_PI * rollEase(progress) };
+  if (s.stunt === STUNT_ROLL_RIGHT) return { pitch: 0, roll: TWO_PI * rollEase(progress) };
+  return { pitch: 0, roll: 0 };
 }
 
 /** True while the ship flies above its top speed, by an orb or by the button. */
@@ -198,23 +244,44 @@ export function stepShip(s: ShipState, input: Input): ShipState {
 
   const invulnTicks = s.invulnTicks > 0 ? s.invulnTicks - 1 : 0;
 
+  // Stunts (decision D38). One at a time, a pause between, and each is paid
+  // for in energy when it starts. Asking for one that cannot start does nothing.
+  let stunt = s.stunt;
+  let stuntTicks = s.stuntTicks;
+  let stuntCooldown = s.stuntCooldown > 0 ? s.stuntCooldown - 1 : 0;
+  let stuntCost = 0;
+  if (stunt === STUNT_NONE && stuntCooldown === 0 && input.stunt !== STUNT_NONE) {
+    const cost = input.stunt === STUNT_FLIP ? SIM.flipCost : SIM.rollCost;
+    if (s.energy >= cost) {
+      stunt = input.stunt;
+      stuntTicks = stuntLength(stunt);
+      stuntCost = cost;
+    }
+  }
+  // Over the top of a loop the nose points anywhere but ahead, so nothing fires.
+  const flipping = stunt === STUNT_FLIP;
+
   // Homing shot (decision D23): the button charges it, and letting go of a
   // full charge fires it if the energy is there. The caller launches it; see
   // shotThisTick. A ship fires one thing a tick, and this comes first.
   let seekerCooldown = s.seekerCooldown > 0 ? s.seekerCooldown - 1 : 0;
   let charge = 0;
   let seekerFired = false;
-  if (seekerCooldown === 0) {
+  if (flipping) {
+    // A charge is kept through the flip, and let go after it if the button was.
+    charge = s.charge;
+  } else if (seekerCooldown === 0) {
     if (input.seek) charge = Math.min(SIM.seekerChargeTicks, s.charge + 1);
-    else seekerFired = s.charge >= SIM.seekerChargeTicks && s.energy >= SIM.seekerCost;
+    else seekerFired = s.charge >= SIM.seekerChargeTicks && s.energy - stuntCost >= SIM.seekerCost;
   }
   if (seekerFired) seekerCooldown = SIM.seekerCooldownTicks;
-  const energyLeft = seekerFired ? s.energy - SIM.seekerCost : s.energy;
+  const energyLeft = s.energy - stuntCost - (seekerFired ? SIM.seekerCost : 0);
 
   // Heavy shot (decision D22).
   let heavyAmmo = s.heavyAmmo;
   let heavyCooldown = s.heavyCooldown > 0 ? s.heavyCooldown - 1 : 0;
-  const heavyFired = !seekerFired && input.heavy && heavyAmmo > 0 && heavyCooldown === 0;
+  const heavyFired =
+    !flipping && !seekerFired && input.heavy && heavyAmmo > 0 && heavyCooldown === 0;
   if (heavyFired) {
     heavyAmmo -= 1;
     heavyCooldown = SIM.heavyCooldownTicks;
@@ -226,7 +293,7 @@ export function stepShip(s: ShipState, input: Input): ShipState {
   // Under a Fenix orb's upgrade it comes round sooner (decision D24).
   const rapidTicks = s.rapidTicks > 0 ? s.rapidTicks - 1 : 0;
   let fireCooldown = s.fireCooldown > 0 ? s.fireCooldown - 1 : 0;
-  const gunFired = input.fire && fireCooldown === 0 && !heavyFired && !seekerFired;
+  const gunFired = !flipping && input.fire && fireCooldown === 0 && !heavyFired && !seekerFired;
   if (gunFired) fireCooldown = s.rapidTicks > 0 ? SIM.rapidCooldownTicks : SIM.fireCooldownTicks;
   const crashTicks = s.crashTicks > 0 ? s.crashTicks - 1 : 0;
 
@@ -271,8 +338,11 @@ export function stepShip(s: ShipState, input: Input): ShipState {
   // Turning (main.js:8769-8774).
   const yawAxis = input.yaw / AXIS_MAX;
   const pitchAxis = input.pitch / AXIS_MAX;
-  const yaw = wrapAngle(s.yaw + yawAxis * YAW_STEP);
-  const pitch = clamp(s.pitch + pitchAxis * PITCH_STEP, -PITCH_LIMIT, PITCH_LIMIT);
+  // A flip holds the heading it began on: the ship comes out pointing where it went in.
+  const yaw = flipping ? s.yaw : wrapAngle(s.yaw + yawAxis * YAW_STEP);
+  const pitch = flipping
+    ? s.pitch
+    : clamp(s.pitch + pitchAxis * PITCH_STEP, -PITCH_LIMIT, PITCH_LIMIT);
 
   // Bank into the turn (main.js:8786-8791).
   const targetRoll = clamp(-yawAxis * SIM.bankPerYaw, -SIM.bankLimit, SIM.bankLimit);
@@ -280,10 +350,38 @@ export function stepShip(s: ShipState, input: Input): ShipState {
 
   // Move along the nose. Roll does not affect the heading (main.js:8800-8805).
   const cosPitch = cos(pitch);
-  const distance = speed * TICK_DT;
-  const x = s.x + sin(yaw) * cosPitch * distance;
-  const z = s.z + cos(yaw) * cosPitch * distance;
-  const y = clamp(s.y - sin(pitch) * distance, -SIM.maxY, SIM.maxY); // main.js:8809
+  const sinPitch = sin(pitch);
+  const sinYaw = sin(yaw);
+  const cosYaw = cos(yaw);
+  // How far this tick carries the ship along its nose, toward its own up, and to its left.
+  let ahead = speed * TICK_DT;
+  let up = 0;
+  let left = 0;
+  if (stunt !== STUNT_NONE) {
+    const length = stuntLength(stunt);
+    const from = (length - stuntTicks) / length;
+    const to = (length - stuntTicks + 1) / length;
+    if (flipping) {
+      // A loop in the plane of the nose and the ship's up. It gives up the
+      // tick's travel ahead, so whatever followed flies past underneath, and
+      // it rises as it goes, so the ship comes out above the track it was on.
+      ahead = SIM.flipRadius * (sin(TWO_PI * to) - sin(TWO_PI * from));
+      up = SIM.flipRadius * (cos(TWO_PI * from) - cos(TWO_PI * to)) + SIM.flipRise / length;
+    } else {
+      const side = stunt === STUNT_ROLL_LEFT ? 1 : -1;
+      left = side * SIM.rollSlide * (rollEase(to) - rollEase(from));
+    }
+    stuntTicks -= 1;
+    if (stuntTicks === 0) {
+      stunt = STUNT_NONE;
+      stuntCooldown = SIM.stuntCooldownTicks;
+    }
+  }
+  // Nose (sin yaw cos pitch, −sin pitch, cos yaw cos pitch); up is square to
+  // it in the same upright plane; left is where a left turn swings the nose.
+  const x = s.x + sinYaw * cosPitch * ahead + sinYaw * sinPitch * up + cosYaw * left;
+  const z = s.z + cosYaw * cosPitch * ahead + cosYaw * sinPitch * up - sinYaw * left;
+  const y = clamp(s.y - sinPitch * ahead + cosPitch * up, -SIM.maxY, SIM.maxY); // main.js:8809
 
   const moved: ShipState = {
     x,
@@ -313,6 +411,9 @@ export function stepShip(s: ShipState, input: Input): ShipState {
     energy,
     thrusting,
     braking,
+    stunt,
+    stuntTicks,
+    stuntCooldown,
   };
   // The planet is at the origin and kills on contact (main.js:9620-9624).
   return x * x + y * y + z * z < KILL_RADIUS_SQ ? destroyed(moved) : moved;
@@ -342,6 +443,9 @@ function destroyed(s: ShipState): ShipState {
     energy: 0,
     thrusting: false,
     braking: false,
+    stunt: STUNT_NONE,
+    stuntTicks: 0,
+    stuntCooldown: 0,
   };
 }
 
@@ -411,6 +515,9 @@ export function spawnShip(rng: Rng, spawnSeq: number): ShipState {
     energy: SIM.maxEnergy,
     thrusting: false,
     braking: false,
+    stunt: STUNT_NONE,
+    stuntTicks: 0,
+    stuntCooldown: 0,
   };
 }
 
@@ -443,6 +550,9 @@ export function shipStatesEqual(a: ShipState, b: ShipState): boolean {
     a.seekerCooldown === b.seekerCooldown &&
     a.energy === b.energy &&
     a.thrusting === b.thrusting &&
-    a.braking === b.braking
+    a.braking === b.braking &&
+    a.stunt === b.stunt &&
+    a.stuntTicks === b.stuntTicks &&
+    a.stuntCooldown === b.stuntCooldown
   );
 }

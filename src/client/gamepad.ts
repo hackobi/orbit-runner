@@ -6,6 +6,7 @@
 // The browser does the pairing (USB or Bluetooth, through the system), and
 // it hides a controller from the page until one of its buttons is pressed.
 
+import { STUNT_FLIP, STUNT_NONE, STUNT_ROLL_LEFT, STUNT_ROLL_RIGHT } from '../shared/sim/ship.ts';
 import type { Controls } from '../shared/sim/ship.ts';
 
 /** Stick movement within this share of its travel counts as none: worn sticks rest off-centre. */
@@ -19,6 +20,7 @@ const THROTTLE_HELD = 0.5;
 const BUTTON = {
   south: 0,
   east: 1,
+  north: 3,
   leftBumper: 4,
   rightBumper: 5,
   leftTrigger: 6,
@@ -27,6 +29,8 @@ const BUTTON = {
   menu: 9,
   dpadUp: 12,
   dpadDown: 13,
+  dpadLeft: 14,
+  dpadRight: 15,
   touchpad: 17,
 } as const;
 const AXIS = { leftX: 0, leftY: 1, rightY: 3 } as const;
@@ -40,6 +44,8 @@ export const PAD_LAYOUT: readonly { control: string; action: string }[] = [
   { control: '✕ / A', action: 'Boost' },
   { control: '○ / B', action: 'Brake' },
   { control: 'D-pad or right stick, up and down', action: 'Speed' },
+  { control: 'D-pad left and right, or the left stick flicked twice', action: 'Barrel roll' },
+  { control: '△ / Y, or the left stick pulled back twice', action: 'Backflip' },
   { control: 'L1 / LB', action: 'Cockpit view, in and out' },
   { control: 'Options / Menu', action: 'Open or close settings' },
   { control: 'Touchpad or Create / View', action: 'The fort when your ship is down, and launch' },
@@ -83,6 +89,13 @@ export function padControls(
     seek: held(BUTTON.leftTrigger, TRIGGER_HELD),
     boost: held(BUTTON.south),
     brake: held(BUTTON.east),
+    stunt: held(BUTTON.north)
+      ? STUNT_FLIP
+      : held(BUTTON.dpadLeft)
+        ? STUNT_ROLL_LEFT
+        : held(BUTTON.dpadRight)
+          ? STUNT_ROLL_RIGHT
+          : STUNT_NONE,
     menu: held(BUTTON.menu),
     fort: held(BUTTON.view) || held(BUTTON.touchpad),
     view: held(BUTTON.leftBumper),

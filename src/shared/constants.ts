@@ -142,6 +142,16 @@ export const SIM = {
   seekerLockRange: 600, // no further than it can catch a ship flying straight away
   seekerLockAngle: 0.5, // rad either side of the nose
 
+  // Stunts (decision D38): a barrel roll to either side and a backflip.
+  rollTicks: 30, // half a second for one turn about the nose
+  rollSlide: 36, // units the ship moves sideways during it
+  rollCost: 1200, // energy: a fifth of a tank
+  flipTicks: 60, // one second for the loop
+  flipRadius: 12, // of the loop
+  flipRise: 24, // units higher the ship comes out than it went in, off its old track
+  flipCost: 2400, // energy: what the homing shot it shakes off cost to fire
+  stuntCooldownTicks: 30, // after one ends, before the next can start
+
   // Lag compensation (decision D2)
   maxViewDelayTicks: 21, // 350 ms: the furthest back a shooter's view is honoured
 } as const;

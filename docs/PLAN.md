@@ -886,3 +886,26 @@ The user asked for the looks to sit on the newest version, with the fort and the
 - The old Orbit Runner does ask the extension to sign (`sign`, then `personal_sign`) and to pay (`nativeTransfer`). Read, not run; the plan's section 8 has the calls.
 - **Step 5a:** `scripts/wallet-probe.html`, at `/scripts/wallet-probe.html` on the dev server. It connects and signs one test line and shows what the extension returns. It is not part of the built game. Checked only with a stand-in wallet in a headless browser. **UNVERIFIED with a real extension: the user presses it and copies the box back.**
 - **Next:** the user's probe result decides how the signature is checked; then step 5b. Still open from 3b: the upgrade-point gate that failed (D35).
+
+### 2026-11-23: a barrel roll each way and a backflip (D38)
+
+The user asked for this before the push and deploy. Built on `feature/fort`; local only.
+
+- **What it is:** press a direction twice to roll that way; press back twice, or B, to flip. A controller also has the D-pad sideways and △ / Y. The roll slides the ship 36 units sideways. The flip is a loop that lets a pursuer fly past, breaks a homing shot's lock, and leaves the ship 24 units higher. Both cost energy (a fifth and two fifths of a tank).
+- **Where:** `src/shared/sim/ship.ts` (the step, `stuntAngles`), `seeker.ts` (the lock), `protocol.ts` (version 15), `remote.ts` (other ships are sent as drawn), `src/client/input.ts` (`DoubleTaps`, `stickPress`), `gamepad.ts`, `scene.ts`, `hud.ts`.
+- **The homing shot decided the shape of the flip.** A plain loop was hit after it ended, because a shot without a lock flies straight along the ship's own track. `tests/unit/stunts.test.ts` flies a shot from dead astern at 30 to 550 units: it hits a ship flying straight from every range and misses a ship that flips from every range.
+
+| Check | Result |
+|---|---|
+| Lint, typecheck | clean |
+| Unit tests | 430 pass (20 new) |
+| Integration tests (real sockets, loss and delay) | 12 pass |
+| Whole browser suite | 56 of 58; the two failures were one controller test counting the help list's rows, which grew by two. Fixed and rerun: controller tests 4 of 4, twice |
+| Stunts in a browser, Chromium and WebKit | two rolls and a flip by real key presses, no correction after warm-up; run four times. One earlier run in WebKit had one correction before the test allowed for warm-up; not seen again |
+| Touch stick, real touch events in Chromium | flicked twice rolls, pulled back twice flips; held over is only steering |
+| On screen, trial server | roll and flip look right in the chase view; in the cockpit the view rises and does not turn; no console errors |
+
+- The simulation fingerprint changed, as it must; the pinned hash in `ship.test.ts` is updated.
+- **Not done:** the whole browser suite was not rerun after the controller test fix. No hint for the stunts on a phone's screen. Bots and raiders do not use them.
+- **UNVERIFIED:** a real phone, a real controller, whether 350 ms and the costs feel right, the Mac app (it must be rebuilt for protocol 15).
+- **Before a deploy:** the Mac app rebuild; SpaceFort and this server together; `ORBIT_FORT_ID_KEY` chosen once and kept, a Railway volume, SpaceFort hosted; the step 3b upgrade-point gate is still undecided (D35).

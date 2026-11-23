@@ -1,3 +1,9 @@
+import {
+  STUNT_FLIP,
+  STUNT_NONE,
+  STUNT_ROLL_LEFT,
+  STUNT_ROLL_RIGHT,
+} from '../../src/shared/sim/ship.ts';
 import { describe, expect, it } from 'vitest';
 import {
   PAD_DEAD_ZONE,
@@ -51,10 +57,17 @@ describe('the controller layout', () => {
       seek: false,
       boost: false,
       brake: false,
+      stunt: STUNT_NONE,
       menu: false,
       fort: false,
       view: false,
     });
+  });
+
+  it('has a button for each stunt: the D-pad sideways rolls, △ / Y flips', () => {
+    expect(padControls(pad({}, { 14: 1 })).stunt).toBe(STUNT_ROLL_LEFT);
+    expect(padControls(pad({}, { 15: 1 })).stunt).toBe(STUNT_ROLL_RIGHT);
+    expect(padControls(pad({}, { 3: 1 })).stunt).toBe(STUNT_FLIP);
   });
 
   it('steers as the keys do: stick right is the D key, stick forward is the Up key', () => {

@@ -6,6 +6,7 @@
 import { SIM, TICK_DT } from '../constants.ts';
 import { cos, sin } from '../math.ts';
 import type { Bullet } from './bullets.ts';
+import { STUNT_FLIP } from './ship.ts';
 import type { ShipState } from './ship.ts';
 
 export interface Seeker {
@@ -55,7 +56,9 @@ export function launchSeeker(
   let targetSpawnSeq = 0;
   let nearest: number = SIM.seekerLockRange;
   for (const { id, ship: other } of others) {
+    // A ship in a backflip cannot be locked on to (decision D38).
     if (id === ownerId || !other.alive || other.invulnTicks > 0) continue;
+    if (other.stunt === STUNT_FLIP) continue;
     const ox = other.x - ship.x;
     const oy = other.y - ship.y;
     const oz = other.z - ship.z;
@@ -86,12 +89,15 @@ export function seekerExpired(seeker: Seeker, tick: number): boolean {
 
 /**
  * One tick of flight. `target` is the ship it follows as it is now, or null
- * if that ship has gone. A target that has died, respawned or jumped is
- * dropped for good, and the shot flies on straight.
+ * if that ship has gone. A target that has died, respawned, jumped or thrown a
+ * backflip (decision D38) is dropped for good, and the shot flies on straight.
  */
 export function stepSeeker(seeker: Seeker, target: ShipState | null): Seeker {
   let { dx, dy, dz, targetId } = seeker;
-  if (targetId !== null && (!target?.alive || target.spawnSeq !== seeker.targetSpawnSeq)) {
+  if (
+    targetId !== null &&
+    (!target?.alive || target.spawnSeq !== seeker.targetSpawnSeq || target.stunt === STUNT_FLIP)
+  ) {
     targetId = null;
   }
   if (targetId !== null && target) {

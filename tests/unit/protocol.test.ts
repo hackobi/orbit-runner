@@ -92,15 +92,15 @@ describe('client messages', () => {
     expect(decoded).toEqual({ type: 'input', tick: 4_000_000_000, inputs });
   });
 
-  it('an input message is 21 bytes', () => {
-    expect(encodeInput(1, [neutral, neutral, neutral]).byteLength).toBe(21);
+  it('an input message is 24 bytes', () => {
+    expect(encodeInput(1, [neutral, neutral, neutral]).byteLength).toBe(24);
     expect(INPUT_REDUNDANCY).toBe(3);
   });
 
   it('a view delay above the cap is clamped, not refused', () => {
     const bytes = Uint8Array.from(encodeInput(10, [neutral]));
-    bytes[9] = 0xff;
     bytes[10] = 0xff;
+    bytes[11] = 0xff;
     const decoded = decodeClientMessage(bytes);
     expect(decoded?.type === 'input' && decoded.inputs[0]?.viewDelay).toBe(MAX_VIEW_DELAY);
     expect(quantiseControls({ yaw: 0, pitch: 0, throttle: 0, fire: false }, 500).viewDelay).toBe(
@@ -263,8 +263,8 @@ describe('server messages', () => {
     expect(none?.type === 'snapshot' && Number.isNaN(none.inputLead)).toBe(true);
   });
 
-  it('a snapshot is 112 bytes plus 21 per nearby ship and 12 per homing shot', () => {
-    expect(SNAPSHOT_HEADER_BYTES).toBe(112);
+  it('a snapshot is 115 bytes plus 21 per nearby ship and 12 per homing shot', () => {
+    expect(SNAPSHOT_HEADER_BYTES).toBe(115);
     expect(SEEKER_ENTRY_BYTES).toBe(12);
     expect(NEAR_ENTRY_BYTES).toBe(21);
     expect(FAR_ENTRY_BYTES).toBe(13);

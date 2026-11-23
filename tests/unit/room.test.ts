@@ -187,10 +187,10 @@ describe('server authority', () => {
 
   it('has no client message that carries a position', () => {
     // The whole client-to-server surface is hello, presence and input. An
-    // input is a tick number and, per tick, two stick axes, a byte of buttons
-    // and how far behind the player's view of the others was.
+    // input is a tick number and, per tick, two stick axes, a byte of buttons,
+    // a stunt asked for and how far behind the player's view of the others was.
     const bytes = encodeInput(1, [FULL_LEFT]);
-    expect(bytes.byteLength).toBe(11);
+    expect(bytes.byteLength).toBe(12);
   });
 });
 

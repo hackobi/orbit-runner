@@ -566,7 +566,9 @@ export class GameScene {
     this.orientation.setFromEuler(this.euler);
     const ship = this.ship.group;
     ship.position.set(view.x, view.y, view.z);
-    ship.quaternion.copy(this.orientation);
+    // A roll or a flip turns the ship and not the view: the camera stays on the heading.
+    this.euler.set(view.pitch + view.stuntPitch, view.yaw, view.roll + view.stuntRoll, 'YXZ');
+    ship.quaternion.setFromEuler(this.euler);
     // The fort has its own view, whichever one the pilot flies with.
     const inside = this.cockpit && !this.fort;
     ship.visible = view.alive && !inside;

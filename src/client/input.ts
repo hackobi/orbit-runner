@@ -14,10 +14,16 @@
 // finger by its pointer id, so they work together. The speed buttons carry
 // boost and brake too: ▲ held at top speed boosts, and ▼ brakes.
 //
+// Stunts (decision D38): a direction pressed twice quickly rolls the ship
+// that way, and back pressed twice flips it. That holds for the keys, the
+// touch stick and a controller's stick; the mouse and tilt are left out, as
+// they move by themselves. B flips too.
+//
 // A game controller (gamepad.ts) adds to the same sums, so it turns no faster
 // than the keys do.
 
-import type { Controls } from '../shared/sim/ship.ts';
+import { STUNT_FLIP, STUNT_NONE, STUNT_ROLL_LEFT, STUNT_ROLL_RIGHT } from '../shared/sim/ship.ts';
+import type { Controls, Stunt } from '../shared/sim/ship.ts';
 import { activePad, padControls } from './gamepad.ts';
 import type { Settings } from './settings.ts';
 
@@ -31,6 +37,51 @@ export const STICK_DEAD_ZONE = 0.12;
 const STICK_SIDE = 0.6;
 /** Tilting the phone this many degrees from where it was held gives full deflection. */
 const TILT_RANGE_DEGREES = 25;
+
+/** Two presses the same way within this long are a stunt. */
+export const DOUBLE_TAP_MS = 350;
+/** A stick counts as pressed a way past this share of its travel, and as let go under `STICK_REST`. */
+const STICK_PRESSED = 0.8;
+const STICK_REST = 0.4;
+
+/** Notices the second of two quick presses in one direction. */
+export class DoubleTaps {
+  private last: Stunt = STUNT_NONE;
+  private lastAtMs = 0;
+
+  /** A direction was pressed afresh. The stunt, if this is the second press that way in time. */
+  press(stunt: Stunt, nowMs: number): Stunt {
+    if (stunt === this.last && nowMs - this.lastAtMs <= DOUBLE_TAP_MS) {
+      this.last = STUNT_NONE;
+      return stunt;
+    }
+    this.last = stunt;
+    this.lastAtMs = nowMs;
+    return STUNT_NONE;
+  }
+
+  clear(): void {
+    this.last = STUNT_NONE;
+  }
+}
+
+/** Which way a stick is pressed: left or right for the rolls, back for the flip. Positive yaw is left. */
+export function stickPress(yaw: number, back: number): Stunt {
+  if (back > STICK_PRESSED && back >= Math.abs(yaw)) return STUNT_FLIP;
+  if (yaw > STICK_PRESSED) return STUNT_ROLL_LEFT;
+  if (yaw < -STICK_PRESSED) return STUNT_ROLL_RIGHT;
+  return STUNT_NONE;
+}
+
+/** The stunt a key asks for when pressed twice. */
+const TAP_KEYS: Readonly<Record<string, Stunt>> = {
+  ArrowLeft: STUNT_ROLL_LEFT,
+  KeyA: STUNT_ROLL_LEFT,
+  ArrowRight: STUNT_ROLL_RIGHT,
+  KeyD: STUNT_ROLL_RIGHT,
+  ArrowDown: STUNT_FLIP,
+  KeyK: STUNT_FLIP,
+};
 
 const clampAxis = (value: number): number => Math.max(-1, Math.min(1, value));
 
@@ -135,6 +186,12 @@ export class InputDevices {
   onPadView: (() => void) | null = null;
   private padViewDown = false;
 
+  // Stunts: one asked for waits here until the next tick's controls are read.
+  private readonly taps = new DoubleTaps();
+  private stickPressed: Stunt = STUNT_NONE;
+  private padStuntDown = false;
+  private pendingStunt: Stunt = STUNT_NONE;
+
   // Mouse: steers while its button is down.
   private mouseDown = false;
   private mouseX = 0;
@@ -193,6 +250,11 @@ export class InputDevices {
         this.held.add(event.code);
         event.preventDefault();
       }
+      // A held key repeats; only a fresh press counts toward a double press.
+      if (event.repeat) return;
+      const tapped = TAP_KEYS[event.code];
+      if (tapped !== undefined) this.ask(this.taps.press(tapped, event.timeStamp));
+      else if (event.code === 'KeyB') this.ask(STUNT_FLIP);
     });
     window.addEventListener('keyup', (event) => {
       this.held.delete(event.code);
@@ -284,6 +346,26 @@ export class InputDevices {
     this.padViewDown = view;
   }
 
+  private ask(stunt: Stunt): void {
+    if (stunt !== STUNT_NONE) this.pendingStunt = stunt;
+  }
+
+  /** The touch stick and a controller: a direction pressed twice, or the controller's own stunt buttons. */
+  private stickStunts(pad: { yaw: number; pitch: number; stunt: Stunt } | null): void {
+    const yaw = -this.stickX + (pad?.yaw ?? 0);
+    const back = this.stickY - (pad?.pitch ?? 0);
+    const pressed = stickPress(yaw, back);
+    if (pressed !== STUNT_NONE && pressed !== this.stickPressed) {
+      this.stickPressed = pressed;
+      this.ask(this.taps.press(pressed, performance.now()));
+    } else if (Math.abs(yaw) < STICK_REST && back < STICK_REST) {
+      this.stickPressed = STUNT_NONE;
+    }
+    const button = pad?.stunt ?? STUNT_NONE;
+    if (button !== STUNT_NONE && !this.padStuntDown) this.ask(button);
+    this.padStuntDown = button !== STUNT_NONE;
+  }
+
   /**
    * The controls as they stand right now. `atTopSpeed` says the ship's
    * throttle is fully open, which is when a held ▲ becomes the boost.
@@ -302,6 +384,9 @@ export class InputDevices {
     const connected = activePad();
     const pad = connected ? padControls(connected) : null;
     this.padPresses(pad);
+    this.stickStunts(pad);
+    const stunt = this.pendingStunt;
+    this.pendingStunt = STUNT_NONE;
     // The stick: right turns right, as the D key; up is the Up key.
     const pitch = up - down + mousePitch - this.stickY + this.tiltPitch + (pad?.pitch ?? 0);
     return {
@@ -322,6 +407,7 @@ export class InputDevices {
         (this.faster.down && atTopSpeed) ||
         (pad?.boost ?? false),
       brake: this.held.has('KeyX') || this.slower.down || (pad?.brake ?? false),
+      stunt,
     };
   }
 
@@ -399,6 +485,8 @@ export class InputDevices {
     this.held.clear();
     this.mouseDown = false;
     this.releaseTouch();
+    this.taps.clear();
+    this.pendingStunt = STUNT_NONE;
   }
 
   private releaseTouch(): void {

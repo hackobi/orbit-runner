@@ -82,7 +82,7 @@ test('a controller flies the ship, to the same values as the keys', async ({ pag
   await setPad(page, { connected: true });
   await expect(page.locator('#pad-status')).toHaveText('Controller: DualSense Wireless Controller');
   await expect(page.locator('#pad-layout')).toBeVisible();
-  await expect(page.locator('#pad-layout dt')).toHaveCount(10);
+  await expect(page.locator('#pad-layout dt')).toHaveCount(12);
   await expect(page.locator('#banner')).toContainText('DualSense Wireless Controller connected');
 
   // At rest it asks for nothing.
@@ -110,6 +110,13 @@ test('a controller flies the ship, to the same values as the keys', async ({ pag
     heavy: false,
     brake: false,
   });
+
+  // △ / Y flips the ship (decision D38). The game takes the press on its next tick.
+  await setPad(page, { axes: [0, 0, 0, 0], buttons: buttons({ 3: 1 }) });
+  await expect
+    .poll(() => page.evaluate(() => window.__orbit?.frames.some((f) => f.predicted.stunt === 3)))
+    .toBe(true);
+  await setPad(page, { axes: [0, -1, 0, 0], buttons: buttons({ 7: 1, 0: 1, 12: 1 }) });
 
   // Inverted pitch applies to the controller as to everything else.
   await page.locator('#invert-pitch').check();

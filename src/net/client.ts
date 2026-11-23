@@ -50,6 +50,7 @@ import {
   VIEW_DELAY_STEPS_PER_TICK,
   shotThisTick,
   isBoosting,
+  stuntAngles,
   quantiseControls,
   shipStatesEqual,
 } from '../shared/sim/ship.ts';
@@ -167,6 +168,9 @@ export interface ShipView {
   yaw: number;
   pitch: number;
   roll: number;
+  /** What a roll or a flip under way adds to the pitch and roll the ship is drawn at. The view ahead does not turn with it. */
+  stuntPitch: number;
+  stuntRoll: number;
   speed: number;
   hp: number;
   shield: number;
@@ -501,6 +505,8 @@ export class ClientCore implements WorldState {
     // into the place where it died.
     const from = !previous || previous.spawnSeq !== current.spawnSeq ? current : previous;
     const alpha = this.accumulatorMs / TICK_MS;
+    // `current` is one tick on from `from`, so the drawn moment is 1 − alpha before it.
+    const stunt = stuntAngles(current, alpha - 1);
     return {
       x: from.x + (current.x - from.x) * alpha + this.offsetX,
       y: from.y + (current.y - from.y) * alpha + this.offsetY,
@@ -508,6 +514,8 @@ export class ClientCore implements WorldState {
       yaw: from.yaw + shortestArc(from.yaw, current.yaw) * alpha + this.offsetYaw,
       pitch: from.pitch + (current.pitch - from.pitch) * alpha + this.offsetPitch,
       roll: from.roll + (current.roll - from.roll) * alpha + this.offsetRoll,
+      stuntPitch: stunt.pitch,
+      stuntRoll: stunt.roll,
       speed: from.speed + (current.speed - from.speed) * alpha,
       hp: current.hp,
       shield: current.shield,

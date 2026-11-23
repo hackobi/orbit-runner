@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { CDPSession, Page } from '@playwright/test';
 import type { DebugHook } from '../../src/client/debugHook.ts';
+import { STUNT_FLIP, STUNT_ROLL_LEFT } from '../../src/shared/sim/ship.ts';
 import type { Controls } from '../../src/shared/sim/ship.ts';
 import { waitForEmptyRoom } from './support.ts';
 
@@ -327,4 +328,39 @@ test('a second finger on the stick side does not take the stick from the first',
   await expect.poll(() => controls(page)).toMatchObject({ fire: true });
   await touch(cdp, 'touchEnd', []);
   await expect.poll(() => controls(page)).toMatchObject({ fire: false });
+});
+
+test('the stick flicked twice one way rolls the ship, and pulled back twice flips it', async ({
+  page,
+  context,
+}) => {
+  const cdp = await context.newCDPSession(page);
+  const rest: Finger = { id: 1, x: 180, y: 200 };
+  const flick = async (dx: number, dy: number): Promise<void> => {
+    await touch(cdp, 'touchMove', [{ ...rest, x: rest.x + dx, y: rest.y + dy }]);
+    await page.waitForTimeout(70);
+    await touch(cdp, 'touchMove', [rest]);
+    await page.waitForTimeout(70);
+  };
+  const stunts = (): Promise<number[]> =>
+    page.evaluate(() => [
+      ...new Set((window.__orbit?.frames ?? []).map((frame) => frame.predicted.stunt)),
+    ]);
+
+  await touch(cdp, 'touchStart', [rest]);
+  // Held over to one side is steering, however long.
+  await touch(cdp, 'touchMove', [{ ...rest, x: rest.x - 56 }]);
+  await page.waitForTimeout(600);
+  await touch(cdp, 'touchMove', [rest]);
+  await page.waitForTimeout(600);
+  expect(await stunts()).toEqual([0]);
+
+  await flick(-56, 0);
+  await flick(-56, 0);
+  await expect.poll(stunts).toContain(STUNT_ROLL_LEFT);
+  await page.waitForTimeout(1300);
+  await flick(0, 56);
+  await flick(0, 56);
+  await expect.poll(stunts).toContain(STUNT_FLIP);
+  await touch(cdp, 'touchEnd', []);
 });

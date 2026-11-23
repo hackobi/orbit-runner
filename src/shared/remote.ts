@@ -4,8 +4,8 @@
 // a shooter was seeing a target. That is what makes "I hit it on my screen"
 // and "the server says it was a hit" the same question.
 
-import { PI, TWO_PI } from './math.ts';
-import { isBoosting } from './sim/ship.ts';
+import { PI, TWO_PI, wrapAngle } from './math.ts';
+import { isBoosting, stuntAngles } from './sim/ship.ts';
 import type { ShipState } from './sim/ship.ts';
 
 /** One ship at one snapshot tick, already rounded to what the wire can carry. */
@@ -44,14 +44,16 @@ export const quantiseAngle = (value: number): number => Math.round(value * ANGLE
 
 /** The sample a snapshot carries for a nearby ship. */
 export function sampleOf(tick: number, ship: ShipState): RemoteSample {
+  // Others see a ship as it is drawn: mid roll or mid flip, turned that far.
+  const stunt = stuntAngles(ship);
   return {
     tick,
     x: quantisePosition(ship.x) / POSITION_SCALE,
     y: quantiseHeight(ship.y) / HEIGHT_SCALE,
     z: quantisePosition(ship.z) / POSITION_SCALE,
     yaw: quantiseAngle(ship.yaw) / ANGLE_SCALE,
-    pitch: quantiseAngle(ship.pitch) / ANGLE_SCALE,
-    roll: quantiseAngle(ship.roll) / ANGLE_SCALE,
+    pitch: quantiseAngle(wrapAngle(ship.pitch + stunt.pitch)) / ANGLE_SCALE,
+    roll: quantiseAngle(wrapAngle(ship.roll + stunt.roll)) / ANGLE_SCALE,
     hp: ship.hp,
     shield: ship.shield,
     spawnSeq: ship.spawnSeq,
@@ -190,8 +192,9 @@ export function sampleTrack(
   pose.z += (b.z - a.z) * t;
   if (a.full && b.full) {
     pose.yaw += shortestArc(a.yaw, b.yaw) * t;
-    pose.pitch += (b.pitch - a.pitch) * t;
-    pose.roll += (b.roll - a.roll) * t;
+    // The shorter way round: a ship in a roll or a flip turns through a full circle.
+    pose.pitch += shortestArc(a.pitch, b.pitch) * t;
+    pose.roll += shortestArc(a.roll, b.roll) * t;
   }
   return pose;
 }
