@@ -109,7 +109,11 @@
       }
 
       button('find').onclick = () => {
+        // The places SpaceFort's detector looks, then a request for a late announcement.
         found(window.demos, 'window.demos');
+        found(window.__demosProviderCaptured, 'window.__demosProviderCaptured');
+        for (const entry of window.demosProviders ?? [])
+          found(entry?.provider ?? entry, 'window.demosProviders');
         window.dispatchEvent(new Event('demosRequestProvider'));
         setTimeout(() => {
           if (!provider)
@@ -123,8 +127,9 @@
         const reply = await ask('connect', { method: 'connect' });
         address =
           typeof reply === 'string' ? reply : dig(reply, ['address', 'publicKey', 'account']);
-        note('address', { address });
-        button('sign').disabled = !address;
+        note('address', { address, understood: address !== '' });
+        // Signing does not need the address, so a reply this page cannot read does not stop the test.
+        button('sign').disabled = false;
       };
 
       button('sign').onclick = async () => {
