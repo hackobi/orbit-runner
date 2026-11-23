@@ -931,10 +931,12 @@ The user: "deploy fort also on railway if that's the best thing to do". It is: t
 | That pilot's fort | read: one recruit; a crew member put on board; the daily reward claimed (credits 100 to 200, upgrade points 50 to 60) |
 | Both services restarted, the same browser profile again | the same pilot, crew member, credits and crew member on board |
 | SpaceFort's and this server's logs | no key or secret value; SpaceFort logs only that it generated a throwaway key |
-| Scans before the push | the 30 commits here (public repository) and SpaceFort's 46: no secret, no trial key, no personal detail added |
+| Scans before the push | the 30 commits here (public repository) and SpaceFort's 46: no secret, no trial key, no personal detail added. One binary in SpaceFort's push (`.mycelium/mycelium.db`, a task tracker's file, private repository) could not be read by a text scan |
 
-- **The Mac app** was rebuilt from `d816fac` with `npm run package:mac` in this worktree (`release/`, not committed); its own start check passed. The results file it rewrites was put back. UNVERIFIED by a person.
+- **The Mac app** was rebuilt from `d816fac` with `npm run package:mac` in this worktree (`release/`, not committed); its own start check passed. It connects to a server on this Mac, not to the live game (`gameUrl` in `app/config.json` is empty), and no other copy of the app was replaced. The results file it rewrites was put back. UNVERIFIED by a person.
 - **Shipped undecided:** the step 3b upgrade-point gate (D35) is live as built.
 - **Not done:** `feature/skins` is behind `feature/fort` by the stunts. SpaceFort's image is 2.1 GB. Nothing deletes old guest forts yet (wallet plan, step 5d).
+- **Left in the live database:** the test pilot's fort, with its claimed daily reward.
+- **Checked through the page's own calls, not seen on screen live:** the fort screen and the flip.
 - **UNVERIFIED:** a person playing the live site; a phone; a controller; SpaceFort under more than one pilot at once on Railway.
 
