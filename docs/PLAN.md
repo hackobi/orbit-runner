@@ -906,6 +906,7 @@ The user asked for this before the push and deploy. Built on `feature/fort`; loc
 | On screen, trial server | roll and flip look right in the chase view; in the cockpit the view rises and does not turn; no console errors |
 
 - The simulation fingerprint changed, as it must; the pinned hash in `ship.test.ts` is updated.
-- **Not done:** the whole browser suite was not rerun after the controller test fix. No hint for the stunts on a phone's screen. Bots and raiders do not use them.
+- Rerun on the committed code (`b0f9c2d`): the whole browser suite, 58 of 58 (7.7 min).
+- **Not done:** no hint for the stunts on a phone's screen. Bots and raiders do not use them.
 - **UNVERIFIED:** a real phone, a real controller, whether 350 ms and the costs feel right, the Mac app (it must be rebuilt for protocol 15).
 - **Before a deploy:** the Mac app rebuild; SpaceFort and this server together; `ORBIT_FORT_ID_KEY` chosen once and kept, a Railway volume, SpaceFort hosted; the step 3b upgrade-point gate is still undecided (D35).
