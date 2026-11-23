@@ -210,6 +210,11 @@ export class Hud {
     });
   }
 
+  /** True while this pilot has a fort to go to: crates are opened there, not claimed with a code. */
+  fortConnected = false;
+  /** True while the ship is held back for the pilot to choose the fort or a launch. */
+  shipHeld = false;
+
   /** Something the server announced. The feed shows deaths and departures. */
   onEvent(event: GameEvent, core: ClientCore, nowMs: number): void {
     if (event.kind === 'left') {
@@ -346,7 +351,9 @@ export class Hud {
       const from = [`an orb`, `a raider`, `the ${BOSS_NAME}`][drop.source] ?? 'the belt';
       this.announce(
         `${CRATE_TIERS[drop.tier] ?? 'Salvage'} crate`,
-        `Salvaged from ${from}. Open ⚙ for a code to claim it in SpaceFort.`,
+        this.fortConnected
+          ? `Salvaged from ${from}. Open it in your fort.`
+          : `Salvaged from ${from}. Open ⚙ for a code to claim it in SpaceFort.`,
       );
     }
     const shown = this.shown;
@@ -459,7 +466,14 @@ export class Hud {
         `best ${number(this.best.score)} and ${clock(this.best.lifeSeconds)}`,
     );
     const seconds = Math.ceil((core.state?.respawnTicks ?? 0) / SIM.tickRate);
-    shown.text(this.deathRespawn, seconds > 0 ? `Back in ${seconds}` : 'Back any moment');
+    shown.text(
+      this.deathRespawn,
+      this.shipHeld
+        ? 'Your ship waits for your word.'
+        : seconds > 0
+          ? `Back in ${seconds}`
+          : 'Back any moment',
+    );
   }
 
   /** Open while the server says so. A button is live only if the server would sell. */

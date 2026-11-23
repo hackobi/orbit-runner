@@ -33,6 +33,7 @@ import {
   WARLORD_RETURN_TICKS,
 } from '../../src/server/npc.ts';
 import { MemoryCrateStore } from '../../src/server/crates.ts';
+import { FlightLog } from '../../src/server/flight.ts';
 import { FilePilotStore, MemoryPilotStore } from '../../src/server/pilots.ts';
 import { TestWorld } from '../support/harness.ts';
 
@@ -141,7 +142,8 @@ describe('experience and missions on the server', () => {
   it('an orb is 15 experience; the fourth finishes the orb mission, which pays and moves on', () => {
     const pilots = new MemoryPilotStore();
     pilots.save(KEY_HEX, { xp: 90, missionIndex: 1, missionProgress: 3, missionsDone: 1 });
-    const world = new TestWorld(31, 150, true, { pilots });
+    const flights = new FlightLog();
+    const world = new TestWorld(31, 150, true, { pilots, flights });
     const pilot = world.addClient({ pilotKey: KEY });
     world.run(1500);
     const id = pilot.core.playerId;
@@ -167,6 +169,8 @@ describe('experience and missions on the server', () => {
       missionsDone: 2,
     });
     expect(pilot.core.progress).toEqual(world.room.progressOf(id));
+    // The same is kept for the pilot's fort: the experience earned, and the orb taken.
+    expect(flights.next(KEY_HEX)).toMatchObject({ xp: XP.orb + mission.xp, tally: { orbs: 1 } });
     const score = world.room.scoreOf(id);
     const paid = orbScore('shield', false) + mission.points;
     expect(score).toBeGreaterThanOrEqual(paid);

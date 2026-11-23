@@ -10,6 +10,8 @@ import { levelOf, rankOf } from '../shared/progress.ts';
 import { parseFortOrderReply, parseFortReply } from '../shared/fort.ts';
 import type {
   CrewMember,
+  FortContract,
+  FortFlight,
   FortOrder,
   FortOrderReply,
   FortReply,
@@ -18,15 +20,20 @@ import type {
 } from '../shared/fort.ts';
 import {
   ReportWatch,
+  bunkOffer,
   crewLine,
+  dailyLine,
   debriefLines,
+  flightLines,
   gearChoices,
   jobChoices,
+  levelLine,
   plainWords,
   secondsUntil,
   unavailableText,
+  waitingIn,
 } from './fortModel.ts';
-import type { Sortie } from './fortModel.ts';
+import type { Sortie, Waiting } from './fortModel.ts';
 
 function element<T extends HTMLElement>(id: string, type: new () => T): T {
   const found = document.getElementById(id);
@@ -38,6 +45,8 @@ function element<T extends HTMLElement>(id: string, type: new () => T): T {
 const REFRESH_MS = 10_000;
 /** While the pilot flies, how often: enough to hear that a crew member is back. */
 const FLIGHT_REFRESH_MS = 30_000;
+/** While the pilot flies a contract: its count in the cockpit should not lag far behind. */
+const CONTRACT_REFRESH_MS = 8000;
 /** After a unit's time is up, how soon the fort is asked what happened. */
 const DUE_REFRESH_MS = 1500;
 /** Clocks on the screen tick once a second, not once a frame. */
@@ -73,6 +82,7 @@ export class FortScreen {
   private readonly debriefTitle = element('fort-debrief-title', HTMLElement);
   private readonly debriefNote = element('fort-debrief-note', HTMLElement);
   private readonly debriefList = element('fort-debrief-lines', HTMLElement);
+  private readonly today = element('fort-today', HTMLElement);
   private readonly reports = element('fort-reports', HTMLElement);
   private readonly crew = element('fort-crew', HTMLElement);
   private readonly holdNote = element('fort-hold-note', HTMLElement);
@@ -102,8 +112,12 @@ export class FortScreen {
   private ordering = false;
   /** What the fort said about the last order, until it fades. */
   private said: { text: string; ok: boolean; untilMs: number } | null = null;
-  /** The item a crate just opened into, picked out in the hold. */
+  /** The item a crate just opened into, or the recruit just taken on, picked out on the screen. */
   private fresh: string | null = null;
+  /** Reports that came while the pilot was flying and have not been looked at. */
+  private news = 0;
+  /** What flying had paid when the pilot last left the fort: the sortie report says what it added. */
+  private since: FortFlight | null = null;
   /** The status line of each crew member on the page, for its clock to tick in place. */
   private readonly clocks = new Map<string, HTMLElement>();
 
@@ -146,7 +160,11 @@ export class FortScreen {
     if (open === this.open) return;
     this.root.hidden = !open;
     document.body.classList.toggle('fort-open', open);
-    if (!open) return;
+    if (!open) {
+      this.since = this.fort?.flight ?? null;
+      return;
+    }
+    this.news = 0;
     this.lastDrawMs = -Infinity;
     this.draw(context, nowMs);
     // Not the Launch button: a fire key still held from the fight would press it.
@@ -177,8 +195,30 @@ export class FortScreen {
     if (nowMs - this.lastDrawMs >= REDRAW_MS) this.draw(context, nowMs);
   }
 
+  /** True once the fort has been read: there is one, and it answers. */
+  get connected(): boolean {
+    return this.fort !== null;
+  }
+
+  /** The contract the pilot flies, as the fort last said it stood. */
+  get contract(): FortContract | null {
+    return this.fort?.contract ?? null;
+  }
+
+  /** What the pilot would find to do here right now. */
+  waiting(context: Pick<FortContext, 'xp' | 'cratesInFlight'>): Waiting {
+    return waitingIn(
+      this.fort,
+      context.cratesInFlight,
+      context.xp === null ? null : levelOf(context.xp),
+      this.news,
+    );
+  }
+
   private read(nowMs: number): void {
-    this.nextReadAtMs = nowMs + (this.open ? REFRESH_MS : FLIGHT_REFRESH_MS);
+    this.nextReadAtMs =
+      nowMs +
+      (this.open ? REFRESH_MS : this.fort?.contract ? CONTRACT_REFRESH_MS : FLIGHT_REFRESH_MS);
     if (this.asking || this.ordering) return;
     if (!this.pilotKey) {
       this.problem = { ok: false, reason: 'no-pilot' };
@@ -204,10 +244,14 @@ export class FortScreen {
 
   /** Takes the fort as just read. `tell` says its new reports are news to the pilot. */
   private take(fort: FortView, tell: boolean): void {
+    // The first look is where the first sortie's pay is counted from.
+    if (!this.fort) this.since = fort.flight;
     this.fort = fort;
     this.fortReadAtMs = performance.now();
     const fresh = this.watch.take(fort.reports);
-    if (tell) for (const report of fresh) this.onReport(report);
+    if (!tell) return;
+    this.news += fresh.length;
+    for (const report of fresh) this.onReport(report);
   }
 
   /** Sends one order and shows what the fort said and how the fort stands after it. */
@@ -225,11 +269,17 @@ export class FortScreen {
           return;
         }
         const before = new Set(this.fort?.hold.items.map((item) => item.id));
+        const crew = new Set(this.fort?.crew.map((member) => member.id));
         this.take(reply.fort, false);
         this.problem = null;
         if (order.kind === 'open' && reply.done.ok) {
           this.fresh = reply.fort.hold.items.find((item) => !before.has(item.id))?.id ?? null;
           say(`The crate held: ${reply.done.message}`, true);
+        } else if (order.kind === 'recruit' && reply.done.ok) {
+          // The newcomer's orders open, so the pilot meets them at once.
+          this.fresh = reply.fort.crew.find((member) => !crew.has(member.id))?.id ?? null;
+          this.picked = this.fresh ?? this.picked;
+          say(reply.done.message, true);
         } else {
           say(reply.done.message, reply.done.ok);
         }
@@ -251,7 +301,7 @@ export class FortScreen {
         member.until === null
           ? null
           : secondsUntil(member.until, fort?.now ?? 0, this.fortReadAtMs, nowMs);
-      return { member, line: crewLine(member, left) };
+      return { member, line: crewLine(member, left, fort?.flight.aboard === member.id) };
     });
     if (crew.some(({ line }) => line.due)) {
       this.nextReadAtMs = Math.min(this.nextReadAtMs, nowMs + DUE_REFRESH_MS);
@@ -261,7 +311,28 @@ export class FortScreen {
       this.picked = (crew.find(({ line }) => line.free) ?? crew[0])?.member.id ?? null;
     }
     const sortie = context.sortie;
-    const debrief = sortie ? debriefLines(sortie) : [];
+    const aboard = fort?.crew.find((member) => member.id === fort.flight.aboard) ?? null;
+    const debrief = sortie
+      ? [
+          ...debriefLines(sortie),
+          // The report's labels are short: the crew member goes by their first name there.
+          ...(fort
+            ? flightLines(
+                fort.flight,
+                this.since,
+                aboard ? `${aboard.name.split(' ')[0]} on board` : null,
+              )
+            : []),
+        ]
+      : [];
+    const reward = fort
+      ? dailyLine(
+          fort.daily,
+          fort.daily.nextAt === null
+            ? null
+            : secondsUntil(fort.daily.nextAt, fort.now, this.fortReadAtMs, nowMs),
+        )
+      : null;
     const title = context.lostWhileAway
       ? 'While you were away'
       : sortie
@@ -303,6 +374,11 @@ export class FortScreen {
       level,
       fort?.currencies,
       fort?.hold,
+      fort?.bunks,
+      fort?.flight,
+      fort?.contract,
+      fort?.offers,
+      reward,
       fort?.jobs.map((job) => [job.id, job.open]),
       fort?.reports,
       crew.map(({ member, line }) => [member, line.free]),
@@ -347,6 +423,8 @@ export class FortScreen {
       }),
     );
 
+    this.today.replaceChildren(...(fort && reward ? todayRows(fort, reward, aboard) : []));
+
     const reports = fort?.reports ?? [];
     this.reports.replaceChildren(
       ...(reports.length > 0
@@ -356,9 +434,12 @@ export class FortScreen {
 
     this.clocks.clear();
     this.crew.replaceChildren(
-      ...(fort && crew.length > 0
-        ? crew.map(({ member, line }) => this.crewRow(fort, member, line.free, line.text))
-        : [emptyRow(fort ? 'No crew yet.' : status)]),
+      ...(fort
+        ? [
+            ...crew.map(({ member, line }) => this.crewRow(fort, member, line.free, line.text)),
+            ...bunkRows(fort, level),
+          ]
+        : [emptyRow(status)]),
     );
 
     this.holdNote.textContent = holdNote;
@@ -422,7 +503,9 @@ export class FortScreen {
     status: string,
   ): HTMLLIElement {
     const item = document.createElement('li');
-    item.className = free ? 'free' : 'busy';
+    item.className = free ? 'card free' : 'card busy';
+    item.dataset.class = member.className.toLowerCase().replaceAll(' ', '-');
+    if (member.id === this.fresh) item.classList.add('fresh');
     const picked = this.picked === member.id;
 
     const head = document.createElement('button');
@@ -431,23 +514,34 @@ export class FortScreen {
     head.dataset.pick = member.id;
     head.dataset.key = `pick:${member.id}`;
     head.setAttribute('aria-expanded', String(picked));
+    const chip = document.createElement('span');
+    chip.className = 'fort-chip';
+    chip.textContent = String(member.level);
+    chip.setAttribute('aria-hidden', 'true');
     const name = document.createElement('b');
     name.textContent = member.name;
     const what = document.createElement('small');
+    const level = levelLine(member);
     what.textContent =
-      `${member.className} · level ${member.level}` +
+      `${member.className} · ${level.text}` +
       (member.points > 0 ? ` · ${member.points} skill point${member.points === 1 ? '' : 's'}` : '');
+    const bar = document.createElement('span');
+    bar.className = 'fort-level';
+    const fill = document.createElement('i');
+    fill.style.width = `${Math.round(level.part * 100)}%`;
+    bar.append(fill);
     const clock = document.createElement('small');
     clock.className = 'status';
     clock.textContent = member.doing && !free ? `${status} · ${member.doing}` : status;
     this.clocks.set(member.id, clock);
-    head.append(name, what, clock);
+    head.append(chip, name, what, bar, clock);
     item.append(head);
     if (!picked) return item;
 
     const orders = document.createElement('div');
     orders.className = 'fort-orders';
 
+    const aboard = fort.flight.aboard === member.id;
     // Jobs first: sending someone out is the order given most.
     orders.append(heading('Jobs'));
     const jobs = jobChoices(fort, member);
@@ -455,21 +549,40 @@ export class FortScreen {
       list(
         !free
           ? [plainRow('Busy until they are back.')]
-          : jobs.length === 0
-            ? [plainRow('No job is open to them just now. More come up every few minutes.')]
-            : jobs.slice(0, JOBS_OFFERED).map(({ job, line, blocked }) => {
-                const entry = row(job.title, [line, blocked]);
-                entry.dataset.rarity = job.rarity.toLowerCase();
-                if (!blocked) {
-                  beside(
-                    entry,
-                    orderButton('Send', { kind: 'send', unitId: member.id, jobId: job.id }),
-                  );
-                }
-                return entry;
-              }),
+          : aboard
+            ? [plainRow('On board your ship, so they take no jobs. Step off to send them out.')]
+            : jobs.length === 0
+              ? [plainRow('No job is open to them just now. More come up every few minutes.')]
+              : jobs.slice(0, JOBS_OFFERED).map(({ job, line, blocked }) => {
+                  const entry = row(job.title, [line, blocked]);
+                  entry.dataset.rarity = job.rarity.toLowerCase();
+                  if (!blocked) {
+                    beside(
+                      entry,
+                      orderButton('Send', { kind: 'send', unitId: member.id, jobId: job.id }),
+                    );
+                  }
+                  return entry;
+                }),
       ),
     );
+
+    // The ship: one crew member may ride along and learn from the flight.
+    if (free) {
+      orders.append(heading('Ship'));
+      const ride = plainRow(
+        aboard
+          ? 'On board: learns as you fly, and takes no jobs meanwhile.'
+          : 'Put on board to learn as you fly. They take no jobs meanwhile.',
+      );
+      beside(
+        ride,
+        aboard
+          ? orderButton('Step off', { kind: 'board', unitId: null })
+          : orderButton('Board', { kind: 'board', unitId: member.id }),
+      );
+      orders.append(list([ride]));
+    }
 
     // Gear: what is worn, what could be, and the slots with nothing for them in one line.
     orders.append(heading('Gear'));
@@ -517,9 +630,13 @@ export class FortScreen {
       orders.append(
         heading(`Skills · ${member.points} point${member.points === 1 ? '' : 's'} to spend`),
       );
+      // One press for a pilot in a hurry; the keys below for one who is not.
+      const all = plainRow('Spend them all on their two strongest skills');
+      beside(all, orderButton(`Train +${member.points}`, { kind: 'trainAll', unitId: member.id }));
       orders.append(
-        list(
-          member.skills.map((skill) => {
+        list([
+          all,
+          ...member.skills.map((skill) => {
             const entry = plainRow(`${plainWords(skill.name)} ${skill.value}`);
             if (skill.value < 100) {
               beside(
@@ -534,12 +651,78 @@ export class FortScreen {
             }
             return entry;
           }),
-        ),
+        ]),
       );
     }
     item.append(orders);
     return item;
   }
+}
+
+/**
+ * What today holds: the day's reward, the contract for the next flight, and
+ * what flying has paid so far against its daily limits.
+ */
+function todayRows(
+  fort: FortView,
+  reward: { readonly title: string; readonly line: string },
+  aboard: CrewMember | null,
+): HTMLLIElement[] {
+  const daily = row(reward.title, [reward.line]);
+  if (fort.daily.ready) beside(daily, orderButton('Claim', { kind: 'claim' }));
+
+  const contracts: HTMLLIElement[] = [];
+  const taken = fort.contract;
+  if (taken) {
+    contracts.push(
+      // What to do comes first: a narrow screen cuts a title short.
+      row(taken.text, [
+        `Your contract · ${Math.min(taken.progress, taken.goal)} / ${taken.goal} · pays ${taken.credits} credits`,
+      ]),
+    );
+  }
+  for (const offer of fort.offers) {
+    const entry = row(offer.text, [
+      `${offer.from.split(' ')[0]} asks · pays ${offer.credits} credits` +
+        (taken ? ' · replaces your contract' : ''),
+    ]);
+    beside(entry, orderButton('Take', { kind: 'contract', offerId: offer.id }));
+    contracts.push(entry);
+  }
+  if (contracts.length === 0) {
+    contracts.push(emptyRow('No more contracts today. Your crew ask again tomorrow.'));
+  }
+
+  const flight = fort.flight;
+  const flying = row('From flying today', [
+    `${flight.upgradePoints.today} / ${flight.upgradePoints.cap} upgrade points`,
+    aboard
+      ? `${aboard.name} on board: ${flight.experience.today} / ${flight.experience.cap} experience`
+      : 'Nobody on board. A crew member on board learns as you fly.',
+  ]);
+  return [daily, ...contracts, flying];
+}
+
+/**
+ * The empty bunks, under the crew. The next one says what a recruit costs and
+ * what stands in the way, and takes one on when nothing does. The rest share
+ * one line, so the pilot sees how far the crew can grow.
+ */
+function bunkRows(fort: FortView, pilotLevel: number | null): HTMLLIElement[] {
+  const offer = bunkOffer(fort, pilotLevel);
+  if (!offer) return [];
+  const next = row('Empty bunk', [offer.line, offer.blocked]);
+  next.className = offer.blocked ? 'bunk locked' : 'bunk';
+  if (!offer.blocked) beside(next, orderButton('Recruit', { kind: 'recruit' }));
+  const later = fort.bunks.slice(1);
+  if (later.length === 0) return [next];
+  // Their prices are said when their turn comes.
+  const rest = emptyRow(
+    `${later.length} more bunk${later.length === 1 ? '' : 's'}, at pilot level ` +
+      later.map((bunk) => bunk.level).join(', '),
+  );
+  rest.classList.add('bunk');
+  return [next, rest];
 }
 
 /** A button that gives one order. Its key lets the keyboard keep its place when the list is rebuilt. */

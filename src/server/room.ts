@@ -115,6 +115,7 @@ import {
 } from './npc.ts';
 import type { NpcBrain, NpcTarget } from './npc.ts';
 import type { MemoryCrateStore } from './crates.ts';
+import type { FlightLog } from './flight.ts';
 import type { PilotStore } from './pilots.ts';
 
 export const MAX_PLAYERS = 16;
@@ -233,6 +234,8 @@ export interface RoomOptions {
   pilots?: PilotStore;
   /** Holds the salvage crates pilots win. Without one nothing drops. */
   crates?: MemoryCrateStore;
+  /** Keeps what pilots earn in flight for their fort. Without one the fort hears nothing of it. */
+  flights?: FlightLog;
   /** The chance of a crate from each source, in place of the real odds. Tests of the mechanism raise them. */
   crateOdds?: Partial<Record<CrateSource, number>>;
   /** Called after every simulated tick. Tests use it to record what really happened. */
@@ -406,6 +409,7 @@ export class Room {
   private readonly withNpcs: boolean;
   private readonly pilots: PilotStore | undefined;
   private readonly crates: MemoryCrateStore | undefined;
+  private readonly flights: FlightLog | undefined;
   /** Its own stream, so a room with drops flies exactly as one without. */
   private readonly dropRng: Rng;
   private readonly crateOdds: Partial<Record<CrateSource, number>>;
@@ -439,6 +443,7 @@ export class Room {
     this.withNpcs = options.npcs ?? false;
     this.pilots = options.pilots;
     this.crates = options.crates;
+    this.flights = options.flights;
     this.crateOdds = options.crateOdds ?? {};
     this.dropRng = new Rng((options.seed ^ 0x0c4a7e5d) >>> 0);
     if (this.withNpcs) {
@@ -980,6 +985,14 @@ export class Room {
     return false;
   }
 
+  /** The level of the pilot with this key: as they fly now, or as last kept. 1 if unknown. */
+  pilotLevel(key: string): number {
+    for (const player of this.players.values()) {
+      if (player.pilotKey === key) return levelOf(player.progress.xp);
+    }
+    return levelOf(this.pilots?.load(key)?.xp ?? 0);
+  }
+
   knowsPilot(key: string): boolean {
     for (const player of this.players.values()) if (player.pilotKey === key) return true;
     return this.pilots?.load(key) !== undefined;
@@ -998,6 +1011,7 @@ export class Room {
 
   private gainXp(player: Player, amount: number): void {
     if (player.npc) return;
+    if (player.pilotKey) this.flights?.earn(player.pilotKey, amount);
     player.progress.xp += amount;
     player.progressDue = true;
     player.saveDue = true;
@@ -1006,6 +1020,8 @@ export class Room {
   /** Counts one toward the player's mission if it is of this kind, and pays it out when done. */
   private advanceMission(player: Player, kind: MissionKind): void {
     if (player.npc) return;
+    // Counted for the fort whatever the pilot's mission is: a contract may ask for it.
+    if (player.pilotKey) this.flights?.count(player.pilotKey, kind);
     const progress = player.progress;
     const mission = MISSIONS[progress.missionIndex];
     if (!mission || mission.kind !== kind) return;

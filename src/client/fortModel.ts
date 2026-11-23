@@ -3,6 +3,9 @@
 
 import type {
   CrewMember,
+  FortContract,
+  FortDaily,
+  FortFlight,
   FortItem,
   FortJob,
   FortReport,
@@ -50,9 +53,14 @@ const DOING: Record<Exclude<CrewMember['state'], 'ready'>, string> = {
   resting: 'Resting',
 };
 
-/** One crew member's status line. `secondsLeft` is null when the fort gave no end time. */
-export function crewLine(member: CrewMember, secondsLeft: number | null): CrewLine {
-  if (member.state === 'ready') return { text: 'Ready', free: true, due: false };
+/**
+ * One crew member's status line. `secondsLeft` is null when the fort gave no
+ * end time. `aboard` is true for the one riding on the pilot's ship.
+ */
+export function crewLine(member: CrewMember, secondsLeft: number | null, aboard = false): CrewLine {
+  if (member.state === 'ready') {
+    return { text: aboard ? 'On board your ship' : 'Ready', free: true, due: false };
+  }
   const what = DOING[member.state];
   if (secondsLeft === null) return { text: what, free: false, due: false };
   if (secondsLeft <= 0) {
@@ -113,6 +121,97 @@ export function jobChoices(fort: FortView, member: CrewMember): JobChoice[] {
         blocked: job.cost > fort.currencies.credits ? 'Not enough credits' : '',
       };
     });
+}
+
+/** How far a crew member is into their level, in words and as a part of the whole (0 to 1). */
+export function levelLine(member: CrewMember): { readonly text: string; readonly part: number } {
+  if (member.nextLevel <= 0) return { text: `level ${member.level}`, part: 1 };
+  return {
+    text: `level ${member.level} · ${Math.floor(member.experience)} / ${member.nextLevel} to level ${member.level + 1}`,
+    part: Math.min(1, member.experience / member.nextLevel),
+  };
+}
+
+export interface BunkOffer {
+  /** What a recruit for the next empty bunk costs, in words. */
+  readonly line: string;
+  /** Why no recruit can be taken on just now, or '' when one can. */
+  readonly blocked: string;
+}
+
+/**
+ * The next empty bunk: what it costs and what stands in the way. Two things
+ * fill a bunk: the pilot's level, earned flying, opens it, and credits, earned
+ * by the crew, pay for it. Null when every bunk is taken.
+ */
+export function bunkOffer(fort: FortView, pilotLevel: number | null): BunkOffer | null {
+  const next = fort.bunks[0];
+  if (!next) return null;
+  const credits = fort.currencies.credits;
+  const line = `A recruit costs ${next.price.toLocaleString('en-US')} credits`;
+  if (pilotLevel === null || pilotLevel < next.level) {
+    return {
+      line,
+      blocked:
+        `Opens at pilot level ${next.level}` +
+        (pilotLevel === null ? '' : `: you are level ${pilotLevel}. Fly to raise it.`),
+    };
+  }
+  if (credits < next.price) {
+    return {
+      line,
+      blocked: `${Math.ceil(next.price - credits).toLocaleString('en-US')} credits short. Crew earn them on jobs.`,
+    };
+  }
+  return { line, blocked: '' };
+}
+
+/** What is waiting for the pilot in the fort. */
+export interface Waiting {
+  /** How many things there are to do there. */
+  readonly count: number;
+  /** The first of them, as the button that goes there says it. 'Fort' when there is nothing. */
+  readonly call: string;
+}
+
+/**
+ * What a pilot would find to do in their fort right now: crates to open
+ * (in the hold, or still aboard the ship), the day's reward, crew with skill
+ * points to spend, a bunk they can fill, a contract to pick, and word from
+ * the crew that came while they flew.
+ */
+export function waitingIn(
+  fort: FortView | null,
+  cratesAboard: number,
+  pilotLevel: number | null,
+  news: number,
+): Waiting {
+  if (!fort) return { count: 0, call: 'Fort' };
+  const crates = fort.hold.crates.length + cratesAboard;
+  const learners = fort.crew.filter((member) => member.points > 0);
+  const bunk = bunkOffer(fort, pilotLevel)?.blocked === '';
+  const reward = fort.daily.ready;
+  const contract = fort.contract === null && fort.offers.length > 0;
+  const count =
+    crates + (reward ? 1 : 0) + learners.length + (bunk ? 1 : 0) + (contract ? 1 : 0) + news;
+  const first = learners[0];
+  const call =
+    crates > 0
+      ? crates === 1
+        ? 'Open your crate'
+        : `Open your ${crates} crates`
+      : reward
+        ? 'Take your daily reward'
+        : first
+          ? `${first.name} has ${plural(first.points, 'point')} to spend`
+          : bunk
+            ? 'Take on a recruit'
+            : contract
+              ? 'Pick a contract'
+              : news > 0
+                ? 'Hear from your crew'
+                : 'Fort';
+  return { count, call };
 }
 
 /**
@@ -207,6 +306,57 @@ export function debriefLines(sortie: Sortie): DebriefLine[] {
   ];
 }
 
+/** A contract's progress as the cockpit shows it: "Destroy 3 raiders · 1 / 3". */
+export function contractLine(contract: FortContract): string {
+  return `${contract.text} · ${Math.min(contract.progress, contract.goal)} / ${contract.goal}`;
+}
+
+/** The day's reward: what it is, and when it can be taken. */
+export function dailyLine(
+  daily: FortDaily,
+  secondsLeft: number | null,
+): { readonly title: string; readonly line: string } {
+  const reward = `${daily.credits} credits, ${plural(daily.upgradePoints, 'upgrade point')}`;
+  if (daily.ready) return { title: `Day ${daily.streak} reward`, line: reward };
+  const hours = Math.max(1, Math.ceil((secondsLeft ?? 0) / 3600));
+  return {
+    title: 'Daily reward taken',
+    line: `Day ${daily.streak} (${reward}) in about ${hours} h`,
+  };
+}
+
+/**
+ * What flying paid the fort since `since` was read: upgrade points, and
+ * experience for the crew member on board. The day's counts start again at
+ * midnight, so a count lower than it was is all of today's.
+ */
+export function flightLines(
+  flight: FortFlight,
+  since: FortFlight | null,
+  aboardName: string | null,
+): DebriefLine[] {
+  const gained = (now: number, before: number | undefined): number =>
+    before === undefined || before > now ? now : now - before;
+  const points = gained(flight.upgradePoints.today, since?.upgradePoints.today);
+  const full = flight.upgradePoints.today >= flight.upgradePoints.cap;
+  const lines: DebriefLine[] = [
+    {
+      label: 'Upgrade points',
+      value: `+${points} · ${flight.upgradePoints.today} / ${flight.upgradePoints.cap} today${full ? ', the limit' : ''}`,
+      gain: points > 0,
+    },
+  ];
+  if (aboardName !== null) {
+    const learned = gained(flight.experience.today, since?.experience.today);
+    lines.push({
+      label: aboardName,
+      value: `+${learned} experience · ${flight.experience.today} / ${flight.experience.cap} today`,
+      gain: learned > 0,
+    });
+  }
+  return lines;
+}
+
 /** Why the fort's own panels are empty, in words. */
 export function unavailableText(reason: FortUnavailable): string {
   switch (reason) {
@@ -230,7 +380,14 @@ export interface FortGate {
   readonly open: boolean;
   /** The player pressed Launch and is waiting for a ship. */
   readonly launching: boolean;
+  /**
+   * The ship is held back while the death screen offers the fort or a launch.
+   * It happens once, the first time a pilot dies with something waiting.
+   */
+  readonly choosing: boolean;
 }
+
+const FLYING: FortGate = { open: false, launching: false, choosing: false };
 
 export interface FortFacts {
   /** The game is connected and running. */
@@ -243,20 +400,29 @@ export interface FortFacts {
 /** One frame of the gate. */
 export function stepFortGate(gate: FortGate, facts: FortFacts): FortGate {
   // A ship in space: the pilot is flying, whatever was asked.
-  if (facts.playing && facts.shipAlive) return { open: false, launching: false };
-  if (gate.launching) return gate;
+  if (facts.playing && facts.shipAlive) return FLYING;
+  if (gate.launching || gate.choosing) return gate;
   // Put there by the server, or still there after a reload.
-  if (facts.playing && facts.held && !gate.open) return { open: true, launching: false };
+  if (facts.playing && facts.held && !gate.open) return { ...FLYING, open: true };
   return gate;
 }
 
 /** The player asks to go in. Only a pilot without a ship can. */
 export function askFort(gate: FortGate, facts: FortFacts): FortGate {
   if (gate.open || !facts.playing || facts.shipAlive) return gate;
-  return { open: true, launching: false };
+  return { ...FLYING, open: true };
 }
 
 /** The player presses Launch. */
 export function askLaunch(gate: FortGate): FortGate {
-  return gate.open ? { open: false, launching: true } : gate;
+  return gate.open || gate.choosing ? { ...FLYING, launching: true } : gate;
+}
+
+/**
+ * The ship has just been lost. The first time that happens with something
+ * waiting in the fort, the ship is held back and the pilot is asked.
+ */
+export function askChoice(gate: FortGate, facts: FortFacts): FortGate {
+  if (gate.open || gate.launching || !facts.playing || facts.shipAlive) return gate;
+  return { ...FLYING, choosing: true };
 }

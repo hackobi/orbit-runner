@@ -86,7 +86,7 @@ export class TestWorld {
     seed = 1,
     asteroidCount: number = SIM.asteroidCount,
     orbs = true,
-    extra: Pick<RoomOptions, 'npcs' | 'pilots' | 'crates' | 'crateOdds'> = {},
+    extra: Pick<RoomOptions, 'npcs' | 'pilots' | 'crates' | 'crateOdds' | 'flights'> = {},
   ) {
     // Tokens only need to be distinct here, so a seeded generator will do.
     const tokens = new Rng(seed ^ 0x5eed);

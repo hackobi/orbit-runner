@@ -7,6 +7,7 @@ import { createHmac } from 'node:crypto';
 import { parseFortDone, parseFortView } from '../shared/fort.ts';
 import type { FortOrder, FortOrderReply, FortReply, FortView } from '../shared/fort.ts';
 import type { Crate } from './crates.ts';
+import type { FlightLog } from './flight.ts';
 
 export interface FortLink {
   /** SpaceFort's server, such as http://127.0.0.1:5001. */
@@ -64,13 +65,22 @@ export async function readFort(link: FortLink, pilotKey: string): Promise<FortRe
   return fort ? { ok: true, fort } : { ok: false, reason: 'unreachable' };
 }
 
-/** Carries a pilot's order to their fort and brings back how it went. */
+/**
+ * Carries a pilot's order to their fort and brings back how it went. A
+ * recruit depends on the pilot's level, which only this server may state:
+ * it is put on the order here, never taken from the page.
+ */
 export async function orderFort(
   link: FortLink,
   pilotKey: string,
   order: FortOrder,
+  pilotLevel: number,
 ): Promise<FortOrderReply> {
-  const body = await ask(link, pilotKey, order);
+  const body = await ask(
+    link,
+    pilotKey,
+    order.kind === 'recruit' ? { ...order, pilotLevel } : order,
+  );
   const fort = fortIn(body);
   const done = parseFortDone((body as { done?: unknown } | null)?.done);
   return fort && done ? { ok: true, fort, done } : { ok: false, reason: 'unreachable' };
@@ -88,4 +98,24 @@ export async function bankCrates(
 ): Promise<boolean> {
   const body = await ask(link, pilotKey, { kind: 'bank', crates });
   return parseFortDone((body as { done?: unknown } | null)?.done)?.ok === true;
+}
+
+/**
+ * Tells a pilot's fort what they have earned in flight since it last heard.
+ * A report the fort did not answer for is kept and sent again next time; the
+ * fort counts it once. After one sent again, what was earned since follows,
+ * so the fort is never read or given an order with earnings still here.
+ */
+export async function reportFlight(
+  link: FortLink,
+  pilotKey: string,
+  log: FlightLog,
+): Promise<void> {
+  for (let sends = 0; sends < 2; sends++) {
+    const report = log.next(pilotKey);
+    if (!report) return;
+    const body = await ask(link, pilotKey, { kind: 'flight', ...report });
+    if (parseFortDone((body as { done?: unknown } | null)?.done)?.ok !== true) return;
+    log.sent(pilotKey, report.id);
+  }
 }
