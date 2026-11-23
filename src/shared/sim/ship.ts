@@ -126,6 +126,17 @@ export function quantiseControls(controls: Controls, viewDelayTicks = 0): Input 
   } as Input;
 }
 
+/**
+ * The input a ship is flown with on a tick whose own input never arrived:
+ * the last one, without its stunt. A stunt is only ever started by an input
+ * that was really sent for that tick.
+ */
+export const withoutStunt = (input: Input): Input =>
+  input.stunt === STUNT_NONE ? input : { ...input, stunt: STUNT_NONE };
+
+/** A stunt asked for is asked for on this many ticks running, so that one lost or late message does not lose it. */
+export const STUNT_ASK_TICKS = 6;
+
 export const NEUTRAL_CONTROLS: Controls = { yaw: 0, pitch: 0, throttle: 0, fire: false };
 export const NEUTRAL_INPUT: Input = quantiseControls(NEUTRAL_CONTROLS);
 

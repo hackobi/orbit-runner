@@ -15,18 +15,21 @@ import { launchSeeker, seekerPath, stepSeeker } from '../../src/shared/sim/seeke
 import type { Seeker } from '../../src/shared/sim/seeker.ts';
 import {
   NEUTRAL_INPUT,
+  STUNT_ASK_TICKS,
   STUNT_FLIP,
   STUNT_NONE,
   STUNT_ROLL_LEFT,
   STUNT_ROLL_RIGHT,
   inputFromWire,
   quantiseControls,
+  shipStatesEqual,
   shotThisTick,
   spawnShip,
   stepShip,
   stuntAngles,
 } from '../../src/shared/sim/ship.ts';
 import type { Controls, Input, ShipState, Stunt } from '../../src/shared/sim/ship.ts';
+import { TestWorld } from '../support/harness.ts';
 
 /** A ship at top speed flying straight along +Z, out of spawn protection. */
 function flying(overrides: Partial<ShipState> = {}): ShipState {
@@ -199,15 +202,20 @@ describe('a homing shot against a backflip (decision D38)', () => {
     };
   }
 
-  /** Flies the shot at the ship for its whole life. True if it hits. */
-  function chase(behind: number, first: Input, then: Input = NEUTRAL_INPUT): boolean {
-    let ship = flying();
+  /**
+   * Flies the shot at the ship for its whole life. True if it hits. `flat`
+   * takes the rise out of a flip, leaving a loop that ends where it began.
+   */
+  function chase(behind: number, first: Input, start = flying(), flat = false): boolean {
+    let ship = start;
     let seeker = astern(ship, behind);
     for (let tick = 1; tick <= SIM.seekerLifeTicks; tick++) {
-      ship = stepShip(ship, tick === 1 ? first : then);
-      seeker = stepSeeker(seeker, ship);
+      ship = stepShip(ship, tick === 1 ? first : NEUTRAL_INPUT);
+      const risen = flat ? (SIM.flipRise * Math.min(tick, SIM.flipTicks)) / SIM.flipTicks : 0;
+      const seen = { ...ship, y: ship.y - risen };
+      seeker = stepSeeker(seeker, seen);
       const path = seekerPath(seeker, tick);
-      if (bulletHit(path, tick, ship.x, ship.y, ship.z, shipHitDistance(path)) >= 0) return true;
+      if (bulletHit(path, tick, seen.x, seen.y, seen.z, shipHitDistance(path)) >= 0) return true;
     }
     return false;
   }
@@ -220,6 +228,23 @@ describe('a homing shot against a backflip (decision D38)', () => {
 
   it('misses a ship that flips and then flies straight on, from every range', () => {
     for (const behind of RANGES) expect(chase(behind, ask(STUNT_FLIP)), `${behind}`).toBe(false);
+  });
+
+  it('the loop has to rise: one that ends where it began is hit by every shot still behind it', () => {
+    // A shot without a lock flies straight along the ship's old track, and a
+    // flat loop puts the ship back on that track. Shots that pass during the
+    // second the loop lasts (180 units of flight) go by underneath.
+    const hit = RANGES.filter((behind) => chase(behind, ask(STUNT_FLIP), flying(), true));
+    expect(hit).toEqual([240, 400, 550]);
+  });
+
+  it('at the ceiling the climb is cut short: the ship comes out below its old track, and a shot within 120 units still hits', () => {
+    const top = flying({ y: SIM.maxY });
+    const out = run(stepShip(top, ask(STUNT_FLIP)), NEUTRAL_INPUT, SIM.flipTicks);
+    expect(out.y).toBeLessThan(SIM.maxY - 10);
+    expect(out.y).toBeGreaterThan(SIM.maxY - 2 * SIM.flipRadius);
+    // The first half of the loop cannot climb there, so the ship stays on its track for too long.
+    expect(RANGES.filter((behind) => chase(behind, ask(STUNT_FLIP), top))).toEqual([30, 60, 120]);
   });
 
   it('is not shaken off by a roll alone', () => {
@@ -319,5 +344,90 @@ describe('asking for a stunt (decision D38)', () => {
     expect(stickPress(0.7, 0.7)).toBe(STUNT_NONE);
     // Forward is not a stunt.
     expect(stickPress(0, -1)).toBe(STUNT_NONE);
+  });
+});
+
+describe('a stunt asked for over a bad link (decision D38)', () => {
+  const ASK_TICK = 301;
+  /** Asks at `ASK_TICK`, and then every `every` ticks if that is given. `yaw` keeps a long flight in one place. */
+  const asking =
+    (stunt: Stunt, every = 0, yaw = 0) =>
+    (tick: number): Controls => ({
+      yaw,
+      pitch: 0,
+      throttle: 0,
+      fire: false,
+      stunt:
+        tick === ASK_TICK || (every > 0 && tick > ASK_TICK && (tick - ASK_TICK) % every === 0)
+          ? stunt
+          : STUNT_NONE,
+    });
+  /** The ticks on which the server's ship began a stunt. */
+  const starts = (world: TestWorld, id: number): number[] => {
+    const truth = world.truth.get(id);
+    const ticks = [...(truth?.keys() ?? [])].sort((a, b) => a - b);
+    return ticks.filter(
+      (tick) =>
+        truth?.get(tick)?.stunt !== STUNT_NONE && truth?.get(tick - 1)?.stunt === STUNT_NONE,
+    );
+  };
+
+  it('is asked for on six ticks running, so losing the message that first carried it does not lose the stunt', () => {
+    const world = new TestWorld(2, 0, false);
+    let dropped = 0;
+    const client = world.addClient({
+      controls: asking(STUNT_FLIP),
+      link: {
+        // Lose every message that carries the first tick of asking: the original and its two copies.
+        up: (data) => {
+          const message = decodeClientMessage(data);
+          if (message?.type !== 'input') return 0;
+          const carries =
+            message.tick >= ASK_TICK && message.tick - message.inputs.length < ASK_TICK;
+          if (carries) dropped++;
+          return carries ? null : 0;
+        },
+      },
+    });
+    world.run(10_000);
+
+    expect(dropped).toBe(3);
+    // The server flew those ticks on the last input it had, which must not flip the ship by itself.
+    const began = starts(world, client.core.playerId);
+    expect(began).toHaveLength(1);
+    expect(began[0]).toBeGreaterThan(ASK_TICK);
+    expect(began[0]).toBeLessThan(ASK_TICK + STUNT_ASK_TICKS);
+    // The page had begun three ticks early; it is put right once, by less than the loop is wide.
+    const real = client.corrections.filter((c) => !c.teleport);
+    expect(real).toHaveLength(1);
+    expect(real[0]?.distance).toBeLessThan(2 * SIM.flipRadius);
+    const truth = world.truth.get(client.core.playerId);
+    const acked = client.core.predictedAt(client.core.ackTick);
+    const actual = truth?.get(client.core.ackTick);
+    expect(acked && actual && shipStatesEqual(acked, actual)).toBe(true);
+  });
+
+  it('asking once starts one stunt, however long the asking is kept up', () => {
+    const world = new TestWorld(2, 0, false);
+    const client = world.addClient({ controls: asking(STUNT_ROLL_LEFT) });
+    world.run(10_000);
+    expect(starts(world, client.core.playerId)).toEqual([ASK_TICK]);
+    expect(client.corrections.filter((c) => !c.teleport)).toEqual([]);
+  });
+
+  it('fifty-one rolls through 200 ms with 5% of messages lost each way: every one is flown', () => {
+    const world = new TestWorld(3, 0, false);
+    const loss = new Rng(77);
+    const shaper = (): number | null => (loss.next() < 0.05 ? null : 80 + loss.next() * 40);
+    const client = world.addClient({
+      // Every five seconds: time for the energy a roll costs to come back.
+      // Turning gently all the while, so that four minutes of flight stay clear of the planet.
+      controls: asking(STUNT_ROLL_RIGHT, 300, 0.3),
+      link: { up: shaper, down: shaper },
+    });
+    world.run(((ASK_TICK + 50 * 300 + 60) / 60) * 1000);
+    expect(world.deaths).toEqual([]);
+    expect(world.room.stats.missedInputs).toBeGreaterThan(0);
+    expect(starts(world, client.core.playerId)).toHaveLength(51);
   });
 });

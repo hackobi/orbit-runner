@@ -47,6 +47,9 @@ import type { Progress } from '../shared/progress.ts';
 import { SIM_FINGERPRINT } from '../shared/sim/fingerprint.ts';
 import {
   NEUTRAL_INPUT,
+  STUNT_ASK_TICKS,
+  STUNT_NONE,
+  withoutStunt,
   VIEW_DELAY_STEPS_PER_TICK,
   shotThisTick,
   isBoosting,
@@ -54,7 +57,7 @@ import {
   quantiseControls,
   shipStatesEqual,
 } from '../shared/sim/ship.ts';
-import type { Controls, Input, ShipState, ShotKind } from '../shared/sim/ship.ts';
+import type { Controls, Input, ShipState, ShotKind, Stunt } from '../shared/sim/ship.ts';
 import { bulletOrbHit } from '../shared/sim/orbs.ts';
 import { applyGrant, applyOrb, createWorld, stepPlayer } from '../shared/sim/world.ts';
 import type { World, WorldEffect, WorldState } from '../shared/sim/world.ts';
@@ -381,6 +384,9 @@ export class ClientCore implements WorldState {
 
   private previousState: ShipState | null = null;
   private lastSentInput: Input = NEUTRAL_INPUT;
+  /** A stunt asked for, and how many more ticks to go on asking. */
+  private stuntAsked: Stunt = STUNT_NONE;
+  private stuntAskTicks = 0;
   private accumulatorMs = 0;
   private lastUpdateMs = 0;
 
@@ -491,6 +497,21 @@ export class ClientCore implements WorldState {
     } else if (!away && this.status === 'away') {
       this.transport.send(encodePresence(false, this.now()), 'reliable');
     }
+  }
+
+  /**
+   * The stunt to ask for on this tick. One asked for by the controls is asked
+   * for on the next few ticks too: a request sent once would be lost with its
+   * message. The ship takes the first it can and ignores the rest.
+   */
+  private askedStunt(now: Stunt): Stunt {
+    if (now !== STUNT_NONE) {
+      this.stuntAsked = now;
+      this.stuntAskTicks = STUNT_ASK_TICKS;
+    }
+    if (this.stuntAskTicks === 0) return STUNT_NONE;
+    this.stuntAskTicks -= 1;
+    return this.stuntAsked;
   }
 
   /**
@@ -715,7 +736,9 @@ export class ClientCore implements WorldState {
       const viewTick = this.remotes.viewTick - (due - 1 - i);
       const viewDelay = Number.isNaN(viewTick) ? 0 : this.tick + 1 - viewTick;
       // Quantise first, then predict from the quantised value that is sent.
-      this.advance(quantiseControls(this.controls(this.tick + 1), viewDelay), true, now);
+      const controls = this.controls(this.tick + 1);
+      const held = { ...controls, stunt: this.askedStunt(controls.stunt ?? STUNT_NONE) };
+      this.advance(quantiseControls(held, viewDelay), true, now);
     }
     if (due > 0 && this.state) {
       this.viewDelayTicks = this.lastSentInput.viewDelay / VIEW_DELAY_STEPS_PER_TICK;
@@ -753,7 +776,8 @@ export class ClientCore implements WorldState {
       inputs.push(this.historyInput[slot] ?? NEUTRAL_INPUT);
     }
     this.transport.send(encodeInput(this.tick, inputs), 'droppable');
-    this.lastSentInput = input;
+    // What the server flies the ship with if a later input is lost: this one, without its stunt.
+    this.lastSentInput = withoutStunt(input);
     this.counters.inputsSent += 1;
   }
 

@@ -85,6 +85,8 @@ import type { Seeker } from '../shared/sim/seeker.ts';
 import { SIM_FINGERPRINT } from '../shared/sim/fingerprint.ts';
 import {
   NEUTRAL_INPUT,
+  STUNT_NONE,
+  withoutStunt,
   VIEW_DELAY_STEPS_PER_TICK,
   damageShip,
   destroyShip,
@@ -640,11 +642,14 @@ export class Room {
         input.yaw === last.yaw &&
         input.pitch === last.pitch &&
         input.throttle === last.throttle &&
-        input.fire === last.fire;
+        input.fire === last.fire &&
+        // Asking for a stunt is a hand on the controls too.
+        input.stunt === STUNT_NONE;
       player.unchangedTicks =
         unchanged && !player.npc && !player.inFort ? player.unchangedTicks + 1 : 0;
       if (!unchanged) player.idle = false;
-      player.input = input;
+      // Reused for a tick whose input never arrives, when it must not start a stunt.
+      player.input = withoutStunt(input);
 
       if (player.asteroidMultTicks > 0) player.asteroidMultTicks -= 1;
       if (player.killMultTicks > 0) player.killMultTicks -= 1;
