@@ -877,3 +877,12 @@ The user asked for the looks to sit on the newest version, with the fort and the
 - On the merged tree: lint and typecheck clean, 410 unit tests, 12 integration tests, the whole browser suite 55 of 55 (7.3 min).
 - **Next, the user's to say:** move `feature/fort` up to this branch (it would be a fast-forward), so that there is one newest branch again. Until then, work done on `feature/fort` does not have the looks.
 
+
+### 2026-11-23: one branch again, the wallet answers, and a page to test the wallet
+
+- `feature/fort` was moved up to `feature/skins` (a fast-forward to `5f37933`), from this worktree. Rerun here on that tree: lint and typecheck clean, 410 unit tests, 12 integration tests, the fort and looks browser tests 26 of 26. The whole browser suite was not rerun here. The trial copy at `http://localhost:5183` now has the looks and a connected fort.
+- The user's direction on looks: free to wear for now, later earned from NFTs obtained in the fort. Written up, not built, in SpaceFort's `claudedocs/PHASE5_WALLET_PLAN_2026-11-22.md` section 9, with three open questions (which looks stay free, crate or crew card, whether others see them).
+- The user's three wallet answers are in that plan's section 6: the player's wallet pays for the chain record; one free premium card for an ID holder and further ones in DEM; guest forts unseen for 30 days are deleted.
+- The old Orbit Runner does ask the extension to sign (`sign`, then `personal_sign`) and to pay (`nativeTransfer`). Read, not run; the plan's section 8 has the calls.
+- **Step 5a:** `scripts/wallet-probe.html`, at `/scripts/wallet-probe.html` on the dev server. It connects and signs one test line and shows what the extension returns. It is not part of the built game. Checked only with a stand-in wallet in a headless browser. **UNVERIFIED with a real extension: the user presses it and copies the box back.**
+- **Next:** the user's probe result decides how the signature is checked; then step 5b. Still open from 3b: the upgrade-point gate that failed (D35).
